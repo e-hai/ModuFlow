@@ -1,0 +1,25 @@
+from pathlib import Path
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+class Settings(BaseSettings):
+    PROJECT_NAME: str = "ModuFlow"
+    API_V1_STR: str = "/api/v1"
+    
+    BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent.parent
+    DATA_DIR: Path = BASE_DIR / "data"
+    SNAPSHOT_DIR: Path = DATA_DIR / "snapshots"
+    WORKSPACE_DIR: Path = DATA_DIR / "workspaces"
+    
+    DATABASE_URL: str = f"sqlite+aiosqlite:///{DATA_DIR}/moduflow.db"
+    
+    # Agent Adapter Configuration
+    AGENT_ADAPTER_TYPE: str = "simulator"  # "simulator" | "cli" | "api"
+    AGENT_CLI_COMMAND: str = "claude"     # Default CLI tool: e.g. "claude", "agy", or custom script
+    AGENT_CLI_TIMEOUT: int = 120          # Max execution seconds for a single CLI invocation
+    
+    model_config = SettingsConfigDict(case_sensitive=True)
+
+settings = Settings()
+settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
+settings.SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+settings.WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
