@@ -2,7 +2,8 @@ import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 from backend.app.main import app
-from backend.app.core.database import engine, Base, AsyncSessionLocal
+from backend.tests.conftest import test_engine as engine, TestingSessionLocal as AsyncSessionLocal
+from backend.app.core.database import Base
 from backend.app.services.workflow_engine import seed_templates_if_empty, create_workflow_run_from_template
 from backend.app.models.entities import StrategicInitiative, Product, ExecutiveRisk, ExecutiveDecision
 from backend.app.core.config import settings

@@ -6,7 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from backend.app.main import app
-from backend.app.core.database import engine, Base, AsyncSessionLocal
+from backend.tests.conftest import test_engine as engine, TestingSessionLocal as AsyncSessionLocal
+from backend.app.core.database import Base
 from backend.app.models.entities import (
     StrategicInitiative,
     Product,

@@ -34,3 +34,4 @@ frontend/.vite/
 *.db-wal
 *.db-shm
 *.db-journal
+data/test_moduflow.db*

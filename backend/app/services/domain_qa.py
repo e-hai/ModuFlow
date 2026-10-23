@@ -1,27 +1,32 @@
 import re
 from typing import Optional, Dict, Any
 
-def extract_context_summary(system_context: str) -> Dict[str, str]:
-    """Extract strategic initiative metadata from the markdown context file."""
+def extract_context_summary(system_context: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    """Extract strategic initiative metadata from metadata dict or markdown context."""
     data = {
-        "initiative_name": "当前出海母战略工程",
-        "target_market": "目标细分市场",
-        "business_model": "高频工具获客 + 增值变现闭环"
+        "initiative_name": (metadata or {}).get("initiative_name") or "当前战略工程",
+        "target_market": (metadata or {}).get("target_market") or "目标细分市场",
+        "business_model": (metadata or {}).get("business_model_hypothesis") or "高频工具获客 + 增值变现闭环",
+        "product_name": (metadata or {}).get("product_name") or "当前产品",
+        "product_code": (metadata or {}).get("product_code") or ""
     }
     if not system_context:
         return data
 
-    init_match = re.search(r"战略工程：([^\n]+)", system_context)
-    if init_match:
-        data["initiative_name"] = init_match.group(1).strip()
+    if data["initiative_name"] == "当前战略工程":
+        init_match = re.search(r"(?:所属战略工程|战略工程)[*：:\s]+([^\n(`]+)", system_context)
+        if init_match:
+            data["initiative_name"] = init_match.group(1).strip()
 
-    market_match = re.search(r"目标市场：([^\n]+)", system_context)
-    if market_match:
-        data["target_market"] = market_match.group(1).strip()
+    if data["target_market"] == "目标细分市场":
+        market_match = re.search(r"(?:目标市场|Target Market)[*：:\s()]+([^\n]+)", system_context)
+        if market_match:
+            data["target_market"] = market_match.group(1).strip()
 
-    bm_match = re.search(r"商业模式假设：([^\n]+)", system_context)
-    if bm_match:
-        data["business_model"] = bm_match.group(1).strip()
+    if data["business_model"] == "高频工具获客 + 增值变现闭环":
+        bm_match = re.search(r"(?:商业模式假设|Business Model Hypothesis)[*：:\s()]+([^\n]+)", system_context)
+        if bm_match:
+            data["business_model"] = bm_match.group(1).strip()
 
     return data
 
@@ -35,7 +40,7 @@ def generate_domain_qa_answer(
     Synthesizes a high-fidelity, strategically-aligned answer for the human user's inquiry,
     grounded in the mother strategic initiative and the current workflow module baseline.
     """
-    ctx = extract_context_summary(system_context)
+    ctx = extract_context_summary(system_context, metadata)
     q = question.strip()
 
     # Domain keyword heuristics for tailored deep domain suggestions

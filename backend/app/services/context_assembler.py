@@ -153,7 +153,12 @@ async def assemble_module_context(
 
     metadata = {
         "initiative_id": init.id if init else None,
+        "initiative_name": init.name if init else None,
+        "target_market": init.target_market if init else None,
+        "strategic_intent": init.strategic_intent if init else None,
+        "business_model_hypothesis": init.business_model_hypothesis if init else None,
         "product_id": prod.id,
+        "product_name": prod.name,
         "product_code": prod.code,
         "run_id": run.id,
         "run_name": run.name,
