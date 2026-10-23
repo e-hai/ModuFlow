@@ -74,7 +74,6 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
   const [agentCommand, setAgentCommand] = useState<string>('agy');
   const [agentStage, setAgentStage] = useState<'idle' | 'context' | 'spawning' | 'reasoning' | 'completed' | 'error'>('idle');
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
-  const [showPersonaDetail, setShowPersonaDetail] = useState(false);
 
   // Architecture Optimization & Unified Approvals state
   const [changeReviews, setChangeReviews] = useState<ChangeReview[]>([]);
@@ -521,36 +520,25 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
         </div>
       )}
 
-      {/* 虚拟项目工位：驻场 Agent 角色卡片 */}
-      <div className="bg-gradient-to-r from-blue-50/70 via-white to-indigo-50/50 border border-slate-200/90 rounded-2xl p-4 shadow-2xs">
+      {/* 虚拟项目工位：驻场 Agent 角色卡片（精简去冗余介绍） */}
+      <div className="bg-gradient-to-r from-blue-50/60 via-white to-indigo-50/40 border border-slate-200/90 rounded-2xl px-4 py-2.5 shadow-2xs">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0">
-              {renderRoleIcon(moduleState.primary_role?.avatar_icon, "w-5 h-5")}
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
+              {renderRoleIcon(moduleState.primary_role?.avatar_icon, "w-4 h-4")}
             </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-bold text-slate-900">
-                  {moduleState.primary_role?.name || '驻场主责 Agent'}
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold border border-blue-200">
-                  主责责任人
-                </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-bold text-slate-900">
+                {moduleState.primary_role?.name || '驻场主责 Agent'}
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold border border-blue-200">
+                主责责任人
+              </span>
+              {moduleState.primary_role?.title && (
                 <span className="text-xs text-slate-500 font-medium">
                   {moduleState.primary_role?.title}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setShowPersonaDetail(!showPersonaDetail)}
-                  className="text-[11px] text-blue-600 hover:text-blue-700 inline-flex items-center gap-1 cursor-pointer transition ml-1"
-                >
-                  <Info className="w-3.5 h-3.5" />
-                  {showPersonaDetail ? '收起专业准则' : '查看履职思维'}
-                </button>
-              </div>
-              <p className="text-xs text-slate-600 mt-1 line-clamp-1 leading-relaxed">
-                {moduleState.primary_role?.responsibilities}
-              </p>
+              )}
             </div>
           </div>
 
@@ -561,8 +549,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                 {moduleState.collaborator_roles.map(collab => (
                   <span
                     key={collab.id}
-                    title={collab.responsibilities}
-                    className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 shadow-2xs font-medium cursor-help hover:border-slate-300 transition"
+                    className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 shadow-2xs font-medium"
                   >
                     <span className="text-slate-500">{renderRoleIcon(collab.avatar_icon, "w-3.5 h-3.5")}</span>
                     <span>{collab.name.replace(' Agent', '')}</span>
@@ -572,19 +559,6 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
             </div>
           )}
         </div>
-
-        {/* 展开查看该角色的专业作业准则与思维模型 */}
-        {showPersonaDetail && moduleState.primary_role?.system_persona && (
-          <div className="mt-3 pt-3 border-t border-slate-200/80 text-xs text-slate-700 space-y-2 animate-in fade-in duration-200 bg-white/70 p-3 rounded-xl border">
-            <div className="font-semibold text-slate-800 flex items-center gap-1.5 text-xs">
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              【{moduleState.primary_role.name}】专业作业守则与思维准则：
-            </div>
-            <div className="whitespace-pre-wrap leading-relaxed text-slate-600 font-sans text-[11px]">
-              {moduleState.primary_role.system_persona}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* 阻塞性 Issue 警示条 */}
