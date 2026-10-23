@@ -85,13 +85,23 @@ async def assemble_module_context(
     workspace_path = settings.WORKSPACE_DIR / init_dir_name / "products" / prod_code_name / run_name / mod_dir_name
     workspace_path.mkdir(parents=True, exist_ok=True)
 
-    # 4. Format multi-layered context
+    # 4. Retrieve Agent Role Persona and Collaboration Bundle
+    from backend.app.services.agent_roles import get_module_role_bundle
+    role_bundle = await get_module_role_bundle(db, mod.module_code)
+    primary_role = role_bundle.get("primary_role")
+    collab_roles = role_bundle.get("collaborator_roles", [])
+    stage_cfg = role_bundle.get("config", {})
+
+    collab_desc = "、".join([f"{c.name} ({c.title})" for c in collab_roles]) if collab_roles else "无"
+
+    # 5. Format multi-layered context
     context_lines = [
         f"# 【ModuFlow 智能体研发上下文】",
         f"> 当前工序：`{mod.module_code}` - **{mod.name}**",
         f"> 目标产品：`{prod.code}` - **{prod.name}**",
         f"> 迭代周期：**{run.name}**",
         f"> 物理工作空间：`{workspace_path}`",
+        f"> 当前驻场主责 Agent：**{primary_role.name if primary_role else 'AI 智能体'}** ({primary_role.title if primary_role else ''})",
         "",
         "---",
         "## 一、战略工程顶层底稿 (Mother Strategic Blueprint)",
@@ -136,17 +146,32 @@ async def assemble_module_context(
     else:
         context_lines.append("- *(当前无前序封版基线交付物，本工序为当前链条首道或前序正在论证中)*")
 
+    # Role Persona Injection
+    if primary_role:
+        context_lines.extend([
+            "",
+            "---",
+            "## 四、本次工序驻场 Agent 角色档案与专业准则 (Resident Agent Role & Persona)",
+            f"- **当前执业角色**：**{primary_role.name}**（{primary_role.title}）",
+            f"- **核心岗位职责**：{primary_role.responsibilities}",
+            f"- **工序战略重点**：{stage_cfg.get('mission_focus', '业务规范推演')}",
+            f"- **协同作战参谋**：{collab_desc}",
+            "",
+            "**专业作业守则与思维准则**：",
+            primary_role.system_persona,
+        ])
+
     context_lines.extend([
         "",
         "---",
-        "## 四、人类指令与本工序交付目标 (Human Instruction)",
+        "## 五、人类指令与本次交付目标 (Human Instruction)",
         f"**人类负责人指令**：",
         f"> {user_instruction}",
         "",
-        "**智能体工作守则**：",
-        "1. 严格遵守母战略工程的战略定性与商业模式假设，严禁产生战略冲突。",
-        "2. 输出交付物必须采用规范的专业 Markdown 格式，具备极高的可落地性与工程穿透力。",
-        "3. 如发现前序基线与当前需求存在重大逻辑漏洞或可行性缺陷，必须明确指出并建议提报 Issue。"
+        "**智能体履职守则**：",
+        "1. 严格遵守母战略工程的战略定性与商业模式假设，坚守本角色的专业准则，严禁空泛套话。",
+        "2. 输出交付物必须采用规范的专业 Markdown 格式，具备极高可落地性与工程穿透力。",
+        "3. 如发现前序基线与当前需求存在重大逻辑漏洞、可行性或商业风险，必须明确指出并建议提报 Issue。"
     ])
 
     context_markdown = "\n".join(context_lines)
@@ -165,7 +190,10 @@ async def assemble_module_context(
         "module_id": mod.id,
         "module_code": mod.module_code,
         "module_name": mod.name,
-        "workspace_path": str(workspace_path)
+        "workspace_path": str(workspace_path),
+        "role_code": primary_role.role_code if primary_role else "pm",
+        "role_name": primary_role.name if primary_role else "产品经理 Agent",
+        "role_title": primary_role.title if primary_role else "高级产品总监"
     }
 
     return context_markdown, workspace_path, metadata

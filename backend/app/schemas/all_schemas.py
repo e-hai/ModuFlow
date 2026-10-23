@@ -120,10 +120,31 @@ class IssueOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+# --- Agent Role Definitions ---
+class AgentRoleDefinitionOut(BaseModel):
+    id: str
+    role_code: str
+    name: str
+    title: str
+    avatar_icon: str
+    color: str
+    responsibilities: str
+    system_persona: str
+    allowed_tools: List[str] = []
+    preferred_executor: str = "cli"
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class ModuleRoleBundleOut(BaseModel):
+    primary: Optional[AgentRoleDefinitionOut] = None
+    collaborators: List[AgentRoleDefinitionOut] = []
+
 # --- Session & Message ---
 class SessionMessageCreate(BaseModel):
     sender: str = "Alice"
     sender_role: str = "product_manager"
+    role_code: Optional[str] = None
     message_type: str = "instruction"
     content: str
     artifact_ref_id: Optional[str] = None
@@ -135,6 +156,7 @@ class SessionMessageOut(BaseModel):
     session_id: str
     sender: str
     sender_role: str
+    role_code: Optional[str] = None
     message_type: str
     content: str
     artifact_ref_id: Optional[str] = None
@@ -166,6 +188,10 @@ class ModuleInstanceOut(BaseModel):
     is_unlocked: bool
     dependencies: List[str]
     baseline_artifact_id: Optional[str] = None
+    primary_role_code: Optional[str] = "pm"
+    collaborator_role_codes: List[str] = []
+    primary_role: Optional[AgentRoleDefinitionOut] = None
+    collaborator_roles: List[AgentRoleDefinitionOut] = []
     open_issues_count: Optional[int] = 0
     blocking_issues_count: Optional[int] = 0
     artifacts_count: Optional[int] = 0

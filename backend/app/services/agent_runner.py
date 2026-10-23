@@ -78,18 +78,24 @@ async def execute_agent_for_session(
             logs.append(event.content)
 
     adapter_cmd = getattr(adapter, "cli_command", "CLI")
+    role_name = (meta or {}).get("role_name", "AI Agent")
+    role_code = (meta or {}).get("role_code", "pm")
+    sender_label = f"{role_name} ({adapter_cmd})"
 
     # 4. Handle Explicit Execution Error (当 agent 出错时，绝不伪造正常回答，直接报告失败)
     if error_event:
         agent_msg = SessionMessage(
             session_id=session.id,
-            sender=f"AI Agent ({adapter_cmd})",
+            sender=sender_label,
             sender_role="agent",
+            role_code=role_code,
             message_type="error",
             content=error_event.content,
             metadata_json={
                 "logs_preview": logs[-5:] if logs else [],
-                "error_meta": error_event.metadata or {}
+                "error_meta": error_event.metadata or {},
+                "role_code": role_code,
+                "role_name": role_name
             }
         )
         db.add(agent_msg)
@@ -102,11 +108,12 @@ async def execute_agent_for_session(
         if produced_answer_content:
             agent_msg = SessionMessage(
                 session_id=session.id,
-                sender=f"AI Agent ({adapter_cmd})",
+                sender=sender_label,
                 sender_role="agent",
+                role_code=role_code,
                 message_type="answer",
                 content=produced_answer_content,
-                metadata_json={"logs_preview": logs[-3:] if logs else []}
+                metadata_json={"logs_preview": logs[-3:] if logs else [], "role_code": role_code, "role_name": role_name}
             )
             db.add(agent_msg)
             await db.commit()
@@ -115,11 +122,12 @@ async def execute_agent_for_session(
         else:
             agent_msg = SessionMessage(
                 session_id=session.id,
-                sender=f"AI Agent ({adapter_cmd})",
+                sender=sender_label,
                 sender_role="agent",
+                role_code=role_code,
                 message_type="error",
                 content=f"Agent ({adapter_cmd}) 执行完毕，但未能在标准输出中返回有效回答内容。",
-                metadata_json={"logs_preview": logs[-3:] if logs else []}
+                metadata_json={"logs_preview": logs[-3:] if logs else [], "role_code": role_code}
             )
             db.add(agent_msg)
             await db.commit()
@@ -157,12 +165,13 @@ async def execute_agent_for_session(
         msg_title = "初稿" if produced_artifact_event_type == AgentEventType.ARTIFACT_DRAFT else "修订版"
         agent_msg = SessionMessage(
             session_id=session.id,
-            sender=f"AI Agent ({adapter_cmd})",
+            sender=sender_label,
             sender_role="agent",
+            role_code=role_code,
             message_type="draft_artifact" if msg_title == "初稿" else "revised_artifact",
-            content=f"已通过 Agent 适配器在工作区完成推演，产出了交付物【{artifact.title}】。相关文件已同步至物理工作区，请在右侧查阅并审阅。",
+            content=f"已由【{role_name}】通过 Agent 适配器在物理工作区完成推演，产出了交付物【{artifact.title}】。相关文件已同步，请在右侧查阅并审阅。",
             artifact_ref_id=artifact.id,
-            metadata_json={"logs_preview": logs[-3:] if logs else []}
+            metadata_json={"logs_preview": logs[-3:] if logs else [], "role_code": role_code, "role_name": role_name}
         )
         db.add(agent_msg)
         await db.commit()
@@ -179,11 +188,12 @@ async def execute_agent_for_session(
     # If neither error nor artifact was produced for an instruction
     agent_msg = SessionMessage(
         session_id=session.id,
-        sender=f"AI Agent ({adapter_cmd})",
+        sender=sender_label,
         sender_role="agent",
+        role_code=role_code,
         message_type="error",
         content=f"Agent ({adapter_cmd}) 执行完毕，但未在工作区生成交付物文件。",
-        metadata_json={"logs_preview": logs[-3:] if logs else []}
+        metadata_json={"logs_preview": logs[-3:] if logs else [], "role_code": role_code}
     )
     db.add(agent_msg)
     await db.commit()

@@ -18,7 +18,8 @@ from backend.app.models.entities import (
     Artifact,
     Issue,
     ExecutiveDecision,
-    ExecutiveRisk
+    ExecutiveRisk,
+    AgentRoleDefinition
 )
 from backend.app.schemas.all_schemas import (
     StrategicInitiativeOut, StrategicInitiativeCreate, StrategicInitiativeUpdate,
@@ -32,7 +33,8 @@ from backend.app.schemas.all_schemas import (
     ExecutiveCockpitResponse, DecisionActionRequest, ExecutiveDecisionItem,
     FinancialMetrics, FocusAlert, PortfolioProductItem, MarketingCockpitData, MarketingCategoryItem, MarketingSubChannelItem,
     OperationsCockpitData, ExecutiveRiskItem,
-    AgentSettingsOut, AgentSettingsUpdate, AgentPresetItem
+    AgentSettingsOut, AgentSettingsUpdate, AgentPresetItem,
+    AgentRoleDefinitionOut, ModuleRoleBundleOut
 )
 from backend.app.services.workflow_engine import (
     create_workflow_run_from_template,
@@ -652,6 +654,14 @@ async def get_module(module_id: str, db: AsyncSession = Depends(get_db)):
         )
     )
     dto.open_issues_count = res_issues.scalar_one() or 0
+
+    # Role bundle
+    from backend.app.services.agent_roles import get_module_role_bundle
+    bundle = await get_module_role_bundle(db, mod.module_code)
+    if bundle.get("primary_role"):
+        dto.primary_role = AgentRoleDefinitionOut.model_validate(bundle["primary_role"])
+    dto.collaborator_roles = [AgentRoleDefinitionOut.model_validate(r) for r in bundle.get("collaborator_roles", [])]
+
     return dto
 
 @api_router.patch("/modules/{module_id}/phase", response_model=ModuleInstanceOut)
@@ -746,6 +756,7 @@ async def post_message(
         session_id=session_id,
         sender=data.sender,
         sender_role=data.sender_role,
+        role_code=data.role_code,
         message_type=data.message_type,
         content=data.content,
         artifact_ref_id=data.artifact_ref_id,
@@ -1036,3 +1047,37 @@ async def test_agent_settings():
             "events_count": len(events),
             "events": events
         }
+
+# --- Core Agent Roles Endpoints ---
+@api_router.get("/roles", response_model=List[AgentRoleDefinitionOut])
+async def list_agent_roles(db: AsyncSession = Depends(get_db)):
+    """List all 8 core agent role definitions."""
+    stmt = select(AgentRoleDefinition).order_by(AgentRoleDefinition.id.asc())
+    res = await db.execute(stmt)
+    return res.scalars().all()
+
+@api_router.get("/roles/{role_code}", response_model=AgentRoleDefinitionOut)
+async def get_agent_role(role_code: str, db: AsyncSession = Depends(get_db)):
+    """Get details for a specific core agent role."""
+    stmt = select(AgentRoleDefinition).where(AgentRoleDefinition.role_code == role_code)
+    res = await db.execute(stmt)
+    role = res.scalar_one_or_none()
+    if not role:
+        raise HTTPException(status_code=404, detail=f"Role '{role_code}' not found")
+    return role
+
+@api_router.get("/modules/{module_id}/roles", response_model=ModuleRoleBundleOut)
+async def get_module_roles(module_id: str, db: AsyncSession = Depends(get_db)):
+    """Get primary role and collaborator roles assigned to a module."""
+    stmt = select(ModuleInstance).where(ModuleInstance.id == module_id)
+    res = await db.execute(stmt)
+    mod = res.scalar_one_or_none()
+    if not mod:
+        raise HTTPException(status_code=404, detail="Module not found")
+    from backend.app.services.agent_roles import get_module_role_bundle
+    bundle = await get_module_role_bundle(db, mod.module_code)
+    return ModuleRoleBundleOut(
+        primary=AgentRoleDefinitionOut.model_validate(bundle["primary_role"]) if bundle.get("primary_role") else None,
+        collaborators=[AgentRoleDefinitionOut.model_validate(r) for r in bundle.get("collaborator_roles", [])]
+    )
+

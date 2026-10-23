@@ -139,6 +139,11 @@ class ModuleInstance(Base):
     is_unlocked = Column(Boolean, nullable=False, default=True)
     dependencies = Column(JSON, nullable=False, default=list) # list of module_codes
     baseline_artifact_id = Column(String, nullable=True)
+    
+    # 角色化映射：主责角色与协作参谋角色
+    primary_role_code = Column(String(30), nullable=True, default="pm") # mr, ba, pm, ux, eng, qa, mkt, ops
+    collaborator_role_codes = Column(JSON, nullable=False, default=list) # list of role_codes
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -168,7 +173,8 @@ class SessionMessage(Base):
     session_id = Column(String, ForeignKey("collaboration_sessions.id"), nullable=False)
     sender = Column(String(50), nullable=False)
     sender_role = Column(String(50), nullable=False, default="human")
-    message_type = Column(String(30), nullable=False) # instruction, feedback, draft_artifact, revised_artifact, question, issue, approve, reject
+    role_code = Column(String(30), nullable=True) # mr, ba, pm, ux, eng, qa, mkt, ops
+    message_type = Column(String(30), nullable=False) # instruction, feedback, draft_artifact, revised_artifact, question, answer, error, issue, approve, reject
     content = Column(Text, nullable=False)
     artifact_ref_id = Column(String, nullable=True)
     issue_ref_id = Column(String, nullable=True)
@@ -176,6 +182,21 @@ class SessionMessage(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     
     session = relationship("CollaborationSession", back_populates="messages")
+
+class AgentRoleDefinition(Base):
+    __tablename__ = "agent_role_definitions"
+    
+    id = Column(String, primary_key=True) # e.g. "role_pm", "role_mr"
+    role_code = Column(String(30), unique=True, nullable=False) # "mr", "ba", "pm", "ux", "eng", "qa", "mkt", "ops"
+    name = Column(String(100), nullable=False) # "产品经理 Agent"
+    title = Column(String(100), nullable=False) # "高级敏捷产品总监"
+    avatar_icon = Column(String(50), nullable=False, default="Bot")
+    color = Column(String(20), nullable=False, default="blue")
+    responsibilities = Column(Text, nullable=False)
+    system_persona = Column(Text, nullable=False)
+    allowed_tools = Column(JSON, nullable=False, default=list)
+    preferred_executor = Column(String(30), nullable=False, default="cli")
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class Artifact(Base):
     __tablename__ = "artifacts"

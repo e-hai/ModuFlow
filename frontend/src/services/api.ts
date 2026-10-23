@@ -117,4 +117,12 @@ export const api = {
       '/settings/agent/test',
       { method: 'POST' }
     ),
+
+  // Core Agent Roles
+  getAgentRoles: () => fetchJSON<import('../types').AgentRoleDefinition[]>('/roles'),
+  getAgentRole: (roleCode: string) => fetchJSON<import('../types').AgentRoleDefinition>(`/roles/${roleCode}`),
+  getModuleRoles: (moduleId: string) =>
+    fetchJSON<{ primary: import('../types').AgentRoleDefinition | null; collaborators: import('../types').AgentRoleDefinition[] }>(
+      `/modules/${moduleId}/roles`
+    ),
 };

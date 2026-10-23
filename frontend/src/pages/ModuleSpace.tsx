@@ -19,7 +19,15 @@ import {
   Loader2,
   CheckCircle2,
   Clock,
-  Terminal
+  Terminal,
+  TrendingUp,
+  BadgeDollarSign,
+  Compass,
+  Palette,
+  Cpu,
+  Rocket,
+  LineChart,
+  Info
 } from 'lucide-react';
 
 interface ModuleSpaceProps {
@@ -48,9 +56,24 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
   const [agentCommand, setAgentCommand] = useState<string>('agy');
   const [agentStage, setAgentStage] = useState<'idle' | 'context' | 'spawning' | 'reasoning' | 'completed' | 'error'>('idle');
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
+  const [showPersonaDetail, setShowPersonaDetail] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<any>(null);
+
+  const renderRoleIcon = (iconName?: string, className = "w-4 h-4") => {
+    switch (iconName) {
+      case 'TrendingUp': return <TrendingUp className={className} />;
+      case 'BadgeDollarSign': return <BadgeDollarSign className={className} />;
+      case 'Compass': return <Compass className={className} />;
+      case 'Palette': return <Palette className={className} />;
+      case 'Cpu': return <Cpu className={className} />;
+      case 'ShieldCheck': return <ShieldCheck className={className} />;
+      case 'Rocket': return <Rocket className={className} />;
+      case 'LineChart': return <LineChart className={className} />;
+      default: return <Bot className={className} />;
+    }
+  };
 
   useEffect(() => {
     loadSessionAndArtifacts();
@@ -250,6 +273,72 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
         </div>
       </div>
 
+      {/* 虚拟项目工位：驻场 Agent 角色卡片 */}
+      <div className="bg-gradient-to-r from-blue-50/70 via-white to-indigo-50/50 border border-slate-200/90 rounded-2xl p-4 shadow-2xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0">
+              {renderRoleIcon(moduleState.primary_role?.avatar_icon, "w-5 h-5")}
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-bold text-slate-900">
+                  {moduleState.primary_role?.name || '驻场主责 Agent'}
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold border border-blue-200">
+                  主责责任人
+                </span>
+                <span className="text-xs text-slate-500 font-medium">
+                  {moduleState.primary_role?.title}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowPersonaDetail(!showPersonaDetail)}
+                  className="text-[11px] text-blue-600 hover:text-blue-700 inline-flex items-center gap-1 cursor-pointer transition ml-1"
+                >
+                  <Info className="w-3.5 h-3.5" />
+                  {showPersonaDetail ? '收起专业准则' : '查看履职思维'}
+                </button>
+              </div>
+              <p className="text-xs text-slate-600 mt-1 line-clamp-1 leading-relaxed">
+                {moduleState.primary_role?.responsibilities}
+              </p>
+            </div>
+          </div>
+
+          {moduleState.collaborator_roles && moduleState.collaborator_roles.length > 0 && (
+            <div className="flex items-center gap-2 shrink-0 border-t md:border-t-0 md:border-l border-slate-200 pt-2 md:pt-0 md:pl-4">
+              <span className="text-[11px] text-slate-400 font-medium">参谋协同:</span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {moduleState.collaborator_roles.map(collab => (
+                  <span
+                    key={collab.id}
+                    title={collab.responsibilities}
+                    className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 shadow-2xs font-medium cursor-help hover:border-slate-300 transition"
+                  >
+                    <span className="text-slate-500">{renderRoleIcon(collab.avatar_icon, "w-3.5 h-3.5")}</span>
+                    <span>{collab.name.replace(' Agent', '')}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 展开查看该角色的专业作业准则与思维模型 */}
+        {showPersonaDetail && moduleState.primary_role?.system_persona && (
+          <div className="mt-3 pt-3 border-t border-slate-200/80 text-xs text-slate-700 space-y-2 animate-in fade-in duration-200 bg-white/70 p-3 rounded-xl border">
+            <div className="font-semibold text-slate-800 flex items-center gap-1.5 text-xs">
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              【{moduleState.primary_role.name}】专业作业守则与思维准则：
+            </div>
+            <div className="whitespace-pre-wrap leading-relaxed text-slate-600 font-sans text-[11px]">
+              {moduleState.primary_role.system_persona}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* 阻塞性 Issue 警示条 */}
       {blockingIssues.length > 0 && (
         <div className="bg-rose-50 border border-rose-200 rounded-xl p-3.5 text-xs text-rose-800 flex items-center justify-between">
@@ -345,10 +434,10 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                   >
                     <div
                       className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        isAgent ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-blue-50 text-blue-600 border border-blue-200'
+                        isAgent ? 'bg-blue-50 text-blue-600 border border-blue-200' : 'bg-slate-100 text-slate-700 border border-slate-200'
                       }`}
                     >
-                      {isAgent ? <Bot className="w-4 h-4" /> : <User className="w-4 h-4" />}
+                      {isAgent ? renderRoleIcon(moduleState.primary_role?.avatar_icon, "w-4 h-4") : <User className="w-4 h-4" />}
                     </div>
 
                     <div className="flex-1 min-w-0">
@@ -420,7 +509,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                       <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-600"></span>
                     </div>
                     <span className="text-xs font-bold text-slate-800">
-                      Agent 正在处理任务 ({elapsedSeconds}s)
+                      {moduleState.primary_role?.name || 'Agent'} 正在处理任务 ({elapsedSeconds}s)
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -448,7 +537,9 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                       <span className="truncate">1. 装配上下文</span>
                     </div>
                     <div className="text-[10px] text-slate-500 mt-1 leading-tight">
-                      {agentStage === 'context' ? '注入战略底稿与前序基线...' : '底稿基线已注入'}
+                      {agentStage === 'context'
+                        ? `注入战略底稿与【${moduleState.primary_role?.name || '主责'}】专业准则...`
+                        : '底稿与角色准则已注入'}
                     </div>
                   </div>
 
@@ -494,7 +585,9 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                       <span className="truncate">3. 推演与生成</span>
                     </div>
                     <div className="text-[10px] text-slate-500 mt-1 leading-tight">
-                      {agentStage === 'reasoning' ? '多维业务逻辑分析输出...' : '等待进程就绪'}
+                      {agentStage === 'reasoning'
+                        ? `基于【${moduleState.primary_role?.name?.replace(' Agent', '') || '业务'}】专业框架推演输出...`
+                        : '等待进程就绪'}
                     </div>
                   </div>
                 </div>

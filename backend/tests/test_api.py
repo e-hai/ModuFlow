@@ -5,6 +5,7 @@ from backend.app.main import app
 from backend.tests.conftest import test_engine as engine, TestingSessionLocal as AsyncSessionLocal
 from backend.app.core.database import Base
 from backend.app.services.workflow_engine import seed_templates_if_empty, create_workflow_run_from_template
+from backend.app.services.agent_roles import seed_agent_roles_if_empty
 from backend.app.models.entities import StrategicInitiative, Product, ExecutiveRisk, ExecutiveDecision
 from backend.app.core.config import settings
 from sqlalchemy import select
@@ -17,6 +18,7 @@ async def init_test_db():
         await conn.run_sync(Base.metadata.create_all)
     async with AsyncSessionLocal() as db:
         await seed_templates_if_empty(db)
+        await seed_agent_roles_if_empty(db)
         stmt = select(StrategicInitiative).where(StrategicInitiative.id == "sea-2026")
         res = await db.execute(stmt)
         if not res.scalar_one_or_none():
@@ -535,5 +537,49 @@ async def test_workspace_physical_sync():
         tree_data = res_tree.json()
         assert tree_data["exists"] is True
         assert tree_data["tree"]["name"] == "sea-2026"
+
+@pytest.mark.asyncio
+async def test_agent_roles_api():
+    """Test listing agent roles and retrieving module-assigned roles."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        # 1. List all 8 core roles
+        res_roles = await ac.get("/api/v1/roles")
+        assert res_roles.status_code == 200
+        roles = res_roles.json()
+        assert len(roles) == 8
+        role_codes = [r["role_code"] for r in roles]
+        assert "mr" in role_codes
+        assert "ba" in role_codes
+        assert "pm" in role_codes
+        assert "eng" in role_codes
+
+        # 2. Get specific role
+        res_pm = await ac.get("/api/v1/roles/pm")
+        assert res_pm.status_code == 200
+        pm_data = res_pm.json()
+        assert pm_data["name"] == "产品经理 Agent"
+        assert "PRD" in pm_data["responsibilities"] or "价值" in pm_data["responsibilities"]
+
+        # 3. Get module details and verify roles are populated
+        # Retrieve modules from run
+        res_runs = await ac.get("/api/v1/runs?product_id=accounting-sea")
+        assert res_runs.status_code == 200
+        runs = res_runs.json()
+        assert len(runs) > 0
+        run_id = runs[0]["id"]
+        res_run_detail = await ac.get(f"/api/v1/runs/{run_id}")
+        assert res_run_detail.status_code == 200
+        modules = res_run_detail.json()["modules"]
+        # Check module 06 (MVP / PRD)
+        m06 = next(m for m in modules if m["module_code"] == "06")
+        res_m06 = await ac.get(f"/api/v1/modules/{m06['id']}")
+        assert res_m06.status_code == 200
+        m06_data = res_m06.json()
+        assert m06_data["primary_role"] is not None
+        assert m06_data["primary_role"]["role_code"] == "pm"
+        assert len(m06_data["collaborator_roles"]) == 1
+        assert m06_data["collaborator_roles"][0]["role_code"] == "eng"
+
 
 

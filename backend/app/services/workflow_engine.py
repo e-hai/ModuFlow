@@ -128,10 +128,13 @@ async def create_workflow_run_from_template(
         deps_map[target].append(src)
 
     # Instantiate modules
+    from backend.app.services.agent_roles import STAGE_ROLE_CONFIGS
+
     for idx, m in enumerate(template.modules_config, start=1):
         code = m["code"]
         mod_deps = deps_map.get(code, [])
         is_unlocked = len(mod_deps) == 0 # Entry modules unlock immediately
+        stage_cfg = STAGE_ROLE_CONFIGS.get(code, {"primary": "pm", "collaborators": []})
 
         mod_inst = ModuleInstance(
             run_id=run.id,
@@ -140,7 +143,9 @@ async def create_workflow_run_from_template(
             order_index=idx,
             phase="draft",
             is_unlocked=is_unlocked,
-            dependencies=mod_deps
+            dependencies=mod_deps,
+            primary_role_code=stage_cfg["primary"],
+            collaborator_role_codes=stage_cfg["collaborators"]
         )
         db.add(mod_inst)
         await db.flush()
@@ -151,8 +156,8 @@ async def create_workflow_run_from_template(
             title=f"{m['name']} 协作讨论室",
             status="active",
             participants=[
-                {"role": "human", "name": "负责人"},
-                {"role": "agent", "name": "Agent 协作者"}
+                {"role": "human", "name": "业务负责人"},
+                {"role": "agent", "name": f"AI Agent ({stage_cfg['primary']})"}
             ]
         )
         db.add(session)

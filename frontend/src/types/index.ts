@@ -33,6 +33,20 @@ export interface WorkflowTemplate {
   created_at: string;
 }
 
+export interface AgentRoleDefinition {
+  id: string;
+  role_code: string;
+  name: string;
+  title: string;
+  avatar_icon: string;
+  color: string;
+  responsibilities: string;
+  system_persona: string;
+  allowed_tools: string[];
+  preferred_executor: string;
+  created_at: string;
+}
+
 export interface ModuleInstance {
   id: string;
   run_id: string;
@@ -43,6 +57,10 @@ export interface ModuleInstance {
   is_unlocked: boolean;
   dependencies: string[];
   baseline_artifact_id?: string;
+  primary_role_code?: string;
+  collaborator_role_codes?: string[];
+  primary_role?: AgentRoleDefinition;
+  collaborator_roles?: AgentRoleDefinition[];
   open_issues_count?: number;
   blocking_issues_count?: number;
   artifacts_count?: number;
@@ -66,6 +84,7 @@ export interface SessionMessage {
   session_id: string;
   sender: string;
   sender_role: string;
+  role_code?: string;
   message_type: 'instruction' | 'feedback' | 'draft_artifact' | 'revised_artifact' | 'question' | 'answer' | 'error' | 'issue' | 'approve' | 'reject';
   content: string;
   artifact_ref_id?: string;
