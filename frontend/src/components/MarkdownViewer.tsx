@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Copy, Check } from 'lucide-react';
+import { MermaidDiagram } from './MermaidDiagram';
 
 interface MarkdownViewerProps {
   content: string;
@@ -123,6 +124,10 @@ export const MarkdownViewer: React.FC<MarkdownViewerProps> = ({
                   {children}
                 </code>
               );
+            }
+
+            if (match && match[1] === 'mermaid') {
+              return <MermaidDiagram chart={rawContent} />;
             }
 
             const codeId = Math.random();
