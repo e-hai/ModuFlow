@@ -97,14 +97,24 @@ class CliSubprocessAdapter(BaseAgentAdapter):
 
             cli_answer = ""
             if cmd_path:
+                init_name = (metadata or {}).get("initiative_name") or "当前战略工程"
+                prod_name = (metadata or {}).get("product_name") or "当前产品"
+                prod_code = (metadata or {}).get("product_code") or ""
+                target_mkt = (metadata or {}).get("target_market") or "目标市场"
+                strat_intent = (metadata or {}).get("strategic_intent") or ""
+
                 prompt_for_cli = (
-                    f"【战略工程与工序上下文】\n"
-                    f"请基于当前工作区下的战略底稿与前序工序基线文件 `.moduflow_agent_context.md`，深度回答人类业务负责人的问题。\n\n"
+                    f"【当前战略工程与单品上下文】\n"
+                    f"- 所属战略工程：{init_name}\n"
+                    f"- 目标单品：{prod_name} ({prod_code})\n"
+                    f"- 目标市场：{target_mkt}\n"
+                    f"- 战略定位：{strat_intent}\n"
+                    f"- 当前工序环节：{mod_name} (编号: {mod_code})\n\n"
+                    f"请结合工作区战略底稿 `.moduflow_agent_context.md`，深度回答人类业务负责人的问题。\n\n"
                     f"【提问问题】：{user_instruction}\n\n"
                     f"【回答要求】：\n"
-                    f"1. 结合战略定位与当前工序【{mod_name}】的核心职责给出落地建议。\n"
-                    f"2. 针对问题提出清晰的建议框架、分级功能或方案对比。\n"
-                    f"3. 直接在控制台标准输出 (stdout) 中输出解答全文，无需创建或修改交付物文件。"
+                    f"1. 严格紧扣「{prod_name}」在「{target_mkt}」的定位与工序【{mod_name}】的核心目标，给出极其专业、详尽、务实且结构化的解答（如竞品横向对比分析矩阵、核心功能分级清单、定价策略建议等）。\n"
+                    f"2. 直接在控制台标准输出 (stdout) 中输出解答全文，无需创建或修改交付物文件。"
                 )
                 args = build_cli_arguments(cmd_path, prompt_for_cli)
                 search_path = get_cli_search_path()
@@ -199,13 +209,22 @@ class CliSubprocessAdapter(BaseAgentAdapter):
             )
 
             # Assemble precise context-aware prompt directing CLI to inspect context and write output
+            init_name = (metadata or {}).get("initiative_name") or "当前战略工程"
+            prod_name = (metadata or {}).get("product_name") or "当前产品"
+            prod_code = (metadata or {}).get("product_code") or ""
+            target_mkt = (metadata or {}).get("target_market") or "目标市场"
+
             prompt_for_cli = (
-                f"【战略工程与上游基线上下文】\n"
+                f"【当前战略工程与单品上下文】\n"
+                f"- 所属战略工程：{init_name}\n"
+                f"- 目标单品：{prod_name} ({prod_code})\n"
+                f"- 目标市场：{target_mkt}\n"
+                f"- 当前工序环节：{mod_name} (编号: {mod_code})\n\n"
                 f"请仔细阅读当前工作区下的战略底稿与前序工序基线文件 `.moduflow_agent_context.md`。\n\n"
                 f"【本次工序任务要求】\n"
                 f"{user_instruction}\n\n"
                 f"【交付要求】\n"
-                f"1. 请结合战略定性与微观闭环，严格按照工序规范生成完整的交付物内容。\n"
+                f"1. 请结合战略定性与微观闭环，严格按照工序规范生成「{prod_name}」完整的交付物内容。\n"
                 f"2. 请将本次生成的交付物全文完整保存至当前工作区的 `{output_filename}` 文件中。\n"
                 f"3. 并在控制台标准输出 (stdout) 中打印出交付物全文内容。"
             )
