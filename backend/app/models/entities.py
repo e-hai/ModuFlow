@@ -14,7 +14,7 @@ class StrategicInitiative(Base):
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     owner = Column(String(50), nullable=False, default="Founder")
-    budget = Column(Float, nullable=True, default=500000.0)
+    budget = Column(Float, nullable=True, default=0.0)
     status = Column(String(20), nullable=False, default="validating")  # investigating, validating, building, scaling, profitable, paused, terminated
     
     # 战略定位与商业模式假设
@@ -23,11 +23,11 @@ class StrategicInitiative(Base):
     business_model_hypothesis = Column(Text, nullable=True)
     
     # 财务账本字段 (严格收付实现制现金流 vs 权责发生制收入)
-    budget_total = Column(Float, nullable=False, default=500000.0)      # 批准总预算
-    committed_unpaid = Column(Float, nullable=False, default=80000.0)  # 已承诺未付金额
-    actual_paid = Column(Float, nullable=False, default=215000.0)       # 实际已付现金
-    revenue_recognized = Column(Float, nullable=False, default=350000.0)# 营业确认收入
-    cash_collected = Column(Float, nullable=False, default=320000.0)    # 实际到账回款
+    budget_total = Column(Float, nullable=False, default=0.0)          # 批准总预算
+    committed_unpaid = Column(Float, nullable=False, default=0.0)      # 已承诺未付金额
+    actual_paid = Column(Float, nullable=False, default=0.0)           # 实际已付现金
+    revenue_recognized = Column(Float, nullable=False, default=0.0)    # 营业确认收入
+    cash_collected = Column(Float, nullable=False, default=0.0)        # 实际到账回款
     currency = Column(String(10), nullable=False, default="CNY")
     
     # 结构化多周期推广与运营快照数据
@@ -53,15 +53,15 @@ class Product(Base):
     # 商业定位与单品经营数据
     strategic_role = Column(String(30), nullable=False, default="acquisition") # acquisition, monetization, retention, validation, infra
     stage = Column(String(20), nullable=False, default="growth") # validating, building, growth, profitable, paused
-    budget_allocated = Column(Float, nullable=False, default=250000.0)
-    actual_spent = Column(Float, nullable=False, default=125000.0)
-    revenue_contribution = Column(Float, nullable=False, default=180000.0)
+    budget_allocated = Column(Float, nullable=False, default=0.0)
+    actual_spent = Column(Float, nullable=False, default=0.0)
+    revenue_contribution = Column(Float, nullable=False, default=0.0)
     kpi_name = Column(String(50), nullable=True)
     kpi_target = Column(Float, nullable=True)
     kpi_actual = Column(Float, nullable=True)
     kpi_unit = Column(String(20), nullable=True)
     key_risk = Column(String(200), nullable=True)
-    recommendation = Column(String(50), nullable=True, default="继续投入")
+    recommendation = Column(String(50), nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

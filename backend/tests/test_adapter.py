@@ -166,17 +166,23 @@ async def test_agent_settings_api():
         # 2. PATCH settings
         res_patch = await ac.patch(
             "/api/v1/settings/agent",
-            json={"adapter_type": "cli", "cli_command": "claude", "timeout": 60}
+            json={"adapter_type": "cli", "cli_command": "mock-agent-cli", "timeout": 1}
         )
         assert res_patch.status_code == 200
         patched = res_patch.json()
         assert patched["adapter_type"] == "cli"
-        assert patched["cli_command"] == "claude"
-        assert patched["timeout"] == 60
+        assert patched["cli_command"] == "mock-agent-cli"
+        assert patched["timeout"] == 1
 
         # 3. Dry-run test endpoint
         res_test = await ac.post("/api/v1/settings/agent/test")
         assert res_test.status_code == 200
         test_data = res_test.json()
         assert test_data["success"] is True
+
+        # 4. Clean up: restore simulator
+        await ac.patch(
+            "/api/v1/settings/agent",
+            json={"adapter_type": "simulator"}
+        )
 

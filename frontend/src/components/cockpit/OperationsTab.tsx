@@ -185,9 +185,11 @@ export const OperationsTab: React.FC<OperationsTabProps> = ({ operations }) => {
             </div>
           </div>
 
-          <p className="text-[11px] text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-200 leading-relaxed">
-            💡 <strong className="text-slate-800">留存黏性洞察：</strong> 次月自然留存率达 19.4%，中小微商户高频记账与本地离线弱网支持是拉动稳定沉淀的核心动力。
-          </p>
+          {retention_30d > 0 && (
+            <p className="text-[11px] text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-200 leading-relaxed">
+              💡 <strong className="text-slate-800">留存黏性洞察：</strong> 30日留存率达 {retention_30d}%，持续打磨核心场景体验是提升长期留存的关键。
+            </p>
+          )}
         </div>
 
         {/* 转化漏斗 */}
@@ -200,35 +202,43 @@ export const OperationsTab: React.FC<OperationsTabProps> = ({ operations }) => {
             <span className="text-xs text-slate-400">各节点转化与流失</span>
           </div>
 
-          <div className="space-y-3">
-            {funnel.map((step, idx) => (
-              <div key={idx} className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-medium text-slate-700 flex items-center gap-1.5">
-                    <span className="w-4 h-4 rounded-full bg-slate-100 text-slate-600 font-mono text-[10px] flex items-center justify-center font-bold">
-                      {idx + 1}
+          {funnel.length === 0 ? (
+            <div className="py-8 text-center text-slate-400 text-xs">
+              暂无转化漏斗数据。可在各产品上线后采集各链路节点转化率。
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {funnel.map((step, idx) => (
+                <div key={idx} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-slate-700 flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-slate-100 text-slate-600 font-mono text-[10px] flex items-center justify-center font-bold">
+                        {idx + 1}
+                      </span>
+                      {step.stage}
                     </span>
-                    {step.stage}
-                  </span>
-                  <div className="font-mono text-xs">
-                    <span className="font-semibold text-slate-900">{step.count.toLocaleString()}</span>
-                    <span className="text-slate-400 ml-1.5">({step.conversion_rate}%)</span>
+                    <div className="font-mono text-xs">
+                      <span className="font-semibold text-slate-900">{step.count.toLocaleString()}</span>
+                      <span className="text-slate-400 ml-1.5">({step.conversion_rate}%)</span>
+                    </div>
+                  </div>
+
+                  <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-emerald-500 h-2 rounded-full"
+                      style={{ width: `${step.conversion_rate}%` }}
+                    />
                   </div>
                 </div>
+              ))}
+            </div>
+          )}
 
-                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                  <div
-                    className="bg-emerald-500 h-2 rounded-full"
-                    style={{ width: `${step.conversion_rate}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <p className="text-[11px] text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-200 leading-relaxed">
-            💡 <strong className="text-slate-800">变现转化瓶颈：</strong> 从“激活记账”到“商业支付付费”转化率为 11.0%，主要受限于印尼本地支付网关对公结算合规要求，建议尽快打通收单费率优惠。
-          </p>
+          {funnel.length > 0 && (
+            <p className="text-[11px] text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-200 leading-relaxed">
+              💡 <strong className="text-slate-800">变现转化分析：</strong> 关注漏斗各环节流失率，结合工序 07/08 优化核心转化流程。
+            </p>
+          )}
         </div>
       </div>
     </div>

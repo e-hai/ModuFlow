@@ -103,27 +103,31 @@ export const FinancialLedgerTab: React.FC<FinancialLedgerTabProps> = ({ financia
         <div className="space-y-1 pt-1">
           <div className="flex items-center justify-between text-[11px] text-slate-500">
             <span>
-              已支付: {((financials.actual_paid / financials.budget_total) * 100).toFixed(1)}% ·
-              已承诺: {((financials.committed_unpaid / financials.budget_total) * 100).toFixed(1)}% ·
-              剩余可用: {((financials.available_budget / financials.budget_total) * 100).toFixed(1)}%
+              已支付: {financials.budget_total > 0 ? ((financials.actual_paid / financials.budget_total) * 100).toFixed(1) : '0.0'}% ·
+              已承诺: {financials.budget_total > 0 ? ((financials.committed_unpaid / financials.budget_total) * 100).toFixed(1) : '0.0'}% ·
+              剩余可用: {financials.budget_total > 0 ? ((financials.available_budget / financials.budget_total) * 100).toFixed(1) : '0.0'}%
             </span>
           </div>
           <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden flex">
-            <div
-              className="bg-slate-800 h-3"
-              style={{ width: `${(financials.actual_paid / financials.budget_total) * 100}%` }}
-              title="实际已付"
-            />
-            <div
-              className="bg-amber-400 h-3"
-              style={{ width: `${(financials.committed_unpaid / financials.budget_total) * 100}%` }}
-              title="已承诺未付"
-            />
-            <div
-              className="bg-emerald-500 h-3"
-              style={{ width: `${(financials.available_budget / financials.budget_total) * 100}%` }}
-              title="可用预算余额"
-            />
+            {financials.budget_total > 0 && (
+              <>
+                <div
+                  className="bg-slate-800 h-3"
+                  style={{ width: `${Math.min(100, (financials.actual_paid / financials.budget_total) * 100)}%` }}
+                  title="实际已付"
+                />
+                <div
+                  className="bg-amber-400 h-3"
+                  style={{ width: `${Math.min(100, (financials.committed_unpaid / financials.budget_total) * 100)}%` }}
+                  title="已承诺未付"
+                />
+                <div
+                  className="bg-emerald-500 h-3"
+                  style={{ width: `${Math.max(0, Math.min(100, (financials.available_budget / financials.budget_total) * 100))}%` }}
+                  title="可用预算余额"
+                />
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -165,7 +169,13 @@ export const FinancialLedgerTab: React.FC<FinancialLedgerTabProps> = ({ financia
               >
                 {financials.net_cash_flow >= 0 ? '+' : ''}¥{financials.net_cash_flow.toLocaleString()}
               </span>
-              <span className="text-[10px] text-emerald-600 block mt-0.5">现金流已累计转正</span>
+              <span className="text-[10px] text-slate-400 block mt-0.5">
+                {financials.net_cash_flow > 0
+                  ? '现金流已累计转正'
+                  : financials.cash_collected > 0
+                  ? '仍在收回投入中'
+                  : '尚未产生现金流'}
+              </span>
             </div>
           </div>
 
@@ -179,11 +189,8 @@ export const FinancialLedgerTab: React.FC<FinancialLedgerTabProps> = ({ financia
 
             <div className="flex items-center justify-between py-1 border-b border-slate-100">
               <span className="text-slate-500">当前预测回本日期</span>
-              <span className="font-mono font-semibold text-amber-600 flex items-center gap-1">
+              <span className="font-mono font-semibold text-slate-800">
                 {financials.forecast_breakeven_date || '待预测'}
-                <span className="text-[10px] px-1 py-0.2 rounded bg-amber-50 border border-amber-200">
-                  延期 59 天
-                </span>
               </span>
             </div>
 
@@ -225,9 +232,15 @@ export const FinancialLedgerTab: React.FC<FinancialLedgerTabProps> = ({ financia
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
               <span className="text-[11px] text-slate-500 block">投资回报率 ROI</span>
               <span className="text-lg font-bold text-emerald-700 font-mono">
-                {financials.roi_percent != null ? `+${financials.roi_percent.toFixed(1)}%` : '待结算'}
+                {financials.roi_percent != null ? `${financials.roi_percent >= 0 ? '+' : ''}${financials.roi_percent.toFixed(1)}%` : '待结算'}
               </span>
-              <span className="text-[10px] text-emerald-600 block mt-0.5">收益大于投入成本</span>
+              <span className="text-[10px] text-slate-400 block mt-0.5">
+                {financials.roi_percent != null
+                  ? financials.roi_percent >= 0
+                    ? '收益大于投入成本'
+                    : '尚未覆盖成本'
+                  : '待经营结算'}
+              </span>
             </div>
           </div>
 

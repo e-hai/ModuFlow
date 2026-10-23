@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict
 class StrategicInitiativeBase(BaseModel):
     name: str
     description: Optional[str] = None
-    owner: str = "Founder"
+    owner: str = "负责人"
     budget: float = 0.0
     status: str = "active"
     strategic_intent: Optional[str] = None
@@ -239,7 +239,7 @@ class PortfolioProductItem(BaseModel):
     kpi_unit: Optional[str] = None
     kpi_completion_rate: Optional[float] = None
     key_risk: Optional[str] = None
-    recommendation: str = "继续投入"
+    recommendation: Optional[str] = None
     active_runs_count: int = 0
 
 class MarketingSubChannelItem(BaseModel):

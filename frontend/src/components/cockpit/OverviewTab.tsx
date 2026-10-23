@@ -151,55 +151,62 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <span className="text-xs text-slate-400">基于最新经营数据自动研判并触发</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {focus_alerts.map((alert) => {
-            const isWarning = alert.severity === 'warning';
-            const isCritical = alert.severity === 'critical';
-            return (
-              <div
-                key={alert.id}
-                className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-col justify-between space-y-3 hover:shadow-md transition"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span
-                      className={`text-[10px] font-semibold px-2 py-0.5 rounded uppercase tracking-wider font-mono ${
-                        isCritical
-                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                          : isWarning
-                          ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                          : 'bg-blue-50 text-blue-700 border border-blue-200'
-                      }`}
-                    >
-                      {alert.type}
-                    </span>
-                    <span className="text-[11px] text-slate-400 font-mono">{alert.id}</span>
+        {focus_alerts.length === 0 ? (
+          <div className="bg-white border border-slate-200 rounded-xl p-5 text-center text-slate-400 flex items-center justify-center gap-3">
+            <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+            <span className="text-xs text-slate-600">当前经营运行平稳，无阻断级风险或预算超支预警</span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {focus_alerts.map((alert) => {
+              const isWarning = alert.severity === 'warning';
+              const isCritical = alert.severity === 'critical';
+              return (
+                <div
+                  key={alert.id}
+                  className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-col justify-between space-y-3 hover:shadow-md transition"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={`text-[10px] font-semibold px-2 py-0.5 rounded uppercase tracking-wider font-mono ${
+                          isCritical
+                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                            : isWarning
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                            : 'bg-blue-50 text-blue-700 border border-blue-200'
+                        }`}
+                      >
+                        {alert.type}
+                      </span>
+                      <span className="text-[11px] text-slate-400 font-mono">{alert.id}</span>
+                    </div>
+
+                    <h3 className="text-xs font-bold text-slate-900 leading-snug">{alert.title}</h3>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">{alert.summary}</p>
                   </div>
 
-                  <h3 className="text-xs font-bold text-slate-900 leading-snug">{alert.title}</h3>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">{alert.summary}</p>
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                    <span className="text-[11px] text-slate-500 font-medium">
+                      {alert.action_hint || '建议进入模块评估'}
+                    </span>
+                    <button
+                      onClick={() => {
+                        if (alert.type === 'cac_spike') onNavigateTab('marketing');
+                        else if (alert.type === 'breakeven_delayed') onNavigateTab('finance');
+                        else onNavigateTab('decisions');
+                      }}
+                      className="text-xs text-emerald-700 hover:text-emerald-800 font-semibold flex items-center gap-1 group cursor-pointer"
+                    >
+                      处理
+                      <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition" />
+                    </button>
+                  </div>
                 </div>
-
-                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-[11px] text-slate-500 font-medium">
-                    {alert.action_hint || '建议进入模块评估'}
-                  </span>
-                  <button
-                    onClick={() => {
-                      if (alert.type === 'cac_spike') onNavigateTab('marketing');
-                      else if (alert.type === 'breakeven_delayed') onNavigateTab('finance');
-                      else onNavigateTab('decisions');
-                    }}
-                    className="text-xs text-emerald-700 hover:text-emerald-800 font-semibold flex items-center gap-1 group cursor-pointer"
-                  >
-                    处理
-                    <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition" />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* 3. 核心经营结果矩阵 (Core Business Results Matrix) */}
@@ -213,58 +220,64 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             </h3>
             <button
               onClick={() => onNavigateTab('portfolio')}
-              className="text-[11px] text-emerald-700 hover:text-emerald-800 font-semibold"
+              className="text-[11px] text-emerald-700 hover:text-emerald-800 font-semibold cursor-pointer"
             >
               全部 {portfolio.length} 款 &gt;
             </button>
           </div>
 
           <div className="space-y-3">
-            {portfolio.map((prod) => (
-              <div
-                key={prod.id}
-                className="p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-emerald-300 transition space-y-2"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-slate-900">{prod.code}</span>
-                    <span className="text-xs text-slate-700">{prod.name}</span>
-                  </div>
-                  <span className="text-[10px] px-1.5 py-0.2 rounded font-medium bg-emerald-100 text-emerald-800">
-                    {prod.strategic_role === 'acquisition'
-                      ? '获客前端'
-                      : prod.strategic_role === 'monetization'
-                      ? '商业变现'
-                      : '战略底座'}
-                  </span>
-                </div>
-
-                {prod.kpi_name && (
-                  <div className="text-[11px] text-slate-600 flex items-center justify-between">
-                    <span>
-                      {prod.kpi_name}: <span className="font-mono font-semibold text-slate-800">{prod.kpi_actual?.toLocaleString()}</span> / {prod.kpi_target?.toLocaleString()} {prod.kpi_unit}
-                    </span>
-                    <span className="font-mono font-bold text-emerald-700">{prod.kpi_completion_rate}%</span>
-                  </div>
-                )}
-
-                <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                  <div
-                    className="bg-emerald-500 h-1.5 rounded-full"
-                    style={{ width: `${Math.min(100, prod.kpi_completion_rate || 0)}%` }}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
-                  <span>
-                    支出: <span className="font-mono text-slate-800">¥{(prod.actual_spent / 1000).toFixed(0)}k</span>
-                  </span>
-                  <span>
-                    贡献: <span className="font-mono text-emerald-700 font-semibold">¥{(prod.revenue_contribution / 1000).toFixed(0)}k</span>
-                  </span>
-                </div>
+            {portfolio.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs">
+                暂无子产品。点击右上角可查看并规划矩阵产品。
               </div>
-            ))}
+            ) : (
+              portfolio.map((prod) => (
+                <div
+                  key={prod.id}
+                  className="p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-emerald-300 transition space-y-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-slate-900">{prod.code}</span>
+                      <span className="text-xs text-slate-700">{prod.name}</span>
+                    </div>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded font-medium bg-emerald-100 text-emerald-800">
+                      {prod.strategic_role === 'acquisition'
+                        ? '获客前端'
+                        : prod.strategic_role === 'monetization'
+                        ? '商业变现'
+                        : '战略底座'}
+                    </span>
+                  </div>
+
+                  {prod.kpi_name && (
+                    <div className="text-[11px] text-slate-600 flex items-center justify-between">
+                      <span>
+                        {prod.kpi_name}: <span className="font-mono font-semibold text-slate-800">{prod.kpi_actual?.toLocaleString()}</span> / {prod.kpi_target?.toLocaleString()} {prod.kpi_unit}
+                      </span>
+                      <span className="font-mono font-bold text-emerald-700">{prod.kpi_completion_rate}%</span>
+                    </div>
+                  )}
+
+                  <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className="bg-emerald-500 h-1.5 rounded-full"
+                      style={{ width: `${Math.min(100, prod.kpi_completion_rate || 0)}%` }}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
+                    <span>
+                      支出: <span className="font-mono text-slate-800">¥{(prod.actual_spent / 1000).toFixed(0)}k</span>
+                    </span>
+                    <span>
+                      贡献: <span className="font-mono text-emerald-700 font-semibold">¥{(prod.revenue_contribution / 1000).toFixed(0)}k</span>
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
@@ -277,7 +290,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             </h3>
             <button
               onClick={() => onNavigateTab('marketing')}
-              className="text-[11px] text-emerald-700 hover:text-emerald-800 font-semibold"
+              className="text-[11px] text-emerald-700 hover:text-emerald-800 font-semibold cursor-pointer"
             >
               明细分析 &gt;
             </button>
@@ -296,30 +309,38 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               <span className="text-lg font-bold text-slate-900 font-mono">
                 ¥{marketing.blended_cac.toFixed(2)}
               </span>
-              <span className="text-[10px] text-emerald-600 block mt-0.5">基准目标 ≤ ¥15.0</span>
+              <span className="text-[10px] text-slate-400 block mt-0.5">
+                {marketing.blended_cac > 0 ? (marketing.blended_cac <= 15 ? '基准目标 ≤ ¥15.0' : '需优化渠道成本') : '暂无投放数据'}
+              </span>
             </div>
           </div>
 
           <div className="space-y-2">
-            <span className="text-[11px] font-semibold text-slate-700 block">三大获客机制表现</span>
-            {marketing.categories?.map((cat) => (
-              <div key={cat.category_code} className="flex items-center justify-between text-xs py-1 border-b border-slate-100 last:border-0">
-                <div className="flex items-center gap-1.5 truncate max-w-[140px]">
-                  <span className="text-slate-800 font-medium truncate">{cat.category_name.split(' ')[0]}</span>
-                  <span className="text-[10px] text-slate-400 font-mono">({cat.user_share_percent}%)</span>
-                </div>
-                <span className="font-mono text-slate-900 text-[11px]">CAC: ¥{cat.cac.toFixed(1)}</span>
-                <span
-                  className={`text-[10px] font-semibold px-1.5 py-0.2 rounded ${
-                    cat.decision_recommendation.includes('扩大') || cat.decision_recommendation.includes('分享')
-                      ? 'bg-emerald-50 text-emerald-700'
-                      : 'bg-rose-50 text-rose-700'
-                  }`}
-                >
-                  {cat.decision_recommendation.split('，')[0]}
-                </span>
+            <span className="text-[11px] font-semibold text-slate-700 block">获客机制表现</span>
+            {marketing.categories?.length === 0 ? (
+              <div className="py-4 text-center text-slate-400 text-xs">
+                暂无渠道获客归因数据
               </div>
-            ))}
+            ) : (
+              marketing.categories?.map((cat) => (
+                <div key={cat.category_code} className="flex items-center justify-between text-xs py-1 border-b border-slate-100 last:border-0">
+                  <div className="flex items-center gap-1.5 truncate max-w-[140px]">
+                    <span className="text-slate-800 font-medium truncate">{cat.category_name.split(' ')[0]}</span>
+                    <span className="text-[10px] text-slate-400 font-mono">({cat.user_share_percent}%)</span>
+                  </div>
+                  <span className="font-mono text-slate-900 text-[11px]">CAC: ¥{cat.cac.toFixed(1)}</span>
+                  <span
+                    className={`text-[10px] font-semibold px-1.5 py-0.2 rounded ${
+                      cat.decision_recommendation.includes('扩大') || cat.decision_recommendation.includes('分享')
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-rose-50 text-rose-700'
+                    }`}
+                  >
+                    {cat.decision_recommendation.split('，')[0]}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
@@ -332,7 +353,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             </h3>
             <button
               onClick={() => onNavigateTab('operations')}
-              className="text-[11px] text-emerald-700 hover:text-emerald-800 font-semibold"
+              className="text-[11px] text-emerald-700 hover:text-emerald-800 font-semibold cursor-pointer"
             >
               漏斗详情 &gt;
             </button>
@@ -361,7 +382,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               <span className="text-lg font-bold text-emerald-600 font-mono">
                 {operations.ltv_cac_ratio.toFixed(2)}x
               </span>
-              <span className="text-[10px] text-emerald-600 block mt-0.5">健康强劲 (&gt; 3.0x)</span>
+              <span className="text-[10px] text-slate-400 block mt-0.5">
+                {operations.ltv_cac_ratio >= 3.0 ? '健康强劲 (> 3.0x)' : operations.ltv_cac_ratio > 0 ? '需持续优化' : '待录入测算'}
+              </span>
             </div>
           </div>
 

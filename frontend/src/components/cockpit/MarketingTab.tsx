@@ -149,9 +149,11 @@ export const MarketingTab: React.FC<MarketingTabProps> = ({
           <div className="text-2xl font-bold text-slate-900 font-mono">
             ¥{blended_cac.toFixed(2)}
           </div>
-          <div className="text-[11px] text-emerald-600 font-medium mt-1 flex items-center gap-1">
+          <div className={`text-[11px] font-medium mt-1 flex items-center gap-1 ${
+            blended_cac === 0 ? 'text-slate-400' : blended_cac <= 15 ? 'text-emerald-600' : 'text-rose-600'
+          }`}>
             <CheckCircle2 className="w-3 h-3" />
-            优于预警基线 (≤ ¥15.00)
+            {blended_cac === 0 ? '暂无投放支出数据' : blended_cac <= 15 ? '优于预警基线 (≤ ¥15.00)' : '超出预警基线 (≤ ¥15.00)'}
           </div>
         </div>
       </div>
@@ -177,7 +179,7 @@ export const MarketingTab: React.FC<MarketingTabProps> = ({
             </button>
             <span className="text-slate-300">|</span>
             <span className="text-slate-400 text-[11px]">
-              3 大一级机制 · {categories.reduce((acc, c) => acc + c.sub_channels.length, 0)} 个二级渠道
+              {categories.length} 大一级机制 · {categories.reduce((acc, c) => acc + (c.sub_channels?.length || 0), 0)} 个二级渠道
             </span>
           </div>
         </div>
@@ -196,12 +198,19 @@ export const MarketingTab: React.FC<MarketingTabProps> = ({
               </tr>
             </thead>
             <tbody>
-              {categories.map((cat) => {
-                const isExpanded = expandedCategories[cat.category_code] ?? true;
-                const isOverCAC = cat.cac > 20.0;
+              {categories.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-12 text-center text-slate-400 text-xs">
+                    暂无推广获客渠道数据。各渠道数据可在工序交付与实际经营投放后自动归集。
+                  </td>
+                </tr>
+              ) : (
+                categories.map((cat) => {
+                  const isExpanded = expandedCategories[cat.category_code] ?? true;
+                  const isOverCAC = cat.cac > 20.0;
 
-                return (
-                  <React.Fragment key={cat.category_code}>
+                  return (
+                    <React.Fragment key={cat.category_code}>
                     {/* 一级机制主行（可整行点击展开/折叠） */}
                     <tr
                       onClick={() => toggleCategory(cat.category_code)}
@@ -304,14 +313,7 @@ export const MarketingTab: React.FC<MarketingTabProps> = ({
                           <td colSpan={7} className="py-2 px-8 text-[11px] text-slate-600">
                             <div className="flex items-center gap-2">
                               <span className="font-semibold text-slate-700">💡 决策要点：</span>
-                              <span>
-                                {cat.category_code === 'paid_acquisition' &&
-                                  'Google 搜索广告获客成本超标 66.7% (¥25.00)，AI 已在决策中心提议调减 ¥35,000 预算转投更高 ROI 的裂变渠道。'}
-                                {cat.category_code === 'partnerships' &&
-                                  '本地达人带货转化率达 14.2%，回收周期仅 30 天，建议对高产出达人签订独家长期分润合作。'}
-                                {cat.category_code === 'organic_referral' &&
-                                  '用户邀请与口碑贡献了 65% 的真实活跃用户，单客成本仅 ¥2.50，是战役实现正向现金流的最核心杠杆。'}
-                              </span>
+                              <span>{cat.decision_recommendation || '根据获客成效动态研判中。'}</span>
                             </div>
                           </td>
                         </tr>
@@ -319,7 +321,7 @@ export const MarketingTab: React.FC<MarketingTabProps> = ({
                     )}
                   </React.Fragment>
                 );
-              })}
+              }))}
             </tbody>
           </table>
         </div>

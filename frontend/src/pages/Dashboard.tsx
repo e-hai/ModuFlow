@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api } from '../services/api';
 import { StrategicInitiative, Product, ExecutiveCockpitResponse } from '../types';
-import { Building2, Loader2 } from 'lucide-react';
+import { Building2, Loader2, Plus } from 'lucide-react';
 import { CockpitHeader, CockpitTabKey } from '../components/cockpit/CockpitHeader';
 import { OverviewTab } from '../components/cockpit/OverviewTab';
 import { PortfolioTab } from '../components/cockpit/PortfolioTab';
@@ -17,6 +17,7 @@ interface DashboardProps {
   onPeriodChange?: (period: string) => void;
   onEnterProductWorkbench: (product: Product, defaultRunId?: string) => void;
   onOpenNewProductModal: () => void;
+  onOpenNewInitiativeModal?: () => void;
   onNavigateToIssues?: () => void;
 }
 
@@ -27,6 +28,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onPeriodChange,
   onEnterProductWorkbench,
   onOpenNewProductModal,
+  onOpenNewInitiativeModal,
   onNavigateToIssues,
 }) => {
   const [activeTab, setActiveTab] = useState<CockpitTabKey>('overview');
@@ -56,9 +58,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
   if (!currentInitiative) {
     return (
       <div className="max-w-4xl mx-auto py-16 text-center text-slate-500">
-        <Building2 className="w-12 h-12 mx-auto mb-3 text-slate-400" />
+        <Building2 className="w-12 h-12 mx-auto mb-3 text-slate-300" />
         <p className="text-base font-semibold text-slate-800">暂无选中的战略工程</p>
-        <p className="text-xs text-slate-500 mt-1">请在左侧侧边栏中选择或新建战略工程</p>
+        <p className="text-xs text-slate-400 mt-1 mb-4">请在左侧侧边栏中选择已有工程，或新建首个顶层战略工程</p>
+        {onOpenNewInitiativeModal && (
+          <button
+            onClick={onOpenNewInitiativeModal}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-xs transition cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>新建战略工程</span>
+          </button>
+        )}
       </div>
     );
   }

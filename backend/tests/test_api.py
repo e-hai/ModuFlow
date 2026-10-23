@@ -4,11 +4,13 @@ from httpx import AsyncClient, ASGITransport
 from backend.app.main import app
 from backend.app.core.database import engine, Base, AsyncSessionLocal
 from backend.app.services.workflow_engine import seed_templates_if_empty, create_workflow_run_from_template
-from backend.app.models.entities import StrategicInitiative, Product
+from backend.app.models.entities import StrategicInitiative, Product, ExecutiveRisk, ExecutiveDecision
+from backend.app.core.config import settings
 from sqlalchemy import select
 
 @pytest_asyncio.fixture(autouse=True)
 async def init_test_db():
+    settings.AGENT_ADAPTER_TYPE = "simulator"
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
@@ -33,10 +35,109 @@ async def init_test_db():
                 revenue_recognized=350000.0,
                 cash_collected=320000.0,
                 currency="CNY",
-                marketing_summary={},
-                operations_summary={}
+                marketing_summary={
+                    "total_spend": 215000.0,
+                    "effective_new_users": 18500,
+                    "blended_cac": 11.62,
+                    "categories": [
+                        {
+                            "category_code": "paid_acquisition",
+                            "category_name": "付费广告投放 (Paid Acquisition)",
+                            "spend": 85000.0,
+                            "acquired_users": 4200,
+                            "user_share_percent": 22.7,
+                            "cac": 20.24,
+                            "conversion_rate": 3.8,
+                            "revenue_contribution": 45000.0,
+                            "payback_days": 180,
+                            "decision_recommendation": "优化买量创意并调减超标渠道预算",
+                            "sub_channels": []
+                        },
+                        {
+                            "category_code": "partnerships",
+                            "category_name": "达人与异业渠道 (Partnerships)",
+                            "spend": 60000.0,
+                            "acquired_users": 4800,
+                            "user_share_percent": 25.9,
+                            "cac": 12.50,
+                            "conversion_rate": 6.2,
+                            "revenue_contribution": 92000.0,
+                            "payback_days": 90,
+                            "decision_recommendation": "追加高转化达人独家合作",
+                            "sub_channels": []
+                        },
+                        {
+                            "category_code": "organic_referral",
+                            "category_name": "自然流量与裂变 (Organic & Referral)",
+                            "spend": 70000.0,
+                            "acquired_users": 9500,
+                            "user_share_percent": 51.4,
+                            "cac": 7.37,
+                            "conversion_rate": 12.5,
+                            "revenue_contribution": 213000.0,
+                            "payback_days": 45,
+                            "decision_recommendation": "持续扩大推荐返佣",
+                            "sub_channels": []
+                        }
+                    ]
+                },
+                operations_summary={
+                    "dau": 18500,
+                    "mau": 62000,
+                    "retention_1d": 42.5,
+                    "retention_7d": 28.0,
+                    "retention_30d": 19.4,
+                    "paid_users": 2850,
+                    "arpu": 18.9,
+                    "arppu": 122.8,
+                    "ltv": 45.0,
+                    "ltv_cac_ratio": 3.87,
+                    "funnel": [
+                        {"stage": "应用安装/访问", "count": 65000, "conversion_rate": 100.0},
+                        {"stage": "完成首次记账", "count": 28500, "conversion_rate": 43.8},
+                        {"stage": "连续记账 7 天", "count": 18500, "conversion_rate": 64.9},
+                        {"stage": "开通聚合收款", "count": 4200, "conversion_rate": 22.7},
+                        {"stage": "完成首笔扫码", "count": 2850, "conversion_rate": 67.9}
+                    ]
+                }
             )
             db.add(demo_init)
+            await db.flush()
+
+            risk_1 = ExecutiveRisk(
+                id="RISK-001",
+                initiative_id=demo_init.id,
+                product_code="ACC-SEA",
+                rule_code="CAC_SPIKE",
+                title="付费获客 CAC 偏离警戒线",
+                description="Google 搜索广告获客成本超标",
+                severity="critical",
+                action_suggestion="建议调减预算转投高 ROI 渠道",
+                is_resolved=False
+            )
+            dec_1 = ExecutiveDecision(
+                id="DEC-001",
+                initiative_id=demo_init.id,
+                title="调减 ACC-SEA 低效投放预算，追加至 QPAY 聚合收单变现",
+                status="proposed",
+                recommendation_json={
+                    "action_type": "transfer_budget",
+                    "from_product_code": "ACC-SEA",
+                    "to_product_code": "QPAY",
+                    "amount": 35000.0,
+                    "target_entity": "ACC-SEA"
+                },
+                evidence_json={
+                    "metric": "CAC",
+                    "threshold": 15.0,
+                    "current_value": 25.0
+                },
+                impact_projection_json={
+                    "projected_ltv_cac": 3.8
+                },
+                idempotency_key="reallocate-acc-to-qpay-v1"
+            )
+            db.add_all([risk_1, dec_1])
             await db.flush()
             prod_a = Product(
                 id="accounting-sea",

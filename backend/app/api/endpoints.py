@@ -69,13 +69,25 @@ async def create_initiative(data: StrategicInitiativeCreate, db: AsyncSession = 
         description=data.description,
         owner=data.owner,
         budget=data.budget,
-        status=data.status
+        status=data.status,
+        strategic_intent=data.strategic_intent,
+        target_market=data.target_market,
+        business_model_hypothesis=data.business_model_hypothesis,
+        budget_total=data.budget
     )
     if data.id:
         init.id = data.id
     db.add(init)
     await db.commit()
     await db.refresh(init)
+
+    # 自动初始化物理工作区
+    from backend.app.services.workspace_sync import sync_strategic_initiative_workspace
+    try:
+        await sync_strategic_initiative_workspace(db, init.id)
+    except Exception as e:
+        logger.warning(f"Failed to sync workspace for {init.id}: {e}")
+
     dto = StrategicInitiativeOut.model_validate(init)
     dto.product_count = 0
     return dto
@@ -211,8 +223,8 @@ async def get_initiative_cockpit(
         r_res = await db.execute(r_stmt)
         runs_count = r_res.scalar_one() or 0
         
-        target_val = p.kpi_target or (50000.0 if p.strategic_role == "acquisition" else 15.0)
-        actual_val = p.kpi_actual or (38200.0 if p.strategic_role == "acquisition" else 18.0)
+        target_val = p.kpi_target or 0.0
+        actual_val = p.kpi_actual or 0.0
         completion_rate = round((actual_val / target_val) * 100, 1) if target_val > 0 else 0.0
 
         portfolio_items.append(PortfolioProductItem(
@@ -220,27 +232,27 @@ async def get_initiative_cockpit(
             name=p.name,
             code=p.code,
             strategic_role=p.strategic_role or "acquisition",
-            stage=p.stage or "growth",
-            budget_allocated=p.budget_allocated or 250000.0,
-            actual_spent=p.actual_spent or 125000.0,
-            revenue_contribution=p.revenue_contribution or 180000.0,
-            kpi_name=p.kpi_name or ("有效激活用户" if p.strategic_role == "acquisition" else "商户单次佣金"),
+            stage=p.stage or "validating",
+            budget_allocated=p.budget_allocated or 0.0,
+            actual_spent=p.actual_spent or 0.0,
+            revenue_contribution=p.revenue_contribution or 0.0,
+            kpi_name=p.kpi_name,
             kpi_target=target_val,
             kpi_actual=actual_val,
-            kpi_unit=p.kpi_unit or ("人" if p.strategic_role == "acquisition" else "元/人"),
+            kpi_unit=p.kpi_unit or "",
             kpi_completion_rate=completion_rate,
-            key_risk=p.key_risk or ("推广获客成本高于目标设定" if p.code == "ACC-SEA" else "本地银行网关清算审核周期较长"),
-            recommendation=p.recommendation or ("评估优化渠道投入" if p.code == "ACC-SEA" else "追加补贴预算"),
+            key_risk=p.key_risk,
+            recommendation=p.recommendation,
             active_runs_count=runs_count
         ))
 
     # 2. Financial Ledger
-    budget_total = float(init.budget_total or init.budget or 500000.0)
-    committed_unpaid = float(init.committed_unpaid if init.committed_unpaid is not None else 80000.0)
-    actual_paid = float(init.actual_paid if init.actual_paid is not None else 215000.0)
+    budget_total = float(init.budget_total or init.budget or 0.0)
+    committed_unpaid = float(init.committed_unpaid or 0.0)
+    actual_paid = float(init.actual_paid or 0.0)
     available_budget = round(budget_total - committed_unpaid - actual_paid, 2)
-    revenue_recognized = float(init.revenue_recognized if init.revenue_recognized is not None else 350000.0)
-    cash_collected = float(init.cash_collected if init.cash_collected is not None else 320000.0)
+    revenue_recognized = float(init.revenue_recognized or 0.0)
+    cash_collected = float(init.cash_collected or 0.0)
     net_cash_flow = round(cash_collected - actual_paid, 2)
     roi_percent = round(((revenue_recognized - actual_paid) / actual_paid) * 100, 1) if actual_paid > 0 else None
 
@@ -253,191 +265,17 @@ async def get_initiative_cockpit(
         cash_collected=cash_collected,
         net_cash_flow=net_cash_flow,
         roi_percent=roi_percent,
-        target_breakeven_date="2026-12-31",
-        forecast_breakeven_date="2027-02-28",
-        burn_rate_monthly=32000.0,
+        target_breakeven_date=None,
+        forecast_breakeven_date=None,
+        burn_rate_monthly=0.0,
         currency=init.currency or "CNY"
     )
 
-    # 3. Focus Alerts (CEO 3 大焦点)
-    focus_alerts = [
-        FocusAlert(
-            id="ALERT-01",
-            title="获客成本显著高于预期目标",
-            summary="ACC-SEA 近 14 天加权 CAC 达 ¥25.0，超出目标 ¥15.0 约 66.7%，需评估是否缩减低效投放渠道。",
-            type="cac_spike",
-            severity="warning",
-            action_hint="建议审核经营决策中心中的预算调配提议"
-        ),
-        FocusAlert(
-            id="ALERT-02",
-            title="累计净现金流转正节点可能延后",
-            summary="受海外支付网关接入审核周期延长影响，预计累计现金流回本日期由 2026-12 延后至 2027-02。",
-            type="breakeven_delayed",
-            severity="warning",
-            action_hint="建议关注 QPAY 商户直通网关备用方案"
-        ),
-        FocusAlert(
-            id="ALERT-03",
-            title="待拍板：产品推广预算再分配方案",
-            summary="AI 提议将 ACC-SEA 结余推广预算 ¥35,000 转移注入 QPAY 商户返佣激励池以加速回款。",
-            type="pending_approval",
-            severity="info",
-            action_hint="前往经营决策中心一键拍板审批"
-        )
-    ]
-
-    # 4. Marketing Cockpit Data (一级获客机制分类 + 二级平台/渠道拆解)
-    categories = [
-        MarketingCategoryItem(
-            category_code="paid_acquisition",
-            category_name="付费广告获客 (Paid Acquisition)",
-            spend=45000.0,
-            acquired_users=1800,
-            user_share_percent=19.5,
-            cac=25.0,
-            conversion_rate=8.5,
-            revenue_contribution=68000.0,
-            payback_days=45,
-            decision_recommendation="减少或缩减预算，调优素材定向",
-            sub_channels=[
-                MarketingSubChannelItem(
-                    name="Google 搜索广告",
-                    spend=45000.0,
-                    acquired_users=1800,
-                    cac=25.0,
-                    status="active"
-                ),
-                MarketingSubChannelItem(
-                    name="Google 展示广告 / YouTube 视频广告",
-                    spend=0.0,
-                    acquired_users=0,
-                    cac=0.0,
-                    status="planned"
-                )
-            ]
-        ),
-        MarketingCategoryItem(
-            category_code="partnerships",
-            category_name="达人 / 合作伙伴获客 (Partnerships)",
-            spend=25000.0,
-            acquired_users=1420,
-            user_share_percent=15.4,
-            cac=17.61,
-            conversion_rate=14.2,
-            revenue_contribution=92000.0,
-            payback_days=30,
-            decision_recommendation="续约并扩大合作，追加优质达人预算",
-            sub_channels=[
-                MarketingSubChannelItem(
-                    name="本地头部达人带货合作",
-                    spend=20000.0,
-                    acquired_users=1120,
-                    cac=17.86,
-                    status="active"
-                ),
-                MarketingSubChannelItem(
-                    name="垂直领域金融 KOL / KOC 评测",
-                    spend=5000.0,
-                    acquired_users=300,
-                    cac=16.67,
-                    status="active"
-                ),
-                MarketingSubChannelItem(
-                    name="联盟营销与本土商家生态合作",
-                    spend=0.0,
-                    acquired_users=0,
-                    cac=0.0,
-                    status="planned"
-                )
-            ]
-        ),
-        MarketingCategoryItem(
-            category_code="organic_referral",
-            category_name="自然增长与用户推荐 (Organic & Referral)",
-            spend=15000.0,
-            acquired_users=6000,
-            user_share_percent=65.1,
-            cac=2.50,
-            conversion_rate=22.8,
-            revenue_contribution=190000.0,
-            payback_days=10,
-            decision_recommendation="优化分享机制，扩大社交裂变",
-            sub_channels=[
-                MarketingSubChannelItem(
-                    name="用户邀请与分享推荐奖励",
-                    spend=12000.0,
-                    acquired_users=4200,
-                    cac=2.86,
-                    status="active"
-                ),
-                MarketingSubChannelItem(
-                    name="搜索引擎自然流量 (SEO) 与口碑直接访问",
-                    spend=3000.0,
-                    acquired_users=1800,
-                    cac=1.67,
-                    status="active"
-                ),
-                MarketingSubChannelItem(
-                    name="社交平台自然内容传播",
-                    spend=0.0,
-                    acquired_users=0,
-                    cac=0.0,
-                    status="active"
-                )
-            ]
-        )
-    ]
-    marketing = MarketingCockpitData(
-        total_spend=85000.0,
-        effective_new_users=9220,
-        blended_cac=9.22,
-        categories=categories
-    )
-
-    # 5. Operations Cockpit Data
-    funnel = [
-        {"stage": "落地页与广告曝光", "count": 120000, "conversion_rate": 100.0},
-        {"stage": "完成注册与授权", "count": 48000, "conversion_rate": 40.0},
-        {"stage": "完成首笔记账/有效激活", "count": 38200, "conversion_rate": 79.6},
-        {"stage": "开通商业支付/付费转化", "count": 4200, "conversion_rate": 11.0}
-    ]
-    operations = OperationsCockpitData(
-        dau=18500,
-        mau=62000,
-        retention_1d=46.2,
-        retention_7d=31.8,
-        retention_30d=19.4,
-        paid_users=4200,
-        arpu=8.5,
-        arppu=83.3,
-        ltv=72.0,
-        ltv_cac_ratio=3.24,
-        funnel=funnel
-    )
-
-    # 6. Risks
+    # 3. Risks (真实数据库查询，不注入默认假数据)
     risk_stmt = select(ExecutiveRisk).where(ExecutiveRisk.initiative_id == initiative_id).order_by(ExecutiveRisk.created_at.desc())
     risk_res = await db.execute(risk_stmt)
     db_risks = risk_res.scalars().all()
     
-    if not db_risks:
-        # Seed default risk
-        default_risk = ExecutiveRisk(
-            initiative_id=initiative_id,
-            rule_code="RISK-CAC-SPIKE",
-            title="ACC-SEA 获客成本严重偏离目标",
-            severity="critical",
-            description="ACC-SEA 连续 14 天加权获客成本达到 ¥25.0，超出目标 ¥15.0 约 66.7%，按当前消耗速率将在 22 天内耗尽单品预算。",
-            product_code="ACC-SEA",
-            action_suggestion="建议在决策中心审查调拨提议，缩减搜索广告投入并向变现端产品转移资金。",
-            is_resolved=False
-        )
-        db.add(default_risk)
-        await db.commit()
-        await db.refresh(default_risk)
-        db_risks = [default_risk]
-
     risks = [
         ExecutiveRiskItem(
             id=r.id,
@@ -452,48 +290,10 @@ async def get_initiative_cockpit(
         ) for r in db_risks
     ]
 
-    # 7. Decisions
+    # 4. Decisions (真实数据库查询，不注入默认假数据)
     dec_stmt = select(ExecutiveDecision).where(ExecutiveDecision.initiative_id == initiative_id).order_by(ExecutiveDecision.created_at.desc())
     dec_res = await db.execute(dec_stmt)
     db_decs = dec_res.scalars().all()
-
-    if not db_decs:
-        # Seed default decision proposal
-        default_dec = ExecutiveDecision(
-            initiative_id=initiative_id,
-            title="优化营销投放：由 ACC-SEA 向 QPAY 调配推广预算",
-            status="proposed",
-            recommendation_json={
-                "action_type": "transfer_budget",
-                "from_product_code": "ACC-SEA",
-                "to_product_code": "QPAY",
-                "amount": 35000.0,
-                "currency": "CNY",
-                "summary": "缩减 ACC-SEA 外部广告投放 30% 预算（¥35,000），全额转投 QPAY 商户端费率补贴与签约返佣"
-            },
-            evidence_json={
-                "source_refs": [
-                    {"dataset": "marketing_cost_daily", "period": "最近 21 天"},
-                    {"dataset": "qpay_merchant_funnel", "period": "最近 14 天"}
-                ],
-                "assumptions": [
-                    "ACC-SEA 削减外部搜索广告后，依靠达人与自然社交裂变仍可维持 75% 基础新增量",
-                    "QPAY 获得补贴后签约活跃商户数预计增长 25%，直接提升每笔交易分润现金流"
-                ],
-                "data_coverage": "基于 9,220 名真实新增用户与 4,200 名付费转化用户结算数据"
-            },
-            impact_projection_json={
-                "expected_cost_savings": 35000.0,
-                "forecast_breakeven_variance_days": -18,
-                "confidence_interval": "-25天 ~ -10天",
-                "identified_risks": ["ACC-SEA 日新增用户可能由 1,200 降至约 900 人"]
-            },
-            idempotency_key=f"TX-INIT-{initiative_id[:8]}-001"
-        )
-        db.add(default_dec)
-        await db.commit()
-        await db.refresh(default_dec)
-        db_decs = [default_dec]
 
     decisions = [
         ExecutiveDecisionItem(
@@ -510,14 +310,89 @@ async def get_initiative_cockpit(
         ) for d in db_decs
     ]
 
+    # 5. Focus Alerts (根据真实风险与预算情况动态判定)
+    focus_alerts = []
+    if budget_total > 0 and (actual_paid + committed_unpaid) > budget_total:
+        focus_alerts.append(FocusAlert(
+            id="ALERT-BUDGET-OVERDRAW",
+            title="战略预算超支预警",
+            summary=f"已承诺与已付金额总额为 ¥{(actual_paid + committed_unpaid):,.2f}，已超出总预算 ¥{budget_total:,.2f}。",
+            type="budget_overdraw",
+            severity="critical",
+            action_hint="建议前往财务账本调整预算"
+        ))
+    for r in db_risks:
+        if r.severity == "critical" and not r.is_resolved:
+            focus_alerts.append(FocusAlert(
+                id=f"ALERT-{r.rule_code}",
+                title=r.title,
+                summary=r.description[:120],
+                type="critical_risk",
+                severity="critical",
+                action_hint=r.action_suggestion or "建议前往经营决策中心处理"
+            ))
+
+    # 6. Marketing Cockpit Data (读取真实 JSON，无数据则为空)
+    m_data = init.marketing_summary or {}
+    categories_raw = m_data.get("categories", [])
+    categories = [
+        MarketingCategoryItem(
+            category_code=c.get("category_code", ""),
+            category_name=c.get("category_name", ""),
+            spend=float(c.get("spend", 0.0)),
+            acquired_users=int(c.get("acquired_users", 0)),
+            user_share_percent=float(c.get("user_share_percent", 0.0)),
+            cac=float(c.get("cac", 0.0)),
+            conversion_rate=float(c.get("conversion_rate", 0.0)),
+            revenue_contribution=float(c.get("revenue_contribution", 0.0)),
+            payback_days=int(c.get("payback_days", 0)),
+            decision_recommendation=c.get("decision_recommendation", ""),
+            sub_channels=[
+                MarketingSubChannelItem(
+                    name=sc.get("name", ""),
+                    spend=float(sc.get("spend", 0.0)),
+                    acquired_users=int(sc.get("acquired_users", 0)),
+                    cac=float(sc.get("cac", 0.0)),
+                    status=sc.get("status", "planned")
+                ) for sc in c.get("sub_channels", [])
+            ]
+        ) for c in categories_raw
+    ]
+    tot_spend = float(m_data.get("total_spend", sum(c.spend for c in categories)))
+    eff_users = int(m_data.get("effective_new_users", sum(c.acquired_users for c in categories)))
+    b_cac = round(tot_spend / eff_users, 2) if eff_users > 0 else 0.0
+
+    marketing = MarketingCockpitData(
+        total_spend=tot_spend,
+        effective_new_users=eff_users,
+        blended_cac=b_cac,
+        categories=categories
+    )
+
+    # 7. Operations Cockpit Data (读取真实 JSON，无数据则为空)
+    op_data = init.operations_summary or {}
+    operations = OperationsCockpitData(
+        dau=int(op_data.get("dau", 0)),
+        mau=int(op_data.get("mau", 0)),
+        retention_1d=float(op_data.get("retention_1d", 0.0)),
+        retention_7d=float(op_data.get("retention_7d", 0.0)),
+        retention_30d=float(op_data.get("retention_30d", 0.0)),
+        paid_users=int(op_data.get("paid_users", 0)),
+        arpu=float(op_data.get("arpu", 0.0)),
+        arppu=float(op_data.get("arppu", 0.0)),
+        ltv=float(op_data.get("ltv", 0.0)),
+        ltv_cac_ratio=float(op_data.get("ltv_cac_ratio", 0.0)),
+        funnel=op_data.get("funnel", [])
+    )
+
     return ExecutiveCockpitResponse(
         initiative_id=init.id,
         initiative_name=init.name,
         owner=init.owner,
         status=init.status,
-        strategic_intent=init.strategic_intent or "2026 年度以矩阵化打法进军东南亚数字消费市场，以免费多语言离线记账抓取高频用户流量，以聚合支付中枢实现商业变现闭环。",
-        target_market=init.target_market or "东南亚下沉市场（印尼、越南、泰国）小微商户与个人用户",
-        business_model_hypothesis=init.business_model_hypothesis or "前端记账获客 CAC 控制在 ¥15 以内，后端支付工具转化率 >= 8%，LTV/CAC 达标 3.0x",
+        strategic_intent=init.strategic_intent or "",
+        target_market=init.target_market or "",
+        business_model_hypothesis=init.business_model_hypothesis or "",
         period=period,
         updated_at=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
         data_integrity="真实财务与埋点数据源已接入 (完整度 98.4%)",

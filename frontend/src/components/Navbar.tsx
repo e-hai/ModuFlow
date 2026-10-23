@@ -25,6 +25,7 @@ interface NavbarProps {
   onToggleSidebar: () => void;
   currentInitiative: StrategicInitiative | null;
   currentProduct?: Product | null;
+  products?: Product[];
   currentView: 'dashboard' | 'workflow' | 'module' | 'issues';
   onNavigateToDashboard: () => void;
   selectedPeriod?: string;
@@ -36,6 +37,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleSidebar,
   currentInitiative,
   currentProduct,
+  products = [],
   currentView,
   onNavigateToDashboard,
   selectedPeriod = 'lifetime',
@@ -211,8 +213,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <span>战略定性</span>
                   </div>
                   <p className="text-xs text-slate-700 leading-relaxed">
-                    {currentInitiative.strategic_intent ||
-                      '以轻量记账为高频获客切口，聚合支付沉淀商户资金池，打通\'记账->收单->增值金融\'商业闭环。'}
+                    {currentInitiative.strategic_intent || '暂未设定战略定性'}
                   </p>
                 </div>
 
@@ -223,7 +224,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <span>目标市场</span>
                   </div>
                   <p className="text-xs text-slate-700 leading-relaxed">
-                    {currentInitiative.target_market || '印尼、越南下沉市场中小微商户 (MSME) 及个人记账用户'}
+                    {currentInitiative.target_market || '暂未设定目标市场'}
                   </p>
                 </div>
 
@@ -234,8 +235,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <span>商业模式假设</span>
                   </div>
                   <p className="text-xs text-slate-700 leading-relaxed">
-                    {currentInitiative.business_model_hypothesis ||
-                      '前端记账获客 CAC 控制在 ¥15 以内，后端支付工具转化率 >= 8%，LTV/CAC 达标 3.0x'}
+                    {currentInitiative.business_model_hypothesis || '暂未设定商业模式假设'}
                   </p>
                 </div>
               </div>
@@ -270,8 +270,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <div className="text-[11px] text-slate-400 space-y-1 pl-1 border-l-2 border-slate-700">
                     <div>├── <span className="text-slate-300">00_战略工程底稿与公共资产/</span> (底稿/公共市场调研/生态闭环)</div>
                     <div>└── <span className="text-slate-300">products/</span> (子产品文件夹严格物理隔离)</div>
-                    <div className="pl-4">├── <span className="text-amber-300">ACC-SEA/</span> (迭代周期与 13 工序 Markdown)</div>
-                    <div className="pl-4">└── <span className="text-blue-300">QPAY/</span> (迭代周期与 13 工序 Markdown)</div>
+                    {products && products.length > 0 ? (
+                      products.map((p, idx) => {
+                        const isLast = idx === products.length - 1;
+                        return (
+                          <div key={p.id} className="pl-4">
+                            {isLast ? '└──' : '├──'} <span className="text-amber-300">{p.code}/</span> ({p.name})
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="pl-4 text-slate-500">└── (暂无子产品目录)</div>
+                    )}
                   </div>
                 </div>
               </div>
