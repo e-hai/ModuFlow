@@ -166,9 +166,28 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                         proc.kill()
                     except Exception:
                         pass
+                    # Check if there is already partial stdout before timeout
+                    partial_stdout = "\n".join(stdout_lines).strip()
+                    if partial_stdout and len(partial_stdout) > 50 and "API Error:" not in partial_stdout:
+                        yield AgentStreamEvent(
+                            event_type=AgentEventType.ANSWER,
+                            content=partial_stdout
+                        )
+                        yield AgentStreamEvent(
+                            event_type=AgentEventType.DONE,
+                            content="[Adapter] 问答推演完成 (超时截断前已输出内容)"
+                        )
+                        return
+
                     yield AgentStreamEvent(
                         event_type=AgentEventType.ERROR,
-                        content=f"Agent CLI (`{self.cli_command}`) 问答推演超时 (超过设定时限 {self.timeout}秒)。底层子进程已终止。建议适当调大超时时间或检查底层模型网络连通性。",
+                        content=(
+                            f"Agent CLI (`{self.cli_command}`) 问答推演超时 (已耗时 {self.timeout}秒)。底层子进程已终止。\n\n"
+                            f"【优化排查建议】：\n"
+                            f"1. 真实 Agent CLI (如 agy / claude) 在执行自下而上空间测算或竞品 5 维解剖时，需要充分的多步推理与检索时间 (通常为 120~240秒)；\n"
+                            f"2. 系统全局超时时限已默认调整为 300 秒（可在右上角设置中灵活配置）；\n"
+                            f"3. 如需毫秒级即时测算与无缝演示，亦可在右上角设置中切换为「内置模拟器 (Simulator)」模式。"
+                        ),
                         metadata={"command": self.cli_command, "timeout": self.timeout}
                     )
                     return
@@ -293,9 +312,35 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                     proc.kill()
                 except Exception:
                     pass
+
+                # Graceful recovery: Check if artifact file was already written to disk before timeout
+                artifact_file = workspace_dir / output_filename
+                if artifact_file.exists():
+                    try:
+                        disk_content = artifact_file.read_text(encoding="utf-8").strip()
+                        if len(disk_content) > 50:
+                            yield AgentStreamEvent(
+                                event_type=AgentEventType.ARTIFACT_DRAFT if message_type == "instruction" else AgentEventType.ARTIFACT_REVISED,
+                                content=disk_content,
+                                metadata={"source": "cli", "filename": output_filename, "recovered_from_workspace": True}
+                            )
+                            yield AgentStreamEvent(
+                                event_type=AgentEventType.DONE,
+                                content="[Adapter] 工序交付物已在物理工作区成功落盘保存"
+                            )
+                            return
+                    except Exception:
+                        pass
+
                 yield AgentStreamEvent(
                     event_type=AgentEventType.ERROR,
-                    content=f"Agent CLI (`{self.cli_command}`) 执行超时 (超过设定时限 {self.timeout}秒)。交付物未能按时生成，子进程已安全终止。",
+                    content=(
+                        f"Agent CLI (`{self.cli_command}`) 执行超时 (已耗时 {self.timeout}秒)。交付物未能按时生成，子进程已安全终止。\n\n"
+                        f"【优化排查建议】：\n"
+                        f"1. 交付物全量生成涉及多工序约束与万字级文档编排，通常需要 150~240 秒思考与检索；\n"
+                        f"2. 系统全局超时时限已默认调整为 300 秒（可在右上角设置中灵活配置）；\n"
+                        f"3. 如需毫秒级即时测算与无缝演示，亦可在右上角设置中切换为「内置模拟器 (Simulator)」模式。"
+                    ),
                     metadata={"command": self.cli_command, "timeout": self.timeout}
                 )
                 return

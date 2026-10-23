@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     # Agent Adapter Configuration
     AGENT_ADAPTER_TYPE: str = "simulator"  # "simulator" | "cli" | "api"
     AGENT_CLI_COMMAND: str = "claude"     # Default CLI tool: e.g. "claude", "agy", or custom script
-    AGENT_CLI_TIMEOUT: int = 120          # Max execution seconds for a single CLI invocation
+    AGENT_CLI_TIMEOUT: int = 300          # Max execution seconds for a single CLI invocation (5 minutes for LLM reasoning & tools)
     
     model_config = SettingsConfigDict(case_sensitive=True)
 

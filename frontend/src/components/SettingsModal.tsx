@@ -324,10 +324,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                   onChange={(e) => setTimeoutSeconds(Number(e.target.value))}
                   className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 >
-                  <option value={30}>30 秒 (快速探测)</option>
-                  <option value={60}>60 秒 (常规推荐)</option>
-                  <option value={120}>120 秒 (深度代码生成)</option>
-                  <option value={300}>300 秒 (全量单测与构建)</option>
+                  <option value={60}>60 秒 (快速问答)</option>
+                  <option value={120}>120 秒 (常规分析)</option>
+                  <option value={180}>180 秒 (推荐: Agent CLI 深度调研)</option>
+                  <option value={300}>300 秒 (推荐: agy 交付物全量生成)</option>
+                  <option value={600}>600 秒 (全量单测与复杂构建)</option>
                 </select>
               </div>
 
