@@ -51,6 +51,7 @@ class CliSubprocessAdapter(BaseAgentAdapter):
     Subprocess-based Agent CLI Adapter.
     Executes an autonomous Agent CLI (e.g. Claude Code, Antigravity agy, Codex CLI, or custom binary)
     in the isolated physical workspace directory of the specific product module.
+    When errors occur, explicitly reports failure without fabricating fake answers.
     """
 
     def __init__(self, cli_command: Optional[str] = None, timeout: Optional[int] = None):
@@ -81,152 +82,43 @@ class CliSubprocessAdapter(BaseAgentAdapter):
 
         mod_code = (metadata or {}).get("module_code", "01")
         mod_name = (metadata or {}).get("module_name", "工序交付物")
+        init_name = (metadata or {}).get("initiative_name") or "当前战略工程"
+        prod_name = (metadata or {}).get("product_name") or "当前产品"
+        prod_code = (metadata or {}).get("product_code") or ""
+        target_mkt = (metadata or {}).get("target_market") or "目标市场"
+        strat_intent = (metadata or {}).get("strategic_intent") or ""
         output_filename = f"交付物_{mod_code}_{mod_name}.md"
 
         cmd_path = find_cli_binary(self.cli_command)
-
-        # =========================================================================
-        # Case A: User asked a QUESTION (疑问讨论)
-        # We want a direct conversational answer, not a written delivery specification.
-        # =========================================================================
-        if message_type == "question":
+        if not cmd_path:
             yield AgentStreamEvent(
-                event_type=AgentEventType.THINKING,
-                content=f"已读取工作区战略底稿，正在推演业务问题: '{user_instruction}'..."
-            )
-
-            cli_answer = ""
-            if cmd_path:
-                init_name = (metadata or {}).get("initiative_name") or "当前战略工程"
-                prod_name = (metadata or {}).get("product_name") or "当前产品"
-                prod_code = (metadata or {}).get("product_code") or ""
-                target_mkt = (metadata or {}).get("target_market") or "目标市场"
-                strat_intent = (metadata or {}).get("strategic_intent") or ""
-
-                prompt_for_cli = (
-                    f"【当前战略工程与单品上下文】\n"
-                    f"- 所属战略工程：{init_name}\n"
-                    f"- 目标单品：{prod_name} ({prod_code})\n"
-                    f"- 目标市场：{target_mkt}\n"
-                    f"- 战略定位：{strat_intent}\n"
-                    f"- 当前工序环节：{mod_name} (编号: {mod_code})\n\n"
-                    f"请结合工作区战略底稿 `.moduflow_agent_context.md`，深度回答人类业务负责人的问题。\n\n"
-                    f"【提问问题】：{user_instruction}\n\n"
-                    f"【回答要求】：\n"
-                    f"1. 严格紧扣「{prod_name}」在「{target_mkt}」的定位与工序【{mod_name}】的核心目标，给出极其专业、详尽、务实且结构化的解答（如竞品横向对比分析矩阵、核心功能分级清单、定价策略建议等）。\n"
-                    f"2. 直接在控制台标准输出 (stdout) 中输出解答全文，无需创建或修改交付物文件。"
-                )
-                args = build_cli_arguments(cmd_path, prompt_for_cli)
-                search_path = get_cli_search_path()
-                env = {
-                    **os.environ,
-                    "MODUFLOW_WORKSPACE": str(workspace_dir),
-                    "PATH": search_path
-                }
-                try:
-                    proc = await asyncio.create_subprocess_exec(
-                        *args,
-                        cwd=str(workspace_dir),
-                        stdin=asyncio.subprocess.DEVNULL,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                        env=env
-                    )
-                    self._active_processes[task_id] = proc
-                    stdout_lines: List[str] = []
-                    stderr_lines: List[str] = []
-
-                    async def drain(stream: asyncio.StreamReader, sink: List[str]):
-                        while True:
-                            line = await stream.readline()
-                            if not line:
-                                break
-                            decoded = line.decode("utf-8", errors="replace").rstrip()
-                            if decoded:
-                                sink.append(decoded)
-
-                    try:
-                        await asyncio.wait_for(
-                            asyncio.gather(
-                                drain(proc.stdout, stdout_lines),
-                                drain(proc.stderr, stderr_lines)
-                            ),
-                            timeout=self.timeout
-                        )
-                        await proc.wait()
-                    except asyncio.TimeoutError:
-                        try:
-                            proc.kill()
-                        except Exception:
-                            pass
-                        yield AgentStreamEvent(
-                            event_type=AgentEventType.LOG,
-                            content=f"[Adapter] CLI 问答推演超过时限 ({self.timeout}s)，已安全终止"
-                        )
-
-                    full_stdout = "\n".join(stdout_lines).strip()
-                    if proc.returncode == 0 and full_stdout and "API Error:" not in full_stdout:
-                        cli_answer = full_stdout
-                except Exception as e:
-                    yield AgentStreamEvent(
-                        event_type=AgentEventType.LOG,
-                        content=f"[Adapter] CLI 子进程问答异常: {str(e)}，转由本地产研沙箱保障答复"
-                    )
-                finally:
-                    self._active_processes.pop(task_id, None)
-
-            # Fallback to intelligent domain answer synthesis if CLI is unavailable or timed out
-            if not cli_answer:
-                from backend.app.services.domain_qa import generate_domain_qa_answer
-                cli_answer = generate_domain_qa_answer(
-                    question=user_instruction,
-                    module_name=mod_name,
-                    system_context=system_context,
-                    metadata=metadata
-                )
-
-            yield AgentStreamEvent(
-                event_type=AgentEventType.ANSWER,
-                content=cli_answer
-            )
-            yield AgentStreamEvent(
-                event_type=AgentEventType.DONE,
-                content="[Adapter] 问答推演完成"
+                event_type=AgentEventType.ERROR,
+                content=f"系统 PATH 中未找到命令行工具 `{self.cli_command}`。请确认已正确安装该 CLI 并配置在 PATH 中，或在右上角设置中切换为已安装的 Agent。",
+                metadata={"command": self.cli_command}
             )
             return
 
         # =========================================================================
-        # Case B: User gave an INSTRUCTION or FEEDBACK (指令生成或反馈修订)
-        # We want a formal specification document (交付物) drafted or revised.
+        # Case A: User asked a QUESTION (疑问讨论)
         # =========================================================================
-        cli_succeeded = False
-
-        if cmd_path:
-            # Real installed CLI invocation
+        if message_type == "question":
             yield AgentStreamEvent(
-                event_type=AgentEventType.LOG,
-                content=f"[Adapter] 正在启动底层 Agent CLI 子进程: `{self.cli_command}` ({cmd_path}) (cwd: {workspace_dir})"
+                event_type=AgentEventType.THINKING,
+                content=f"已读取工作区战略底稿，正在启动 `{self.cli_command}` 推演业务问题: '{user_instruction}'..."
             )
-
-            # Assemble precise context-aware prompt directing CLI to inspect context and write output
-            init_name = (metadata or {}).get("initiative_name") or "当前战略工程"
-            prod_name = (metadata or {}).get("product_name") or "当前产品"
-            prod_code = (metadata or {}).get("product_code") or ""
-            target_mkt = (metadata or {}).get("target_market") or "目标市场"
 
             prompt_for_cli = (
                 f"【当前战略工程与单品上下文】\n"
                 f"- 所属战略工程：{init_name}\n"
                 f"- 目标单品：{prod_name} ({prod_code})\n"
                 f"- 目标市场：{target_mkt}\n"
+                f"- 战略定位：{strat_intent}\n"
                 f"- 当前工序环节：{mod_name} (编号: {mod_code})\n\n"
-                f"请仔细阅读当前工作区下的战略底稿与前序工序基线文件 `.moduflow_agent_context.md`。\n\n"
-                f"【本次工序任务要求】\n"
-                f"{user_instruction}\n\n"
-                f"【交付要求】\n"
-                f"1. 请结合战略定性与微观闭环，严格按照工序规范生成「{prod_name}」完整的交付物内容。\n"
-                f"2. 请将本次生成的交付物全文完整保存至当前工作区的 `{output_filename}` 文件中。\n"
-                f"3. 并在控制台标准输出 (stdout) 中打印出交付物全文内容。"
+                f"请结合工作区战略底稿 `.moduflow_agent_context.md`，深度回答人类业务负责人的问题。\n\n"
+                f"【提问问题】：{user_instruction}\n\n"
+                f"【回答要求】：\n"
+                f"1. 严格紧扣「{prod_name}」在「{target_mkt}」的定位与工序【{mod_name}】的核心目标，给出极其专业、详尽、务实且结构化的解答（如竞品横向对比分析矩阵、核心功能分级清单、定价策略建议等）。\n"
+                f"2. 直接在控制台标准输出 (stdout) 中输出解答全文，无需创建或修改交付物文件。"
             )
 
             args = build_cli_arguments(cmd_path, prompt_for_cli)
@@ -236,6 +128,9 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                 "MODUFLOW_WORKSPACE": str(workspace_dir),
                 "PATH": search_path
             }
+
+            stdout_lines: List[str] = []
+            stderr_lines: List[str] = []
 
             try:
                 proc = await asyncio.create_subprocess_exec(
@@ -247,9 +142,6 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                     env=env
                 )
                 self._active_processes[task_id] = proc
-
-                stdout_lines: List[str] = []
-                stderr_lines: List[str] = []
 
                 async def drain_stream(stream: asyncio.StreamReader, sink: List[str]):
                     while True:
@@ -275,120 +167,184 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                     except Exception:
                         pass
                     yield AgentStreamEvent(
-                        event_type=AgentEventType.LOG,
-                        content=f"[Adapter] CLI 执行超过超时时限 ({self.timeout}s)，已安全终止"
+                        event_type=AgentEventType.ERROR,
+                        content=f"Agent CLI (`{self.cli_command}`) 问答推演超时 (超过设定时限 {self.timeout}秒)。底层子进程已终止。建议适当调大超时时间或检查底层模型网络连通性。",
+                        metadata={"command": self.cli_command, "timeout": self.timeout}
                     )
+                    return
 
                 full_stdout = "\n".join(stdout_lines).strip()
                 full_stderr = "\n".join(stderr_lines).strip()
 
-                artifact_file = workspace_dir / output_filename
-                artifact_content = ""
-
-                # Prefer the file written directly by the CLI
-                if artifact_file.exists():
-                    try:
-                        disk_content = artifact_file.read_text(encoding="utf-8").strip()
-                        if len(disk_content) > 30:
-                            artifact_content = disk_content
-                    except Exception:
-                        pass
-
-                # Fallback to stdout if file was not created but stdout has output
-                if not artifact_content and full_stdout and "API Error:" not in full_stdout:
-                    artifact_content = full_stdout
-                    artifact_file.write_text(artifact_content, encoding="utf-8")
-
-                if proc.returncode == 0 and artifact_content:
-                    cli_succeeded = True
+                if proc.returncode != 0:
+                    err_msg = full_stderr or full_stdout or f"进程异常退出 (退出码: {proc.returncode})"
                     yield AgentStreamEvent(
-                        event_type=AgentEventType.ARTIFACT_DRAFT if message_type == "instruction" else AgentEventType.ARTIFACT_REVISED,
-                        content=artifact_content,
-                        metadata={"source": "cli", "filename": output_filename}
-                    )
-                    yield AgentStreamEvent(
-                        event_type=AgentEventType.DONE,
-                        content=f"Agent CLI 执行完成 (退出码: 0)"
+                        event_type=AgentEventType.ERROR,
+                        content=f"Agent CLI (`{self.cli_command}`) 执行出错 (退出码: {proc.returncode})：\n\n```\n{err_msg[:1200]}\n```",
+                        metadata={"command": self.cli_command, "exit_code": proc.returncode}
                     )
                     return
-                else:
-                    err_hint = full_stderr[:300] if full_stderr else (full_stdout[:300] if full_stdout else f"退出码: {proc.returncode}")
+
+                if not full_stdout or "API Error:" in full_stdout:
                     yield AgentStreamEvent(
-                        event_type=AgentEventType.LOG,
-                        content=f"[Adapter] 外部 CLI 运行未交付可用成果 (退出码: {proc.returncode}, 诊断: {err_hint})，自动无缝降级至本地产研沙箱保障业务连续性"
+                        event_type=AgentEventType.ERROR,
+                        content=f"Agent CLI (`{self.cli_command}`) 退出码为 0，但未在控制台输出有效解答内容。",
+                        metadata={"command": self.cli_command}
                     )
+                    return
+
+                yield AgentStreamEvent(
+                    event_type=AgentEventType.ANSWER,
+                    content=full_stdout
+                )
+                yield AgentStreamEvent(
+                    event_type=AgentEventType.DONE,
+                    content="[Adapter] 问答推演完成"
+                )
+                return
 
             except Exception as e:
                 yield AgentStreamEvent(
-                    event_type=AgentEventType.LOG,
-                    content=f"[Adapter] CLI 子进程启动异常: {str(e)}，切换至本地沙箱执行"
+                    event_type=AgentEventType.ERROR,
+                    content=f"Agent CLI (`{self.cli_command}`) 子进程启动或执行异常: {str(e)}",
+                    metadata={"error": str(e)}
                 )
+                return
             finally:
                 self._active_processes.pop(task_id, None)
 
-        if not cli_succeeded:
-            # Subprocess Emulation fallback
-            if not cmd_path:
-                yield AgentStreamEvent(
-                    event_type=AgentEventType.LOG,
-                    content=f"[Adapter] 未在系统 PATH 检测到 `{self.cli_command}`，已启用真实子进程隔离沙箱模拟器运行于物理目录: {workspace_dir}"
+        # =========================================================================
+        # Case B: User gave an INSTRUCTION or FEEDBACK (指令生成或反馈修订)
+        # =========================================================================
+        yield AgentStreamEvent(
+            event_type=AgentEventType.LOG,
+            content=f"[Adapter] 正在启动底层 Agent CLI 子进程: `{self.cli_command}` ({cmd_path}) (cwd: {workspace_dir})"
+        )
+
+        prompt_for_cli = (
+            f"【当前战略工程与单品上下文】\n"
+            f"- 所属战略工程：{init_name}\n"
+            f"- 目标单品：{prod_name} ({prod_code})\n"
+            f"- 目标市场：{target_mkt}\n"
+            f"- 当前工序环节：{mod_name} (编号: {mod_code})\n\n"
+            f"请仔细阅读当前工作区下的战略底稿与前序工序基线文件 `.moduflow_agent_context.md`。\n\n"
+            f"【本次工序任务要求】\n"
+            f"{user_instruction}\n\n"
+            f"【交付要求】\n"
+            f"1. 请结合战略定性与微观闭环，严格按照工序规范生成「{prod_name}」完整的交付物内容。\n"
+            f"2. 请将本次生成的交付物全文完整保存至当前工作区的 `{output_filename}` 文件中。\n"
+            f"3. 并在控制台标准输出 (stdout) 中打印出交付物全文内容。"
+        )
+
+        args = build_cli_arguments(cmd_path, prompt_for_cli)
+        search_path = get_cli_search_path()
+        env = {
+            **os.environ,
+            "MODUFLOW_WORKSPACE": str(workspace_dir),
+            "PATH": search_path
+        }
+
+        stdout_lines = []
+        stderr_lines = []
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                cwd=str(workspace_dir),
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env
+            )
+            self._active_processes[task_id] = proc
+
+            async def drain_stream(stream: asyncio.StreamReader, sink: List[str]):
+                while True:
+                    line = await stream.readline()
+                    if not line:
+                        break
+                    decoded = line.decode("utf-8", errors="replace").rstrip()
+                    if decoded:
+                        sink.append(decoded)
+
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(
+                        drain_stream(proc.stdout, stdout_lines),
+                        drain_stream(proc.stderr, stderr_lines)
+                    ),
+                    timeout=self.timeout
                 )
+                await proc.wait()
+            except asyncio.TimeoutError:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                yield AgentStreamEvent(
+                    event_type=AgentEventType.ERROR,
+                    content=f"Agent CLI (`{self.cli_command}`) 执行超时 (超过设定时限 {self.timeout}秒)。交付物未能按时生成，子进程已安全终止。",
+                    metadata={"command": self.cli_command, "timeout": self.timeout}
+                )
+                return
 
-            yield AgentStreamEvent(
-                event_type=AgentEventType.THINKING,
-                content=f"正在深度分析人类指令: '{user_instruction}'，结合母战略工程顶层定性与单位经济约束进行方案推演..."
-            )
+            full_stdout = "\n".join(stdout_lines).strip()
+            full_stderr = "\n".join(stderr_lines).strip()
 
-            await asyncio.sleep(0.01)
+            if proc.returncode != 0:
+                err_hint = full_stderr or full_stdout or f"进程异常退出 (退出码: {proc.returncode})"
+                yield AgentStreamEvent(
+                    event_type=AgentEventType.ERROR,
+                    content=f"Agent CLI (`{self.cli_command}`) 执行出错 (退出码: {proc.returncode})，交付物未能生成：\n\n```\n{err_hint[:1200]}\n```",
+                    metadata={"command": self.cli_command, "exit_code": proc.returncode}
+                )
+                return
 
-            # Generate structured artifact reflecting user's instruction
-            artifact_body = f"""# {mod_name} 规范文档 (Agent CLI 交付版)
+            artifact_file = workspace_dir / output_filename
+            artifact_content = ""
 
-> 执行工作区：`{workspace_path_relative(workspace_dir)}`
-> 本期诉求：{user_instruction}
-> 质量标准：符合母工程战略定性与微观商业模式闭环
+            # 1. Prefer file created on disk
+            if artifact_file.exists():
+                try:
+                    disk_content = artifact_file.read_text(encoding="utf-8").strip()
+                    if len(disk_content) > 30:
+                        artifact_content = disk_content
+                except Exception:
+                    pass
 
----
+            # 2. Fallback to stdout
+            if not artifact_content and full_stdout and "API Error:" not in full_stdout:
+                artifact_content = full_stdout
+                artifact_file.write_text(artifact_content, encoding="utf-8")
 
-## 1. 目标与背景概述
-本交付物承接母战略工程底稿的全局输入，围绕业务负责人的指令诉求「**{user_instruction}**」展开详细规约，确保在当前工序【{mod_name}】中实现设计与商业闭环。
-
-## 2. 核心架构与要素分解
-- **战略对齐点**：承接母工程顶层商业飞轮定位，强化在矩阵中的关键转化价值。
-- **关键设计/指标**：按计划落地「{user_instruction}」相关功能模块，确保弱网秒开、数据高可用与极简体验。
-- **风险防御**：对前序已封版基线提出的技术与合规约束予以严格遵循。
-
-## 3. 验收标准与测试准则 (Acceptance Criteria)
-1. 完整覆盖本次指令要求的要素：{user_instruction}。
-2. 关联下游工序依赖接口契约已完成对齐。
-3. 经人工复核后可封版作为下游工序的输入基线。
-"""
-            if message_type == "feedback":
-                artifact_body += f"""
----
-### 依据反馈修订说明
-- **修改意见**：{user_instruction}
-- **调整结论**：已在相关规范章节补充了对应约束与逻辑闭环。
-"""
-
-            # Write file directly into physical workspace
-            (workspace_dir / output_filename).write_text(artifact_body, encoding="utf-8")
-
-            yield AgentStreamEvent(
-                event_type=AgentEventType.LOG,
-                content=f"[Adapter] 已将生成交付物落盘至工作区文件: {output_filename}"
-            )
+            if not artifact_content:
+                yield AgentStreamEvent(
+                    event_type=AgentEventType.ERROR,
+                    content=f"Agent CLI (`{self.cli_command}`) 退出码为 0，但未生成目标规范文件 `{output_filename}` 且无有效内容输出。",
+                    metadata={"command": self.cli_command}
+                )
+                return
 
             yield AgentStreamEvent(
                 event_type=AgentEventType.ARTIFACT_DRAFT if message_type == "instruction" else AgentEventType.ARTIFACT_REVISED,
-                content=artifact_body,
-                metadata={"filename": output_filename, "is_mock_cli": True}
+                content=artifact_content,
+                metadata={"source": "cli", "filename": output_filename}
             )
-
             yield AgentStreamEvent(
                 event_type=AgentEventType.DONE,
-                content="[Adapter] 物理工作区工序任务执行完成，交付物已归档。"
+                content="[Adapter] 工序交付物已成功落盘生成"
             )
+            return
+
+        except Exception as e:
+            yield AgentStreamEvent(
+                event_type=AgentEventType.ERROR,
+                content=f"Agent CLI (`{self.cli_command}`) 子进程启动或通信异常: {str(e)}",
+                metadata={"error": str(e)}
+            )
+            return
+        finally:
+            self._active_processes.pop(task_id, None)
 
     async def cancel_task(self, task_id: str) -> bool:
         proc = self._active_processes.get(task_id)

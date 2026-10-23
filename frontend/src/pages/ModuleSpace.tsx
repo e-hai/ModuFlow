@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { api } from '../services/api';
 import { ModuleInstance, CollaborationSession, SessionMessage, Artifact, Issue } from '../types';
@@ -14,7 +14,12 @@ import {
   ChevronLeft,
   Hash,
   ShieldCheck,
-  AlertCircle
+  AlertCircle,
+  AlertTriangle,
+  Loader2,
+  CheckCircle2,
+  Clock,
+  Terminal
 } from 'lucide-react';
 
 interface ModuleSpaceProps {
@@ -40,10 +45,23 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
   const [moduleState, setModuleState] = useState<ModuleInstance>(module);
   const [moduleIssues, setModuleIssues] = useState<Issue[]>([]);
+  const [agentCommand, setAgentCommand] = useState<string>('agy');
+  const [agentStage, setAgentStage] = useState<'idle' | 'context' | 'spawning' | 'reasoning' | 'completed' | 'error'>('idle');
+  const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const timerRef = useRef<any>(null);
 
   useEffect(() => {
     loadSessionAndArtifacts();
+    api.getAgentSettings().then(s => {
+      if (s?.cli_command) setAgentCommand(s.cli_command);
+    }).catch(() => {});
   }, [module.id]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, sending, agentStage]);
 
   const loadSessionAndArtifacts = async () => {
     try {
@@ -71,9 +89,38 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
     e.preventDefault();
     if (!inputText.trim() || !session || sending) return;
 
-    setSending(true);
     const content = inputText.trim();
+    const currentMsgType = messageType;
     setInputText('');
+
+    // 1. Optimistic UI: Immediately show the user's question or instruction in the chat history
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMsg: SessionMessage = {
+      id: tempId,
+      session_id: session.id,
+      sender: '我 (业务负责人)',
+      sender_role: 'human',
+      message_type: currentMsgType,
+      content,
+      created_at: new Date().toISOString()
+    };
+
+    setMessages(prev => [...prev, optimisticMsg]);
+    setSending(true);
+    setAgentStage('context');
+    setElapsedSeconds(0);
+
+    const startTime = Date.now();
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      setElapsedSeconds(elapsed);
+      if (elapsed >= 3) {
+        setAgentStage('reasoning');
+      } else if (elapsed >= 1) {
+        setAgentStage('spawning');
+      }
+    }, 500);
 
     try {
       const newMsgs = await api.sendMessage(
@@ -81,13 +128,23 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
         {
           sender: '我 (业务负责人)',
           sender_role: 'human',
-          message_type: messageType,
+          message_type: currentMsgType,
           content
         },
         true // trigger Agent response
       );
 
-      setMessages(prev => [...prev, ...newMsgs]);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      setAgentStage('completed');
+
+      // Replace optimistic message with actual persisted messages from backend
+      setMessages(prev => {
+        const filtered = prev.filter(m => m.id !== tempId);
+        return [...filtered, ...newMsgs];
+      });
 
       // Reload artifacts and module state
       const [arts, modData] = await Promise.all([
@@ -101,7 +158,22 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
       setModuleState(modData);
       onModuleUpdated();
     } catch (e: any) {
-      alert(`发送失败: ${e.message}`);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      setAgentStage('error');
+      // In case of network / API failure, append error message
+      const errorMsg: SessionMessage = {
+        id: `err-${Date.now()}`,
+        session_id: session.id,
+        sender: `AI Agent (${agentCommand})`,
+        sender_role: 'agent',
+        message_type: 'error',
+        content: `Agent 调用执行异常: ${e.message || '网络连接或后端处理失败'}`,
+        created_at: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, errorMsg]);
     } finally {
       setSending(false);
     }
@@ -208,7 +280,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
 
           {/* 消息滚动列表 */}
           <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-slate-50/30">
-            {messages.length === 0 ? (
+            {messages.length === 0 && !sending ? (
               <div className="text-center py-16 text-slate-400 text-xs">
                 <Bot className="w-8 h-8 mx-auto mb-2 text-slate-300" />
                 协作室尚未发起讨论。<br />在下方选择【指令 (Instruction)】输入要求，让 Agent 产出初稿。
@@ -217,6 +289,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
               messages.map(msg => {
                 const isAgent = msg.sender_role === 'agent';
                 const isSystem = msg.sender_role === 'system';
+                const isError = msg.message_type === 'error';
 
                 if (isSystem) {
                   return (
@@ -224,6 +297,43 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                       <span className="inline-block px-3 py-1 rounded-full text-[11px] bg-slate-100 text-slate-600 border border-slate-200">
                         {msg.content}
                       </span>
+                    </div>
+                  );
+                }
+
+                // Explicit Error message style
+                if (isError) {
+                  return (
+                    <div
+                      key={msg.id}
+                      className="flex gap-3 bg-rose-50/90 border border-rose-200 p-3.5 rounded-xl shadow-2xs"
+                    >
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-rose-100 text-rose-600 border border-rose-300">
+                        <AlertTriangle className="w-4 h-4" />
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-rose-950">{msg.sender}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-rose-100 text-rose-800 border border-rose-300 font-semibold">
+                              执行失败 (Error)
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-rose-400 font-mono">
+                            {new Date(msg.created_at).toLocaleTimeString()}
+                          </span>
+                        </div>
+
+                        <div className="text-xs text-rose-900 bg-white/90 p-3 rounded-lg border border-rose-200/90 whitespace-pre-wrap leading-relaxed font-mono">
+                          {msg.content}
+                        </div>
+
+                        <div className="mt-2 text-[11px] text-rose-600/90 flex items-center gap-1.5">
+                          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span>底层 Agent 进程执行异常已真实报告，绝不伪造正常答复。请检查右上角 Agent 适配设置或底层 CLI 配置。</span>
+                        </div>
+                      </div>
                     </div>
                   );
                 }
@@ -278,9 +388,15 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                         </span>
                       </div>
 
-                      <div className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
-                        {msg.content}
-                      </div>
+                      {msg.message_type === 'answer' ? (
+                        <div className="prose prose-xs max-w-none text-xs text-slate-800 leading-relaxed font-sans">
+                          <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
+                          {msg.content}
+                        </div>
+                      )}
 
                       {msg.artifact_ref_id && (
                         <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded bg-emerald-50 text-[11px] text-emerald-800 border border-emerald-200">
@@ -293,6 +409,109 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                 );
               })
             )}
+
+            {/* Active Multi-stage Agent Status Card */}
+            {sending && (
+              <div className="bg-gradient-to-b from-blue-50/70 to-slate-50 border border-blue-200/90 rounded-2xl p-4 shadow-sm space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-600"></span>
+                    </div>
+                    <span className="text-xs font-bold text-slate-800">
+                      Agent 正在处理任务 ({elapsedSeconds}s)
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Terminal className="w-3.5 h-3.5 text-slate-400" />
+                    <span className="text-[11px] font-mono text-slate-600 bg-white px-2 py-0.5 rounded-md border border-slate-200 shadow-2xs font-medium">
+                      {agentCommand} CLI
+                    </span>
+                  </div>
+                </div>
+
+                {/* 3-Stage Progress Cards */}
+                <div className="grid grid-cols-3 gap-2">
+                  {/* Stage 1: Context */}
+                  <div className={`p-2.5 rounded-xl border text-xs transition-all ${
+                    agentStage === 'context'
+                      ? 'bg-blue-100/70 border-blue-400 text-blue-900 shadow-2xs font-medium'
+                      : 'bg-white border-slate-200 text-slate-600'
+                  }`}>
+                    <div className="flex items-center gap-1.5">
+                      {agentStage === 'context' ? (
+                        <Loader2 className="w-3.5 h-3.5 text-blue-600 animate-spin shrink-0" />
+                      ) : (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      )}
+                      <span className="truncate">1. 装配上下文</span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1 leading-tight">
+                      {agentStage === 'context' ? '注入战略底稿与前序基线...' : '底稿基线已注入'}
+                    </div>
+                  </div>
+
+                  {/* Stage 2: Process */}
+                  <div className={`p-2.5 rounded-xl border text-xs transition-all ${
+                    agentStage === 'spawning'
+                      ? 'bg-blue-100/70 border-blue-400 text-blue-900 shadow-2xs font-medium'
+                      : agentStage === 'reasoning'
+                      ? 'bg-white border-slate-200 text-slate-600'
+                      : 'bg-slate-50/70 border-slate-200 text-slate-400'
+                  }`}>
+                    <div className="flex items-center gap-1.5">
+                      {agentStage === 'spawning' ? (
+                        <Loader2 className="w-3.5 h-3.5 text-blue-600 animate-spin shrink-0" />
+                      ) : agentStage === 'reasoning' ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      ) : (
+                        <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      )}
+                      <span className="truncate">2. 唤起 Agent</span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1 leading-tight">
+                      {agentStage === 'spawning'
+                        ? `启动 ${agentCommand} CLI 子进程...`
+                        : agentStage === 'reasoning'
+                        ? '物理隔离进程已就位'
+                        : '等待底稿就绪'}
+                    </div>
+                  </div>
+
+                  {/* Stage 3: Reasoning / Generating */}
+                  <div className={`p-2.5 rounded-xl border text-xs transition-all ${
+                    agentStage === 'reasoning'
+                      ? 'bg-blue-100/70 border-blue-400 text-blue-900 shadow-2xs font-medium'
+                      : 'bg-slate-50/70 border-slate-200 text-slate-400'
+                  }`}>
+                    <div className="flex items-center gap-1.5">
+                      {agentStage === 'reasoning' ? (
+                        <Loader2 className="w-3.5 h-3.5 text-blue-600 animate-spin shrink-0" />
+                      ) : (
+                        <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      )}
+                      <span className="truncate">3. 推演与生成</span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1 leading-tight">
+                      {agentStage === 'reasoning' ? '多维业务逻辑分析输出...' : '等待进程就绪'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5">
+                  <span className="flex items-center gap-1 text-slate-400">
+                    <Sparkles className="w-3 h-3 text-amber-500" />
+                    物理工作区安全隔离运行中
+                  </span>
+                  <span className="text-slate-400 font-mono text-[10px]">
+                    状态: {agentStage === 'context' ? 'Context Assembly' : agentStage === 'spawning' ? 'Process Spawn' : 'Autonomous Reasoning'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
           </div>
 
           {/* 输入框与操作条 */}

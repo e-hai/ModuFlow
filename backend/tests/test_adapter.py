@@ -1,3 +1,4 @@
+import os
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
@@ -110,8 +111,9 @@ def test_cli_argument_builders():
     assert custom_args == ["/usr/bin/custom-cli", "-p", "test prompt"]
 
 @pytest.mark.asyncio
-async def test_cli_adapter_execution(tmp_path: Path):
-    adapter = CliSubprocessAdapter(cli_command="mock-agent-cli", timeout=2)
+async def test_cli_adapter_missing_binary_reports_error(tmp_path: Path):
+    """When the configured CLI command does not exist, it must report error, never fake artifacts."""
+    adapter = CliSubprocessAdapter(cli_command="nonexistent-mock-agent-cli", timeout=2)
     events = []
     async for event in adapter.execute_task(
         task_id="test-t1",
@@ -125,12 +127,51 @@ async def test_cli_adapter_execution(tmp_path: Path):
 
     types = [e.event_type.value for e in events]
     assert "log" in types
-    assert "artifact_draft" in types
-    assert "done" in types
+    assert "error" in types
+    assert "artifact_draft" not in types
+    assert "answer" not in types
 
-    # Check that context file and artifact file were written
-    assert (tmp_path / ".moduflow_agent_context.md").exists()
-    assert (tmp_path / "交付物_01_市场调研.md").exists()
+@pytest.mark.asyncio
+async def test_cli_adapter_execution(tmp_path: Path):
+    """Test real CLI subprocess execution with an executable script."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    cli_script = bin_dir / "test-agent-cli"
+    cli_script.write_text(
+        "#!/bin/sh\n"
+        "echo '[Subprocess] Running Agent task'\n"
+        "echo '# 市场调研 交付物' > \"$MODUFLOW_WORKSPACE/交付物_01_市场调研.md\"\n"
+        "echo '# 市场调研 交付物全文内容'\n"
+    )
+    cli_script.chmod(0o755)
+
+    # Put bin_dir on PATH
+    old_path = os.environ.get("PATH", "")
+    os.environ["PATH"] = f"{bin_dir}:{old_path}"
+
+    try:
+        adapter = CliSubprocessAdapter(cli_command="test-agent-cli", timeout=5)
+        events = []
+        async for event in adapter.execute_task(
+            task_id="test-t2",
+            workspace_dir=tmp_path,
+            system_context="# Context header",
+            user_instruction="制定产品架构方案",
+            message_type="instruction",
+            metadata={"module_code": "01", "module_name": "市场调研"}
+        ):
+            events.append(event)
+
+        types = [e.event_type.value for e in events]
+        assert "log" in types
+        assert "artifact_draft" in types
+        assert "done" in types
+
+        # Check that context file and artifact file were written
+        assert (tmp_path / ".moduflow_agent_context.md").exists()
+        assert (tmp_path / "交付物_01_市场调研.md").exists()
+    finally:
+        os.environ["PATH"] = old_path
 
 @pytest.mark.asyncio
 async def test_agent_runner_with_session():
@@ -233,4 +274,48 @@ async def test_agent_settings_api():
             "/api/v1/settings/agent",
             json={"adapter_type": "simulator"}
         )
+
+@pytest.mark.asyncio
+async def test_agent_runner_cli_failure_reports_error_without_mock_data():
+    """Ensure that when CLI fails, runner reports message_type='error' and creates NO artifact."""
+    async with AsyncSessionLocal() as db:
+        m_stmt = select(ModuleInstance).join(WorkflowRun).where(WorkflowRun.product_id == "test-prod").order_by(ModuleInstance.order_index.asc())
+        res = await db.execute(m_stmt)
+        mod = res.scalars().first()
+
+        session = CollaborationSession(
+            module_id=mod.id,
+            title="异常测试协作会话",
+            participants=[{"role": "human", "name": "PM"}]
+        )
+        db.add(session)
+        await db.commit()
+        await db.refresh(session)
+
+        # Count artifacts before
+        count_before = len((await db.execute(select(Artifact).where(Artifact.module_id == mod.id))).scalars().all())
+
+        # Send a question using nonexistent CLI
+        q_msg = SessionMessage(
+            session_id=session.id,
+            sender="业务负责人",
+            sender_role="human",
+            message_type="question",
+            content="询问异常情况"
+        )
+        db.add(q_msg)
+        await db.commit()
+        await db.refresh(q_msg)
+
+        from backend.app.adapters.cli_adapter import CliSubprocessAdapter
+        # Temporarily mock adapter to use nonexistent CLI
+        runner_msg = await execute_agent_for_session(db, session, q_msg, adapter_type="cli")
+        assert runner_msg is not None
+        assert runner_msg.message_type == "error"
+        assert runner_msg.artifact_ref_id is None
+        assert "未找到命令行工具" in runner_msg.content or "异常" in runner_msg.content or "未在" in runner_msg.content
+
+        # Count artifacts after -> MUST NOT have increased
+        count_after = len((await db.execute(select(Artifact).where(Artifact.module_id == mod.id))).scalars().all())
+        assert count_after == count_before
 

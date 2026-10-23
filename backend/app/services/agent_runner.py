@@ -56,6 +56,7 @@ async def execute_agent_for_session(
     produced_artifact_content = None
     produced_artifact_event_type = None
     produced_answer_content = None
+    error_event = None
     logs: List[str] = []
 
     async for event in adapter.execute_task(
@@ -71,35 +72,61 @@ async def execute_agent_for_session(
             produced_artifact_event_type = event.event_type
         elif event.event_type == AgentEventType.ANSWER:
             produced_answer_content = event.content
+        elif event.event_type == AgentEventType.ERROR:
+            error_event = event
         elif event.event_type == AgentEventType.LOG:
             logs.append(event.content)
 
-    # 4. Handle Question Discussion (疑问讨论 / Answer)
-    if msg_type == "question" or produced_answer_content:
-        answer_text = produced_answer_content
-        if not answer_text:
-            from backend.app.services.domain_qa import generate_domain_qa_answer
-            answer_text = generate_domain_qa_answer(
-                question=content,
-                module_name=module.name,
-                system_context=system_context,
-                metadata=meta
-            )
+    adapter_cmd = getattr(adapter, "cli_command", "CLI")
 
+    # 4. Handle Explicit Execution Error (当 agent 出错时，绝不伪造正常回答，直接报告失败)
+    if error_event:
         agent_msg = SessionMessage(
             session_id=session.id,
-            sender="AI Agent (CLI)",
+            sender=f"AI Agent ({adapter_cmd})",
             sender_role="agent",
-            message_type="answer",
-            content=answer_text,
-            metadata_json={"logs_preview": logs[-3:] if logs else []}
+            message_type="error",
+            content=error_event.content,
+            metadata_json={
+                "logs_preview": logs[-5:] if logs else [],
+                "error_meta": error_event.metadata or {}
+            }
         )
         db.add(agent_msg)
         await db.commit()
         await db.refresh(agent_msg)
         return agent_msg
 
-    # 5. Handle Artifact Persistence if generated (指令/反馈产出交付物)
+    # 5. Handle Question Discussion (疑问讨论 / Answer)
+    if msg_type == "question":
+        if produced_answer_content:
+            agent_msg = SessionMessage(
+                session_id=session.id,
+                sender=f"AI Agent ({adapter_cmd})",
+                sender_role="agent",
+                message_type="answer",
+                content=produced_answer_content,
+                metadata_json={"logs_preview": logs[-3:] if logs else []}
+            )
+            db.add(agent_msg)
+            await db.commit()
+            await db.refresh(agent_msg)
+            return agent_msg
+        else:
+            agent_msg = SessionMessage(
+                session_id=session.id,
+                sender=f"AI Agent ({adapter_cmd})",
+                sender_role="agent",
+                message_type="error",
+                content=f"Agent ({adapter_cmd}) 执行完毕，但未能在标准输出中返回有效回答内容。",
+                metadata_json={"logs_preview": logs[-3:] if logs else []}
+            )
+            db.add(agent_msg)
+            await db.commit()
+            await db.refresh(agent_msg)
+            return agent_msg
+
+    # 6. Handle Artifact Persistence if generated (指令/反馈产出交付物)
     if produced_artifact_content:
         # Determine next version
         art_stmt = (
@@ -130,7 +157,7 @@ async def execute_agent_for_session(
         msg_title = "初稿" if produced_artifact_event_type == AgentEventType.ARTIFACT_DRAFT else "修订版"
         agent_msg = SessionMessage(
             session_id=session.id,
-            sender="AI Agent (CLI)",
+            sender=f"AI Agent ({adapter_cmd})",
             sender_role="agent",
             message_type="draft_artifact" if msg_title == "初稿" else "revised_artifact",
             content=f"已通过 Agent 适配器在工作区完成推演，产出了交付物【{artifact.title}】。相关文件已同步至物理工作区，请在右侧查阅并审阅。",
@@ -149,4 +176,16 @@ async def execute_agent_for_session(
 
         return agent_msg
 
-    return None
+    # If neither error nor artifact was produced for an instruction
+    agent_msg = SessionMessage(
+        session_id=session.id,
+        sender=f"AI Agent ({adapter_cmd})",
+        sender_role="agent",
+        message_type="error",
+        content=f"Agent ({adapter_cmd}) 执行完毕，但未在工作区生成交付物文件。",
+        metadata_json={"logs_preview": logs[-3:] if logs else []}
+    )
+    db.add(agent_msg)
+    await db.commit()
+    await db.refresh(agent_msg)
+    return agent_msg

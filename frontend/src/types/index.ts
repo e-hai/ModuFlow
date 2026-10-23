@@ -66,7 +66,7 @@ export interface SessionMessage {
   session_id: string;
   sender: string;
   sender_role: string;
-  message_type: 'instruction' | 'feedback' | 'draft_artifact' | 'revised_artifact' | 'question' | 'answer' | 'issue' | 'approve' | 'reject';
+  message_type: 'instruction' | 'feedback' | 'draft_artifact' | 'revised_artifact' | 'question' | 'answer' | 'error' | 'issue' | 'approve' | 'reject';
   content: string;
   artifact_ref_id?: string;
   issue_ref_id?: string;
