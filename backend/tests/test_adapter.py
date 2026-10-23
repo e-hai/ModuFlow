@@ -18,7 +18,11 @@ from backend.app.models.entities import (
 )
 from backend.app.services.workflow_engine import seed_templates_if_empty, create_workflow_run_from_template
 from backend.app.services.context_assembler import assemble_module_context
-from backend.app.adapters.cli_adapter import CliSubprocessAdapter
+from backend.app.adapters.cli_adapter import (
+    CliSubprocessAdapter,
+    build_cli_arguments,
+    find_cli_binary
+)
 from backend.app.adapters.simulator_adapter import SimulatorAdapter
 from backend.app.adapters.factory import get_agent_adapter
 from backend.app.services.agent_runner import execute_agent_for_session
@@ -79,6 +83,29 @@ async def test_context_assembler():
         assert "请生成第一阶段市场调研报告" in context
         assert ws_path.exists()
         assert meta["module_code"] == first_mod.module_code
+
+def test_cli_argument_builders():
+    # Claude syntax
+    claude_args = build_cli_arguments("/usr/local/bin/claude", "test prompt")
+    assert claude_args == ["/usr/local/bin/claude", "-p", "test prompt", "--dangerously-skip-permissions"]
+
+    # agy syntax
+    agy_args = build_cli_arguments("/Users/a/.local/bin/agy", "test prompt")
+    assert agy_args == ["/Users/a/.local/bin/agy", "-p", "test prompt", "--dangerously-skip-permissions"]
+
+    # codex syntax
+    codex_args = build_cli_arguments("/opt/homebrew/bin/codex", "test prompt")
+    assert codex_args == [
+        "/opt/homebrew/bin/codex",
+        "exec",
+        "--skip-git-repo-check",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "test prompt"
+    ]
+
+    # custom syntax
+    custom_args = build_cli_arguments("/usr/bin/custom-cli", "test prompt")
+    assert custom_args == ["/usr/bin/custom-cli", "-p", "test prompt"]
 
 @pytest.mark.asyncio
 async def test_cli_adapter_execution(tmp_path: Path):

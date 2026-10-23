@@ -1,15 +1,54 @@
 import os
 import shutil
 import asyncio
-from typing import AsyncIterator, Optional, Dict, Any
+from typing import AsyncIterator, Optional, Dict, Any, List
 from pathlib import Path
 from backend.app.adapters.base import BaseAgentAdapter, AgentStreamEvent, AgentEventType
 from backend.app.core.config import settings
 
+def get_cli_search_path() -> str:
+    """Construct a comprehensive PATH including common CLI install locations on macOS/Linux."""
+    extra_paths = [
+        str(Path.home() / ".local" / "bin"),
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+    ]
+    current_path = os.environ.get("PATH", "")
+    return os.pathsep.join([p for p in extra_paths if p not in current_path] + [current_path])
+
+def find_cli_binary(command: str) -> Optional[str]:
+    """Find the full executable path of a given CLI command."""
+    if not command or command == "simulator":
+        return None
+    search_path = get_cli_search_path()
+    return shutil.which(command, path=search_path)
+
+def build_cli_arguments(cmd_path: str, prompt: str) -> List[str]:
+    """
+    Build non-interactive, permission-bypassing arguments for supported Agent CLIs.
+    Supports Claude Code (claude), Google Antigravity (agy), Codex CLI (codex),
+    and general custom CLI runners.
+    """
+    cmd_name = Path(cmd_path).name.lower()
+    if "claude" in cmd_name:
+        return [cmd_path, "-p", prompt, "--dangerously-skip-permissions"]
+    elif "agy" in cmd_name:
+        return [cmd_path, "-p", prompt, "--dangerously-skip-permissions"]
+    elif "codex" in cmd_name:
+        return [
+            cmd_path,
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            prompt
+        ]
+    else:
+        return [cmd_path, "-p", prompt]
+
 class CliSubprocessAdapter(BaseAgentAdapter):
     """
     Subprocess-based Agent CLI Adapter.
-    Executes an autonomous Agent CLI (e.g. Claude Code, Antigravity agy, Aider, or custom binary)
+    Executes an autonomous Agent CLI (e.g. Claude Code, Antigravity agy, Codex CLI, or custom binary)
     in the isolated physical workspace directory of the specific product module.
     """
 
@@ -44,44 +83,68 @@ class CliSubprocessAdapter(BaseAgentAdapter):
         output_filename = f"交付物_{mod_code}_{mod_name}.md"
 
         # 2. Check if the specified CLI binary exists in PATH
-        cmd_path = shutil.which(self.cli_command)
+        cmd_path = find_cli_binary(self.cli_command)
 
         cli_succeeded = False
-        full_text = ""
 
         if cmd_path:
             # Real installed CLI invocation
             yield AgentStreamEvent(
                 event_type=AgentEventType.LOG,
-                content=f"[Adapter] 正在启动底层 Agent CLI 子进程: `{self.cli_command}` (cwd: {workspace_dir})"
+                content=f"[Adapter] 正在启动底层 Agent CLI 子进程: `{self.cli_command}` ({cmd_path}) (cwd: {workspace_dir})"
             )
 
-            # Build command arguments (supports claude, agy, or general headless runner)
-            args = [cmd_path, "--print", user_instruction] if "claude" in self.cli_command else [cmd_path, "run", user_instruction]
-            
+            # Assemble precise context-aware prompt directing CLI to inspect context and write output
+            prompt_for_cli = (
+                f"【战略工程与上游基线上下文】\n"
+                f"请仔细阅读当前工作区下的战略底稿与前序工序基线文件 `.moduflow_agent_context.md`。\n\n"
+                f"【本次工序任务要求】\n"
+                f"{user_instruction}\n\n"
+                f"【交付要求】\n"
+                f"1. 请结合战略定性与微观闭环，严格按照工序规范生成完整的交付物内容。\n"
+                f"2. 请将本次生成的交付物全文完整保存至当前工作区的 `{output_filename}` 文件中。\n"
+                f"3. 并在控制台标准输出 (stdout) 中打印出交付物全文内容。"
+            )
+
+            args = build_cli_arguments(cmd_path, prompt_for_cli)
+            search_path = get_cli_search_path()
+            env = {
+                **os.environ,
+                "MODUFLOW_WORKSPACE": str(workspace_dir),
+                "PATH": search_path
+            }
+
             try:
                 proc = await asyncio.create_subprocess_exec(
                     *args,
                     cwd=str(workspace_dir),
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
-                    env={**os.environ, "MODUFLOW_WORKSPACE": str(workspace_dir)}
+                    env=env
                 )
                 self._active_processes[task_id] = proc
 
-                accumulated_output = []
-                async def read_proc():
+                stdout_lines: List[str] = []
+                stderr_lines: List[str] = []
+
+                async def drain_stream(stream: asyncio.StreamReader, sink: List[str]):
                     while True:
-                        line = await proc.stdout.readline()
+                        line = await stream.readline()
                         if not line:
                             break
                         decoded = line.decode("utf-8", errors="replace").rstrip()
                         if decoded:
-                            accumulated_output.append(decoded)
-                    await proc.wait()
+                            sink.append(decoded)
 
                 try:
-                    await asyncio.wait_for(read_proc(), timeout=self.timeout)
+                    await asyncio.wait_for(
+                        asyncio.gather(
+                            drain_stream(proc.stdout, stdout_lines),
+                            drain_stream(proc.stderr, stderr_lines)
+                        ),
+                        timeout=self.timeout
+                    )
+                    await proc.wait()
                 except asyncio.TimeoutError:
                     try:
                         proc.kill()
@@ -92,25 +155,43 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                         content=f"[Adapter] CLI 执行超过超时时限 ({self.timeout}s)，已安全终止"
                     )
 
-                full_text = "\n".join(accumulated_output).strip()
+                full_stdout = "\n".join(stdout_lines).strip()
+                full_stderr = "\n".join(stderr_lines).strip()
 
-                if proc.returncode == 0 and full_text and "API Error:" not in full_text:
+                artifact_file = workspace_dir / output_filename
+                artifact_content = ""
+
+                # Prefer the file written directly by the CLI
+                if artifact_file.exists():
+                    try:
+                        disk_content = artifact_file.read_text(encoding="utf-8").strip()
+                        if len(disk_content) > 30:
+                            artifact_content = disk_content
+                    except Exception:
+                        pass
+
+                # Fallback to stdout if file was not created but stdout has output
+                if not artifact_content and full_stdout and "API Error:" not in full_stdout:
+                    artifact_content = full_stdout
+                    artifact_file.write_text(artifact_content, encoding="utf-8")
+
+                if proc.returncode == 0 and artifact_content:
                     cli_succeeded = True
-                    (workspace_dir / output_filename).write_text(full_text, encoding="utf-8")
                     yield AgentStreamEvent(
                         event_type=AgentEventType.ARTIFACT_DRAFT if message_type == "instruction" else AgentEventType.ARTIFACT_REVISED,
-                        content=full_text,
-                        metadata={"source": "cli_stdout", "filename": output_filename}
+                        content=artifact_content,
+                        metadata={"source": "cli", "filename": output_filename}
                     )
                     yield AgentStreamEvent(
                         event_type=AgentEventType.DONE,
-                        content=f"Agent CLI 执行完成 (退出码: {proc.returncode})"
+                        content=f"Agent CLI 执行完成 (退出码: 0)"
                     )
                     return
                 else:
+                    err_hint = full_stderr[:300] if full_stderr else (full_stdout[:300] if full_stdout else f"退出码: {proc.returncode}")
                     yield AgentStreamEvent(
                         event_type=AgentEventType.LOG,
-                        content=f"[Adapter] 外部 CLI 运行受阻 (退出码: {proc.returncode})，自动无缝降级至本地产研沙箱保障业务连续性"
+                        content=f"[Adapter] 外部 CLI 运行未交付可用成果 (退出码: {proc.returncode}, 诊断: {err_hint})，自动无缝降级至本地产研沙箱保障业务连续性"
                     )
 
             except Exception as e:
