@@ -98,6 +98,7 @@ def test_cli_argument_builders():
     assert codex_args == [
         "/opt/homebrew/bin/codex",
         "exec",
+        "--ephemeral",
         "--skip-git-repo-check",
         "--dangerously-bypass-approvals-and-sandbox",
         "test prompt"
@@ -177,6 +178,25 @@ async def test_agent_runner_with_session():
         # Verify module phase advanced to discussing
         await db.refresh(mod)
         assert mod.phase == "discussing"
+
+        # Now test Question flow (should NOT create a new artifact, but return answer message)
+        question_msg = SessionMessage(
+            session_id=session.id,
+            sender="产品负责人",
+            sender_role="human",
+            message_type="question",
+            content="壁纸应用，应该有什么功能"
+        )
+        db.add(question_msg)
+        await db.commit()
+        await db.refresh(question_msg)
+
+        answer_msg = await execute_agent_for_session(db, session, question_msg, adapter_type="simulator")
+        assert answer_msg is not None
+        assert answer_msg.sender_role == "agent"
+        assert answer_msg.message_type == "answer"
+        assert answer_msg.artifact_ref_id is None
+        assert "壁纸" in answer_msg.content or "功能" in answer_msg.content
 
 @pytest.mark.asyncio
 async def test_agent_settings_api():

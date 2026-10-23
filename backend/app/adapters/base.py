@@ -9,6 +9,7 @@ class AgentEventType(str, Enum):
     THINKING = "thinking"
     ARTIFACT_DRAFT = "artifact_draft"
     ARTIFACT_REVISED = "artifact_revised"
+    ANSWER = "answer"
     ISSUE_FOUND = "issue_found"
     DONE = "done"
     ERROR = "error"

@@ -25,6 +25,33 @@ class SimulatorAdapter(BaseAgentAdapter):
         mod_code = (metadata or {}).get("module_code", "01")
         mod_name = (metadata or {}).get("module_name", "工序交付物")
 
+        if message_type == "question":
+            from backend.app.services.domain_qa import generate_domain_qa_answer
+            yield AgentStreamEvent(
+                event_type=AgentEventType.LOG,
+                content=f"[Simulator] 收到讨论提问: {user_instruction}"
+            )
+            yield AgentStreamEvent(
+                event_type=AgentEventType.THINKING,
+                content=f"已读取母战略工程底稿，正在为工序【{mod_name}】推演业务问题: '{user_instruction}'..."
+            )
+            answer = generate_domain_qa_answer(
+                question=user_instruction,
+                module_name=mod_name,
+                system_context=system_context,
+                metadata=metadata
+            )
+            yield AgentStreamEvent(
+                event_type=AgentEventType.ANSWER,
+                content=answer,
+                metadata={"source": "simulator"}
+            )
+            yield AgentStreamEvent(
+                event_type=AgentEventType.DONE,
+                content="[Simulator] 问答推演完成"
+            )
+            return
+
         yield AgentStreamEvent(
             event_type=AgentEventType.LOG,
             content=f"[Simulator] 收到任务指令: {user_instruction}"

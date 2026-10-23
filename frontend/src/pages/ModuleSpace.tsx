@@ -253,10 +253,24 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                                 ? 'bg-blue-50 text-blue-700 border border-blue-200'
                                 : msg.message_type === 'feedback'
                                 ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                : msg.message_type === 'question'
+                                ? 'bg-cyan-50 text-cyan-700 border border-cyan-200'
+                                : msg.message_type === 'answer'
+                                ? 'bg-purple-50 text-purple-700 border border-purple-200'
                                 : 'bg-slate-100 text-slate-600 border border-slate-200'
                             }`}
                           >
-                            {msg.message_type}
+                            {msg.message_type === 'draft_artifact'
+                              ? '交付物初稿'
+                              : msg.message_type === 'revised_artifact'
+                              ? '交付物修订'
+                              : msg.message_type === 'feedback'
+                              ? '反馈修正'
+                              : msg.message_type === 'question'
+                              ? '疑问讨论'
+                              : msg.message_type === 'answer'
+                              ? 'Agent 答复'
+                              : msg.message_type}
                           </span>
                         </div>
                         <span className="text-[10px] text-slate-400">

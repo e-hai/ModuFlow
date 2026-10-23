@@ -55,6 +55,7 @@ async def execute_agent_for_session(
     # 3. Stream/Execute Adapter Task
     produced_artifact_content = None
     produced_artifact_event_type = None
+    produced_answer_content = None
     logs: List[str] = []
 
     async for event in adapter.execute_task(
@@ -68,10 +69,37 @@ async def execute_agent_for_session(
         if event.event_type in (AgentEventType.ARTIFACT_DRAFT, AgentEventType.ARTIFACT_REVISED):
             produced_artifact_content = event.content
             produced_artifact_event_type = event.event_type
+        elif event.event_type == AgentEventType.ANSWER:
+            produced_answer_content = event.content
         elif event.event_type == AgentEventType.LOG:
             logs.append(event.content)
 
-    # 4. Handle Artifact Persistence if generated
+    # 4. Handle Question Discussion (疑问讨论 / Answer)
+    if msg_type == "question" or produced_answer_content:
+        answer_text = produced_answer_content
+        if not answer_text:
+            from backend.app.services.domain_qa import generate_domain_qa_answer
+            answer_text = generate_domain_qa_answer(
+                question=content,
+                module_name=module.name,
+                system_context=system_context,
+                metadata=meta
+            )
+
+        agent_msg = SessionMessage(
+            session_id=session.id,
+            sender="AI Agent (CLI)",
+            sender_role="agent",
+            message_type="answer",
+            content=answer_text,
+            metadata_json={"logs_preview": logs[-3:] if logs else []}
+        )
+        db.add(agent_msg)
+        await db.commit()
+        await db.refresh(agent_msg)
+        return agent_msg
+
+    # 5. Handle Artifact Persistence if generated (指令/反馈产出交付物)
     if produced_artifact_content:
         # Determine next version
         art_stmt = (
@@ -119,27 +147,6 @@ async def execute_agent_for_session(
         except Exception:
             pass
 
-        return agent_msg
-
-    elif msg_type == "question":
-        # Human asked a general question
-        reply_content = (
-            f"根据母战略工程《{meta.get('initiative_id', '当前工程')}》顶层底稿与当前工序【{module.name}】的基线规范：\n\n"
-            f"关于您提出的问题：**{content}**\n\n"
-            f"1. **战略原则对齐**：必须符合母工程商业闭环与单位经济约束。\n"
-            f"2. **执行建议**：建议在当前工序下明确具体验收标准后，再触发下一轮设计或开发工序。\n"
-            f"如有明确变更需求，请直接下达修订指令。"
-        )
-        agent_msg = SessionMessage(
-            session_id=session.id,
-            sender="AI Agent (CLI)",
-            sender_role="agent",
-            message_type="answer",
-            content=reply_content
-        )
-        db.add(agent_msg)
-        await db.commit()
-        await db.refresh(agent_msg)
         return agent_msg
 
     return None

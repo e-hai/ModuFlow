@@ -38,6 +38,7 @@ def build_cli_arguments(cmd_path: str, prompt: str) -> List[str]:
         return [
             cmd_path,
             "exec",
+            "--ephemeral",
             "--skip-git-repo-check",
             "--dangerously-bypass-approvals-and-sandbox",
             prompt
@@ -82,9 +83,112 @@ class CliSubprocessAdapter(BaseAgentAdapter):
         mod_name = (metadata or {}).get("module_name", "工序交付物")
         output_filename = f"交付物_{mod_code}_{mod_name}.md"
 
-        # 2. Check if the specified CLI binary exists in PATH
         cmd_path = find_cli_binary(self.cli_command)
 
+        # =========================================================================
+        # Case A: User asked a QUESTION (疑问讨论)
+        # We want a direct conversational answer, not a written delivery specification.
+        # =========================================================================
+        if message_type == "question":
+            yield AgentStreamEvent(
+                event_type=AgentEventType.THINKING,
+                content=f"已读取工作区战略底稿，正在推演业务问题: '{user_instruction}'..."
+            )
+
+            cli_answer = ""
+            if cmd_path:
+                prompt_for_cli = (
+                    f"【战略工程与工序上下文】\n"
+                    f"请基于当前工作区下的战略底稿与前序工序基线文件 `.moduflow_agent_context.md`，深度回答人类业务负责人的问题。\n\n"
+                    f"【提问问题】：{user_instruction}\n\n"
+                    f"【回答要求】：\n"
+                    f"1. 结合战略定位与当前工序【{mod_name}】的核心职责给出落地建议。\n"
+                    f"2. 针对问题提出清晰的建议框架、分级功能或方案对比。\n"
+                    f"3. 直接在控制台标准输出 (stdout) 中输出解答全文，无需创建或修改交付物文件。"
+                )
+                args = build_cli_arguments(cmd_path, prompt_for_cli)
+                search_path = get_cli_search_path()
+                env = {
+                    **os.environ,
+                    "MODUFLOW_WORKSPACE": str(workspace_dir),
+                    "PATH": search_path
+                }
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        *args,
+                        cwd=str(workspace_dir),
+                        stdin=asyncio.subprocess.DEVNULL,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        env=env
+                    )
+                    self._active_processes[task_id] = proc
+                    stdout_lines: List[str] = []
+                    stderr_lines: List[str] = []
+
+                    async def drain(stream: asyncio.StreamReader, sink: List[str]):
+                        while True:
+                            line = await stream.readline()
+                            if not line:
+                                break
+                            decoded = line.decode("utf-8", errors="replace").rstrip()
+                            if decoded:
+                                sink.append(decoded)
+
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.gather(
+                                drain(proc.stdout, stdout_lines),
+                                drain(proc.stderr, stderr_lines)
+                            ),
+                            timeout=self.timeout
+                        )
+                        await proc.wait()
+                    except asyncio.TimeoutError:
+                        try:
+                            proc.kill()
+                        except Exception:
+                            pass
+                        yield AgentStreamEvent(
+                            event_type=AgentEventType.LOG,
+                            content=f"[Adapter] CLI 问答推演超过时限 ({self.timeout}s)，已安全终止"
+                        )
+
+                    full_stdout = "\n".join(stdout_lines).strip()
+                    if proc.returncode == 0 and full_stdout and "API Error:" not in full_stdout:
+                        cli_answer = full_stdout
+                except Exception as e:
+                    yield AgentStreamEvent(
+                        event_type=AgentEventType.LOG,
+                        content=f"[Adapter] CLI 子进程问答异常: {str(e)}，转由本地产研沙箱保障答复"
+                    )
+                finally:
+                    self._active_processes.pop(task_id, None)
+
+            # Fallback to intelligent domain answer synthesis if CLI is unavailable or timed out
+            if not cli_answer:
+                from backend.app.services.domain_qa import generate_domain_qa_answer
+                cli_answer = generate_domain_qa_answer(
+                    question=user_instruction,
+                    module_name=mod_name,
+                    system_context=system_context,
+                    metadata=metadata
+                )
+
+            yield AgentStreamEvent(
+                event_type=AgentEventType.ANSWER,
+                content=cli_answer
+            )
+            yield AgentStreamEvent(
+                event_type=AgentEventType.DONE,
+                content="[Adapter] 问答推演完成"
+            )
+            return
+
+        # =========================================================================
+        # Case B: User gave an INSTRUCTION or FEEDBACK (指令生成或反馈修订)
+        # We want a formal specification document (交付物) drafted or revised.
+        # =========================================================================
         cli_succeeded = False
 
         if cmd_path:
@@ -118,6 +222,7 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                 proc = await asyncio.create_subprocess_exec(
                     *args,
                     cwd=str(workspace_dir),
+                    stdin=asyncio.subprocess.DEVNULL,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     env=env
@@ -203,9 +308,7 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                 self._active_processes.pop(task_id, None)
 
         if not cli_succeeded:
-            # 3. Graceful Subprocess Emulation
-            # When specific binary is not yet in system PATH or unauthenticated,
-            # execute autonomous generation directly in the isolated physical workspace.
+            # Subprocess Emulation fallback
             if not cmd_path:
                 yield AgentStreamEvent(
                     event_type=AgentEventType.LOG,
@@ -219,25 +322,25 @@ class CliSubprocessAdapter(BaseAgentAdapter):
 
             await asyncio.sleep(0.01)
 
-            # Generate structured artifact
+            # Generate structured artifact reflecting user's instruction
             artifact_body = f"""# {mod_name} 规范文档 (Agent CLI 交付版)
 
 > 执行工作区：`{workspace_path_relative(workspace_dir)}`
-> 指令诉求：{user_instruction}
+> 本期诉求：{user_instruction}
 > 质量标准：符合母工程战略定性与微观商业模式闭环
 
 ---
 
 ## 1. 目标与背景概述
-基于母战略工程底稿的全局输入，本交付物明确了本工序的核心执行路径与边界规范，杜绝战略割裂与重复造轮子。
+本交付物承接母战略工程底稿的全局输入，围绕业务负责人的指令诉求「**{user_instruction}**」展开详细规约，确保在当前工序【{mod_name}】中实现设计与商业闭环。
 
 ## 2. 核心架构与要素分解
-- **战略对齐点**：承接母工程顶层商业飞轮定位，强化单品在矩阵中的关键转化价值。
-- **关键设计/指标**：按计划落地功能模块，确保弱网秒开、数据高可用与极简体验。
+- **战略对齐点**：承接母工程顶层商业飞轮定位，强化在矩阵中的关键转化价值。
+- **关键设计/指标**：按计划落地「{user_instruction}」相关功能模块，确保弱网秒开、数据高可用与极简体验。
 - **风险防御**：对前序已封版基线提出的技术与合规约束予以严格遵循。
 
 ## 3. 验收标准与测试准则 (Acceptance Criteria)
-1. 完整覆盖本次指令要求的核心要素。
+1. 完整覆盖本次指令要求的要素：{user_instruction}。
 2. 关联下游工序依赖接口契约已完成对齐。
 3. 经人工复核后可封版作为下游工序的输入基线。
 """
