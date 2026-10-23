@@ -221,6 +221,17 @@ class CliSubprocessAdapter(BaseAgentAdapter):
             content=f"[Adapter] 正在启动底层 Agent CLI 子进程: `{self.cli_command}` ({cmd_path}) (cwd: {workspace_dir})"
         )
 
+        extra_methodology = ""
+        if mod_code == "01":
+            extra_methodology = (
+                f"\n【市场研究 Agent 专业作业规范】\n"
+                f"- 必须采用自下而上 (Bottom-Up) 模型量化测算 TAM/SAM/SOM，给出保守、基准、乐观三套情景；\n"
+                f"- 必须包含 Top 5 核心标杆竞品 5 维对比矩阵（定位与规模、变现与定价、获客渠道、App Store 1-2星差评槽点挖掘、致命软肋与切入机会）；\n"
+                f"- 必须输出 3 个典型 ICP 目标用户画像（设备、Jobs-To-Be-Done、现有替代方案痛点、付费意愿）；\n"
+                f"- 必须提炼价值缝隙 (Value Gap) 与冷启动破局切入点 (Wedge Strategy)；\n"
+                f"- 输出内容必须为工序 02（商业模式）与工序 03（产品方向）提供直接事实支撑。\n"
+            )
+
         prompt_for_cli = (
             f"【当前战略工程与单品上下文】\n"
             f"- 所属战略工程：{init_name}\n"
@@ -229,7 +240,8 @@ class CliSubprocessAdapter(BaseAgentAdapter):
             f"- 当前工序环节：{mod_name} (编号: {mod_code})\n\n"
             f"请仔细阅读当前工作区下的战略底稿与前序工序基线文件 `.moduflow_agent_context.md`。\n\n"
             f"【本次工序任务要求】\n"
-            f"{user_instruction}\n\n"
+            f"{user_instruction}\n"
+            f"{extra_methodology}\n"
             f"【交付要求】\n"
             f"1. 请结合战略定性与微观闭环，严格按照工序规范生成「{prod_name}」完整的交付物内容。\n"
             f"2. 请将本次生成的交付物全文完整保存至当前工作区的 `{output_filename}` 文件中。\n"

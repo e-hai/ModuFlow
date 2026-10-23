@@ -850,6 +850,66 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
               </button>
             </div>
 
+            {/* 工序 01 (市场研究) 专属技能快捷操作栏 */}
+            {moduleState.module_code === '01' && (
+              <div className="flex items-center gap-1.5 mb-2 overflow-x-auto pb-1 text-[11px]">
+                <span className="text-[10px] text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 shrink-0 flex items-center gap-1">
+                  <TrendingUp className="w-3 h-3 text-blue-600" />
+                  调研技能:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMessageType('question');
+                    setInputText('请用自下而上 (Bottom-Up) 模型量化测算本产品的 TAM/SAM/SOM 市场空间与发展情景');
+                  }}
+                  className="px-2 py-0.5 rounded bg-slate-50 hover:bg-blue-50 hover:text-blue-700 text-slate-600 border border-slate-200 transition cursor-pointer shrink-0"
+                >
+                  📊 TAM/SAM/SOM 测算
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMessageType('question');
+                    setInputText('深入拆解目标市场 Top 5 核心标杆竞品 5 维矩阵及 App Store 1-2星差评槽点');
+                  }}
+                  className="px-2 py-0.5 rounded bg-slate-50 hover:bg-blue-50 hover:text-blue-700 text-slate-600 border border-slate-200 transition cursor-pointer shrink-0"
+                >
+                  🔍 竞品 5 维对比与差评
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMessageType('question');
+                    setInputText('提炼本产品核心 3 个典型目标客户画像 (ICP) 与真实未满足痛点');
+                  }}
+                  className="px-2 py-0.5 rounded bg-slate-50 hover:bg-blue-50 hover:text-blue-700 text-slate-600 border border-slate-200 transition cursor-pointer shrink-0"
+                >
+                  🎯 目标客群 (ICP)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMessageType('question');
+                    setInputText('推演对抗巨头的价值缝隙 (Value Gap) 与前10,000名用户冷启动单点击穿切口 (Wedge)');
+                  }}
+                  className="px-2 py-0.5 rounded bg-slate-50 hover:bg-blue-50 hover:text-blue-700 text-slate-600 border border-slate-200 transition cursor-pointer shrink-0"
+                >
+                  ⚡ 破局切入点 (Wedge)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMessageType('instruction');
+                    setInputText('综合上述分析，生成本单品正式的《市场研究与竞品深度洞察报告》交付物');
+                  }}
+                  className="px-2 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold transition cursor-pointer shrink-0"
+                >
+                  📑 生成完整市场研究报告
+                </button>
+              </div>
+            )}
+
             <form onSubmit={handleSendMessage} className="flex gap-2">
               <input
                 type="text"

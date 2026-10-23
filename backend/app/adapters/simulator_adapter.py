@@ -62,10 +62,24 @@ class SimulatorAdapter(BaseAgentAdapter):
             content=f"已读取战略底稿，正在为工序 {mod_code} ({mod_name}) 生成规范草案..."
         )
 
-        template_content = MODULE_TEMPLATES_CONTENT.get(
-            mod_code,
-            f"# {mod_name} 交付物初稿\n\n基于指令生成：{user_instruction}\n\n已完成基础框架搭建与核心要素梳理。"
-        )
+        if mod_code == "01":
+            from backend.app.services.market_research_engine import generate_comprehensive_market_report
+            product_name = (metadata or {}).get("product_name") or "当前产品"
+            product_code = (metadata or {}).get("product_code") or "PRD"
+            target_market = (metadata or {}).get("target_market") or "目标细分市场"
+            strategic_intent = (metadata or {}).get("strategic_intent") or ""
+            template_content = generate_comprehensive_market_report(
+                product_name=product_name,
+                product_code=product_code,
+                target_market=target_market,
+                strategic_intent=strategic_intent,
+                user_instruction=user_instruction
+            )
+        else:
+            template_content = MODULE_TEMPLATES_CONTENT.get(
+                mod_code,
+                f"# {mod_name} 交付物初稿\n\n基于指令生成：{user_instruction}\n\n已完成基础框架搭建与核心要素梳理。"
+            )
 
         if message_type == "feedback":
             content = f"{template_content}\n\n---\n### 依据反馈修订说明\n- **反馈要点**：{user_instruction}\n- **调整说明**：已完成补充与闭环。"

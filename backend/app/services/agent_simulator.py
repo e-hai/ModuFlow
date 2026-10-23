@@ -93,10 +93,43 @@ async def generate_agent_response(
 
     # 1. Human gave an instruction -> Generate draft artifact
     if msg_type == "instruction":
-        default_art = MODULE_TEMPLATES_CONTENT.get(
-            module.module_code,
-            f"# {module.name} 交付物初稿\n\n基于指令生成：{content}\n\n已完成基础框架搭建与核心要素梳理。"
-        )
+        if module.module_code == "01":
+            from backend.app.services.market_research_engine import generate_comprehensive_market_report
+            from backend.app.models.entities import WorkflowRun, Product, StrategicInitiative
+            run_res = await db.execute(select(WorkflowRun).where(WorkflowRun.id == module.run_id))
+            run = run_res.scalar_one_or_none()
+            prod_name = "当前产品"
+            prod_code = "PRD"
+            target_mkt = "目标细分市场"
+            strat_intent = ""
+            strat_role = "acquisition"
+            if run:
+                p_res = await db.execute(select(Product).where(Product.id == run.product_id))
+                prod = p_res.scalar_one_or_none()
+                if prod:
+                    prod_name = prod.name
+                    prod_code = prod.code
+                    strat_role = prod.strategic_role or "acquisition"
+                    if prod.initiative_id:
+                        i_res = await db.execute(select(StrategicInitiative).where(StrategicInitiative.id == prod.initiative_id))
+                        init = i_res.scalar_one_or_none()
+                        if init:
+                            target_mkt = init.target_market or target_mkt
+                            strat_intent = init.strategic_intent or strat_intent
+
+            default_art = generate_comprehensive_market_report(
+                product_name=prod_name,
+                product_code=prod_code,
+                target_market=target_mkt,
+                strategic_intent=strat_intent,
+                strategic_role=strat_role,
+                user_instruction=content
+            )
+        else:
+            default_art = MODULE_TEMPLATES_CONTENT.get(
+                module.module_code,
+                f"# {module.name} 交付物初稿\n\n基于指令生成：{content}\n\n已完成基础框架搭建与核心要素梳理。"
+            )
         
         # Check current max version
         art_stmt = select(Artifact).where(Artifact.module_id == module.id).order_by(Artifact.version.desc())
