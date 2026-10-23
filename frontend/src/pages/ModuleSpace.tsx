@@ -43,7 +43,9 @@ import {
   Copy,
   Check,
   Download,
-  FileText
+  FileText,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 
 interface ModuleSpaceProps {
@@ -89,6 +91,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
   const [rejectReason, setRejectReason] = useState('');
   const [showSkillMenu, setShowSkillMenu] = useState(false);
   const [copiedArtifact, setCopiedArtifact] = useState(false);
+  const [panelLayout, setPanelLayout] = useState<'equal' | 'wide' | 'full'>('equal');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<any>(null);
@@ -364,7 +367,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
   const openIssues = moduleIssues.filter(i => i.status !== 'closed');
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 space-y-5">
+    <div className="w-full max-w-[2160px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
       {/* 顶部栏：模块信息与基线操作 */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
         <div className="flex items-center gap-3">
@@ -598,9 +601,12 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
       )}
 
       {/* 主界面：左右分栏（左侧人机对话流，右侧产物看板） */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[720px]">
-        {/* 左侧：人机多轮协作会话 (6 栏) */}
-        <div className="lg:col-span-6 bg-white border border-slate-200 rounded-2xl flex flex-col overflow-hidden shadow-xs">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[calc(100vh-190px)] min-h-[720px]">
+        {/* 左侧：人机多轮协作会话 */}
+        {panelLayout !== 'full' && (
+          <div className={`${
+            panelLayout === 'wide' ? 'lg:col-span-4' : 'lg:col-span-6'
+          } bg-white border border-slate-200 rounded-2xl flex flex-col overflow-hidden shadow-xs transition-all duration-200`}>
           <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/60 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-emerald-600" />
@@ -1024,16 +1030,69 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
             </form>
           </div>
         </div>
+        )}
 
-        {/* 右侧：产物看板与版本树 (6 栏) */}
-        <div className="lg:col-span-6 bg-white border border-slate-200 rounded-2xl flex flex-col overflow-hidden shadow-xs">
+        {/* 右侧：产物看板与版本树 */}
+        <div className={`${
+          panelLayout === 'full'
+            ? 'lg:col-span-12'
+            : panelLayout === 'wide'
+            ? 'lg:col-span-8'
+            : 'lg:col-span-6'
+        } bg-white border border-slate-200 rounded-2xl flex flex-col overflow-hidden shadow-xs transition-all duration-200`}>
           <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/60 flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <FileCheck2 className="w-4 h-4 text-emerald-600" />
               <span className="text-xs font-semibold text-slate-800">交付物产物库 (Artifacts)</span>
+              {panelLayout === 'full' && (
+                <span className="text-[10px] text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200 font-medium">
+                  全宽沉浸模式
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
+              {/* 分栏布局比例控制 */}
+              <div className="flex items-center bg-slate-200/70 p-0.5 rounded-lg text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setPanelLayout('equal')}
+                  className={`px-2 py-0.5 rounded-md transition cursor-pointer font-medium ${
+                    panelLayout === 'equal'
+                      ? 'bg-white text-slate-800 shadow-2xs font-semibold'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title="双栏平衡 (5:5)"
+                >
+                  1:1
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPanelLayout('wide')}
+                  className={`px-2 py-0.5 rounded-md transition cursor-pointer font-medium ${
+                    panelLayout === 'wide'
+                      ? 'bg-white text-slate-800 shadow-2xs font-semibold'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title="产物加宽 (4:8)"
+                >
+                  1:2
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPanelLayout(panelLayout === 'full' ? 'equal' : 'full')}
+                  className={`px-2 py-0.5 rounded-md transition cursor-pointer font-medium flex items-center gap-1 ${
+                    panelLayout === 'full'
+                      ? 'bg-white text-indigo-700 shadow-2xs font-semibold'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title={panelLayout === 'full' ? '还原为双栏视图' : '产物全宽沉浸阅读'}
+                >
+                  {panelLayout === 'full' ? <Minimize2 className="w-3 h-3 text-indigo-600" /> : <Maximize2 className="w-3 h-3" />}
+                  <span>{panelLayout === 'full' ? '还原' : '全宽'}</span>
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setIsUploadModalOpen(true)}
@@ -1184,7 +1243,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
               ) : (
                 <div className="p-4 md:p-6 bg-slate-50/60 min-h-full flex flex-col">
                   {/* 文档白板容器 */}
-                  <div className="bg-white border border-slate-200/90 rounded-2xl shadow-xs p-6 md:p-8 max-w-4xl w-full mx-auto flex-1 flex flex-col">
+                  <div className="bg-white border border-slate-200/90 rounded-2xl shadow-xs p-6 md:p-8 w-full flex-1 flex flex-col">
                     {/* 文档头部元信息与操作条 */}
                     <div className="flex items-start justify-between pb-5 border-b border-slate-200 flex-wrap gap-4 mb-5">
                       <div className="space-y-1.5">
