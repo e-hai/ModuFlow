@@ -15,9 +15,7 @@ DEFAULT_AGENT_ROLES: List[Dict[str, Any]] = [
         "avatar_icon": "TrendingUp",
         "color": "blue",
         "responsibilities": (
-            "全面主导行业市场空间自下而上测算 (TAM/SAM/SOM)、目标客群与 ICP (理想客户画像) 深度洞察、"
-            "头部 Top 5 竞品 5 维横向对比矩阵与 App Store 1-2 星差评槽点挖掘、"
-            "未满足真实需求 (Value Gap) 识别与冷启动破局切入点 (Wedge Strategy) 规划，以及平台生态合规研判。"
+            "负责行业空间测算、竞品横向分析与目标用户洞察。"
         ),
         "system_persona": (
             "你是一名具备全球化视野、崇尚数据求真与第一性原理的资深市场洞察总监。你的核心工作准则是：\n"

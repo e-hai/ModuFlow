@@ -12,6 +12,7 @@ import {
   FileCheck2,
   Bug,
   ChevronLeft,
+  ChevronDown,
   Hash,
   ShieldCheck,
   AlertCircle,
@@ -82,9 +83,25 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
   const [uploading, setUploading] = useState(false);
   const [ackingUpstream, setAckingUpstream] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [showSkillMenu, setShowSkillMenu] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<any>(null);
+  const skillMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (skillMenuRef.current && !skillMenuRef.current.contains(event.target as Node)) {
+        setShowSkillMenu(false);
+      }
+    };
+    if (showSkillMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showSkillMenu]);
 
   const renderRoleIcon = (iconName?: string, className = "w-4 h-4") => {
     switch (iconName) {
@@ -812,103 +829,152 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
 
           {/* 输入框与操作条 */}
           <div className="p-3 border-t border-slate-200 bg-white">
-            {/* 消息类型快速切换 */}
-            <div className="flex items-center gap-1.5 mb-2 text-xs">
-              <span className="text-[11px] text-slate-400">动作类型:</span>
-              <button
-                type="button"
-                onClick={() => setMessageType('instruction')}
-                className={`px-2 py-0.5 rounded text-[11px] transition cursor-pointer ${
-                  messageType === 'instruction'
-                    ? 'bg-emerald-600 text-white font-medium'
-                    : 'bg-slate-100 text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                指令 (Instruction)
-              </button>
-              <button
-                type="button"
-                onClick={() => setMessageType('feedback')}
-                className={`px-2 py-0.5 rounded text-[11px] transition cursor-pointer ${
-                  messageType === 'feedback'
-                    ? 'bg-amber-600 text-white font-medium'
-                    : 'bg-slate-100 text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                反馈修正 (Feedback)
-              </button>
-              <button
-                type="button"
-                onClick={() => setMessageType('question')}
-                className={`px-2 py-0.5 rounded text-[11px] transition cursor-pointer ${
-                  messageType === 'question'
-                    ? 'bg-blue-600 text-white font-medium'
-                    : 'bg-slate-100 text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                疑问讨论 (Question)
-              </button>
-            </div>
-
-            {/* 工序 01 (市场研究) 专属技能快捷操作栏 */}
-            {moduleState.module_code === '01' && (
-              <div className="flex items-center gap-1.5 mb-2 overflow-x-auto pb-1 text-[11px]">
-                <span className="text-[10px] text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 shrink-0 flex items-center gap-1">
-                  <TrendingUp className="w-3 h-3 text-blue-600" />
-                  调研技能:
-                </span>
+            {/* 消息类型快速切换与专属技能入口 */}
+            <div className="flex items-center justify-between mb-2 text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-slate-400">动作类型:</span>
                 <button
                   type="button"
-                  onClick={() => {
-                    setMessageType('question');
-                    setInputText('请用自下而上 (Bottom-Up) 模型量化测算本产品的 TAM/SAM/SOM 市场空间与发展情景');
-                  }}
-                  className="px-2 py-0.5 rounded bg-slate-50 hover:bg-blue-50 hover:text-blue-700 text-slate-600 border border-slate-200 transition cursor-pointer shrink-0"
+                  onClick={() => setMessageType('instruction')}
+                  className={`px-2 py-0.5 rounded text-[11px] transition cursor-pointer ${
+                    messageType === 'instruction'
+                      ? 'bg-emerald-600 text-white font-medium'
+                      : 'bg-slate-100 text-slate-600 hover:text-slate-900'
+                  }`}
                 >
-                  📊 TAM/SAM/SOM 测算
+                  指令 (Instruction)
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setMessageType('question');
-                    setInputText('深入拆解目标市场 Top 5 核心标杆竞品 5 维矩阵及 App Store 1-2星差评槽点');
-                  }}
-                  className="px-2 py-0.5 rounded bg-slate-50 hover:bg-blue-50 hover:text-blue-700 text-slate-600 border border-slate-200 transition cursor-pointer shrink-0"
+                  onClick={() => setMessageType('feedback')}
+                  className={`px-2 py-0.5 rounded text-[11px] transition cursor-pointer ${
+                    messageType === 'feedback'
+                      ? 'bg-amber-600 text-white font-medium'
+                      : 'bg-slate-100 text-slate-600 hover:text-slate-900'
+                  }`}
                 >
-                  🔍 竞品 5 维对比与差评
+                  反馈修正 (Feedback)
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setMessageType('question');
-                    setInputText('提炼本产品核心 3 个典型目标客户画像 (ICP) 与真实未满足痛点');
-                  }}
-                  className="px-2 py-0.5 rounded bg-slate-50 hover:bg-blue-50 hover:text-blue-700 text-slate-600 border border-slate-200 transition cursor-pointer shrink-0"
+                  onClick={() => setMessageType('question')}
+                  className={`px-2 py-0.5 rounded text-[11px] transition cursor-pointer ${
+                    messageType === 'question'
+                      ? 'bg-blue-600 text-white font-medium'
+                      : 'bg-slate-100 text-slate-600 hover:text-slate-900'
+                  }`}
                 >
-                  🎯 目标客群 (ICP)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMessageType('question');
-                    setInputText('推演对抗巨头的价值缝隙 (Value Gap) 与前10,000名用户冷启动单点击穿切口 (Wedge)');
-                  }}
-                  className="px-2 py-0.5 rounded bg-slate-50 hover:bg-blue-50 hover:text-blue-700 text-slate-600 border border-slate-200 transition cursor-pointer shrink-0"
-                >
-                  ⚡ 破局切入点 (Wedge)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMessageType('instruction');
-                    setInputText('综合上述分析，生成本单品正式的《市场研究与竞品深度洞察报告》交付物');
-                  }}
-                  className="px-2 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold transition cursor-pointer shrink-0"
-                >
-                  📑 生成完整市场研究报告
+                  疑问讨论 (Question)
                 </button>
               </div>
-            )}
+
+              {/* 工序 01 (市场研究) 技能下拉弹窗入口 */}
+              {moduleState.module_code === '01' && (
+                <div className="relative" ref={skillMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setShowSkillMenu(!showSkillMenu)}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition shadow-2xs cursor-pointer"
+                  >
+                    <TrendingUp className="w-3.5 h-3.5 text-blue-600" />
+                    <span>调研技能</span>
+                    <ChevronDown className={`w-3.5 h-3.5 text-blue-500 transition-transform duration-150 ${showSkillMenu ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {showSkillMenu && (
+                    <div className="absolute right-0 bottom-full mb-1.5 w-76 bg-white border border-slate-200 rounded-xl shadow-xl p-1.5 z-30 animate-in fade-in zoom-in-95 duration-150">
+                      <div className="px-2.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 mb-1 flex items-center justify-between">
+                        <span>市场研究专项技能</span>
+                        <span className="text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded font-mono">5 项可用</span>
+                      </div>
+                      <div className="space-y-0.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMessageType('question');
+                            setInputText('请用自下而上 (Bottom-Up) 模型量化测算本产品的 TAM/SAM/SOM 市场空间与发展情景');
+                            setShowSkillMenu(false);
+                          }}
+                          className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-blue-50 transition flex items-start gap-2 group cursor-pointer"
+                        >
+                          <span className="text-sm shrink-0 mt-0.5">📊</span>
+                          <div>
+                            <div className="text-xs font-medium text-slate-800 group-hover:text-blue-700">TAM/SAM/SOM 测算</div>
+                            <div className="text-[10px] text-slate-400">自下而上量化设备盘与 Blended ARPU</div>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMessageType('question');
+                            setInputText('深入拆解目标市场 Top 5 核心标杆竞品 5 维矩阵及 App Store 1-2星差评槽点');
+                            setShowSkillMenu(false);
+                          }}
+                          className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-blue-50 transition flex items-start gap-2 group cursor-pointer"
+                        >
+                          <span className="text-sm shrink-0 mt-0.5">🔍</span>
+                          <div>
+                            <div className="text-xs font-medium text-slate-800 group-hover:text-blue-700">竞品 5 维对比与差评</div>
+                            <div className="text-[10px] text-slate-400">定价阶梯、流量来源与真实差评槽点</div>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMessageType('question');
+                            setInputText('提炼本产品核心 3 个典型目标客户画像 (ICP) 与真实未满足痛点');
+                            setShowSkillMenu(false);
+                          }}
+                          className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-blue-50 transition flex items-start gap-2 group cursor-pointer"
+                        >
+                          <span className="text-sm shrink-0 mt-0.5">🎯</span>
+                          <div>
+                            <div className="text-xs font-medium text-slate-800 group-hover:text-blue-700">目标客群画像 (ICP)</div>
+                            <div className="text-[10px] text-slate-400">3类典型用户画像与 Jobs-To-Be-Done</div>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMessageType('question');
+                            setInputText('推演对抗巨头的价值缝隙 (Value Gap) 与前10,000名用户冷启动单点击穿切口 (Wedge)');
+                            setShowSkillMenu(false);
+                          }}
+                          className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-blue-50 transition flex items-start gap-2 group cursor-pointer"
+                        >
+                          <span className="text-sm shrink-0 mt-0.5">⚡</span>
+                          <div>
+                            <div className="text-xs font-medium text-slate-800 group-hover:text-blue-700">破局切入点 (Wedge)</div>
+                            <div className="text-[10px] text-slate-400">价值缝隙与种子用户单点击穿打法</div>
+                          </div>
+                        </button>
+
+                        <div className="border-t border-slate-100 my-1 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMessageType('instruction');
+                              setInputText('综合上述分析，生成本单品正式的《市场研究与竞品深度洞察报告》交付物');
+                              setShowSkillMenu(false);
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 rounded-lg bg-emerald-50/70 hover:bg-emerald-100 text-emerald-900 transition flex items-start gap-2 group cursor-pointer border border-emerald-200/60"
+                          >
+                            <span className="text-sm shrink-0 mt-0.5">📑</span>
+                            <div>
+                              <div className="text-xs font-semibold text-emerald-800">生成完整市场研究报告</div>
+                              <div className="text-[10px] text-emerald-600">全量推演并归档至交付物基准</div>
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             <form onSubmit={handleSendMessage} className="flex gap-2">
               <input
