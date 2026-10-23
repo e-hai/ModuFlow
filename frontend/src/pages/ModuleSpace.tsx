@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
 import { api } from '../services/api';
 import { ModuleInstance, CollaborationSession, SessionMessage, Artifact, Issue, ChangeReview, StaleDetail } from '../types';
 import { PhaseBadge, SeverityBadge } from '../components/StatusBadge';
 import { NewIssueModal } from '../components/NewIssueModal';
+import { MarkdownViewer } from '../components/MarkdownViewer';
 import {
   Send,
   Bot,
@@ -39,7 +39,11 @@ import {
   X,
   Eye,
   ThumbsUp,
-  ThumbsDown
+  ThumbsDown,
+  Copy,
+  Check,
+  Download,
+  FileText
 } from 'lucide-react';
 
 interface ModuleSpaceProps {
@@ -84,10 +88,31 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
   const [ackingUpstream, setAckingUpstream] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [showSkillMenu, setShowSkillMenu] = useState(false);
+  const [copiedArtifact, setCopiedArtifact] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<any>(null);
   const skillMenuRef = useRef<HTMLDivElement>(null);
+
+  const handleCopyArtifact = () => {
+    if (!selectedArtifact) return;
+    navigator.clipboard.writeText(selectedArtifact.content);
+    setCopiedArtifact(true);
+    setTimeout(() => setCopiedArtifact(false), 2000);
+  };
+
+  const handleDownloadArtifact = () => {
+    if (!selectedArtifact) return;
+    const blob = new Blob([selectedArtifact.content], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `交付物_${moduleState.module_code}_${moduleState.name}_v${selectedArtifact.version}.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -698,9 +723,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                       </div>
 
                       {msg.message_type === 'answer' ? (
-                        <div className="prose prose-xs max-w-none text-xs text-slate-800 leading-relaxed font-sans">
-                          <ReactMarkdown>{msg.content}</ReactMarkdown>
-                        </div>
+                        <MarkdownViewer content={msg.content} variant="chat" />
                       ) : (
                         <div className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
                           {msg.content}
@@ -1159,39 +1182,91 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                   </div>
                 </div>
               ) : (
-                <div className="p-5 space-y-4">
-                  <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-wrap gap-2">
-                    <div>
-                      <h2 className="text-base font-bold text-slate-900">{selectedArtifact.title}</h2>
-                      <div className="flex items-center gap-3 text-[10px] text-slate-400 font-mono mt-1">
-                        <span className="flex items-center gap-1">
-                          <Hash className="w-3 h-3" />
-                          SHA-256: {selectedArtifact.content_hash.slice(0, 16)}...
-                        </span>
-                        {selectedArtifact.artifact_type && (
-                          <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 uppercase">
-                            {selectedArtifact.artifact_type}
+                <div className="p-4 md:p-6 bg-slate-50/60 min-h-full flex flex-col">
+                  {/* 文档白板容器 */}
+                  <div className="bg-white border border-slate-200/90 rounded-2xl shadow-xs p-6 md:p-8 max-w-4xl w-full mx-auto flex-1 flex flex-col">
+                    {/* 文档头部元信息与操作条 */}
+                    <div className="flex items-start justify-between pb-5 border-b border-slate-200 flex-wrap gap-4 mb-5">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            v{selectedArtifact.version}
                           </span>
-                        )}
+                          {selectedArtifact.is_baseline && (
+                            <span className="px-2 py-0.5 rounded-md text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold flex items-center gap-1 shadow-2xs">
+                              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                              当前工序锁定基线 (Baseline)
+                            </span>
+                          )}
+                          <span className="text-xs text-slate-400 font-mono">
+                            {selectedArtifact.content.length.toLocaleString()} 字符
+                          </span>
+                        </div>
+                        <h1 className="text-lg md:text-xl font-bold text-slate-900 tracking-tight">
+                          {selectedArtifact.title}
+                        </h1>
+                        <div className="flex items-center gap-3 text-[11px] text-slate-400 font-mono">
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-slate-400" />
+                            {new Date(selectedArtifact.created_at).toLocaleString('zh-CN', { hour12: false })}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Hash className="w-3 h-3 text-slate-400" />
+                            SHA-256: {selectedArtifact.content_hash.slice(0, 12)}...
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* 快捷操作区：复制全文与下载 */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleCopyArtifact}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-2xs transition cursor-pointer"
+                          title="复制 Markdown 源码全文"
+                        >
+                          {copiedArtifact ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              <span className="text-emerald-700">已复制全文</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5 text-slate-500" />
+                              <span>复制全文</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleDownloadArtifact}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-2xs transition cursor-pointer"
+                          title="下载为 Markdown 文件 (.md)"
+                        >
+                          <Download className="w-3.5 h-3.5 text-slate-500" />
+                          <span>下载 .md</span>
+                        </button>
                       </div>
                     </div>
-                    {selectedArtifact.is_baseline && (
-                      <span className="px-2 py-0.5 rounded text-[11px] bg-emerald-50 text-emerald-800 border border-emerald-200 font-medium flex items-center gap-1">
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                        当前基线
-                      </span>
+
+                    {/* 版本变更说明 */}
+                    {selectedArtifact.change_summary && (
+                      <div className="bg-blue-50/80 border border-blue-200 rounded-xl p-3.5 text-xs text-blue-900 mb-6 shadow-2xs">
+                        <div className="font-semibold flex items-center gap-1.5 text-blue-900 mb-1">
+                          <span>📝</span>
+                          <span>本版本关键变更说明：</span>
+                        </div>
+                        <p className="text-blue-800 leading-relaxed pl-5">
+                          {selectedArtifact.change_summary}
+                        </p>
+                      </div>
                     )}
-                  </div>
 
-                  {selectedArtifact.change_summary && (
-                    <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3 text-xs text-blue-900">
-                      <strong>📝 本版本变更说明：</strong>
-                      <p className="mt-0.5 text-blue-800">{selectedArtifact.change_summary}</p>
+                    {/* 文档排版正文 */}
+                    <div className="flex-1">
+                      <MarkdownViewer content={selectedArtifact.content} variant="artifact" />
                     </div>
-                  )}
-
-                  <div className="prose prose-slate prose-sm max-w-none text-slate-700 leading-relaxed">
-                    <ReactMarkdown>{selectedArtifact.content}</ReactMarkdown>
                   </div>
                 </div>
               )
@@ -1344,8 +1419,8 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                   <Sparkles className="w-4 h-4 text-indigo-600" />
                   变更差异分析与影响评估
                 </div>
-                <div className="prose prose-slate prose-xs max-w-none text-slate-700 leading-relaxed font-sans">
-                  <ReactMarkdown>{selectedReview.diff_summary}</ReactMarkdown>
+                <div>
+                  <MarkdownViewer content={selectedReview.diff_summary} variant="chat" />
                 </div>
               </div>
 
