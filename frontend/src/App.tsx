@@ -41,6 +41,7 @@ export const App: React.FC = () => {
 
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<string>('lifetime');
+  const [cockpitRefreshTrigger, setCockpitRefreshTrigger] = useState(0);
 
   useEffect(() => {
     loadInitiativesAndProducts();
@@ -145,7 +146,7 @@ export const App: React.FC = () => {
       setInitTargetMarket('');
       setInitBusinessHypothesis('');
       await loadInitiativesAndProducts(created.id);
-      alert('战略工程创建成功！');
+      setCockpitRefreshTrigger(k => k + 1);
     } catch (err: any) {
       alert(`创建战略工程失败: ${err.message}`);
     }
@@ -166,10 +167,18 @@ export const App: React.FC = () => {
       setProdName('');
       setProdCode('');
       setProdDesc('');
+
+      // 1. Refresh products list for the current initiative
       const prodList = await api.getProducts(currentInitiative.id);
       setProducts(prodList);
       setCurrentProduct(newProd);
-      alert('矩阵产品添加成功！');
+
+      // 2. Refresh initiatives list so product_count in sidebar updates
+      const initList = await api.getInitiatives();
+      setInitiatives(initList);
+
+      // 3. Trigger immediate cockpit refresh in Dashboard
+      setCockpitRefreshTrigger(k => k + 1);
     } catch (err: any) {
       alert(`创建产品失败: ${err.message}`);
     }
@@ -210,6 +219,7 @@ export const App: React.FC = () => {
             <Dashboard
               currentInitiative={currentInitiative}
               products={products}
+              refreshTrigger={cockpitRefreshTrigger}
               selectedPeriod={selectedPeriod}
               onPeriodChange={setSelectedPeriod}
               onEnterProductWorkbench={handleSelectProduct}

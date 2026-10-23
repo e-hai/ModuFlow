@@ -499,6 +499,15 @@ async def create_product(data: ProductCreate, db: AsyncSession = Depends(get_db)
     db.add(prod)
     await db.commit()
     await db.refresh(prod)
+
+    # 自动同步至物理工作区（创建产品隔离目录并更新战略底稿产品矩阵表格）
+    if prod.initiative_id:
+        from backend.app.services.workspace_sync import sync_strategic_initiative_workspace
+        try:
+            await sync_strategic_initiative_workspace(db, prod.initiative_id)
+        except Exception as e:
+            logger.warning(f"Failed to sync workspace for {prod.initiative_id}: {e}")
+
     dto = ProductOut.model_validate(prod)
     dto.active_runs_count = 0
     return dto

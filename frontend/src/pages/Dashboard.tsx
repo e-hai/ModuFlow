@@ -13,6 +13,7 @@ import { DecisionCenterTab } from '../components/cockpit/DecisionCenterTab';
 interface DashboardProps {
   currentInitiative: StrategicInitiative | null;
   products: Product[];
+  refreshTrigger?: number;
   selectedPeriod?: string;
   onPeriodChange?: (period: string) => void;
   onEnterProductWorkbench: (product: Product, defaultRunId?: string) => void;
@@ -24,6 +25,7 @@ interface DashboardProps {
 export const Dashboard: React.FC<DashboardProps> = ({
   currentInitiative,
   products,
+  refreshTrigger,
   selectedPeriod = 'lifetime',
   onPeriodChange,
   onEnterProductWorkbench,
@@ -53,7 +55,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   useEffect(() => {
     loadCockpitData();
-  }, [loadCockpitData]);
+  }, [loadCockpitData, refreshTrigger, products]);
 
   if (!currentInitiative) {
     return (
@@ -111,7 +113,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               cockpit={cockpit}
               onNavigateTab={setActiveTab}
               onEnterProductWorkbench={(productId) => {
-                const p = products.find((prod) => prod.id === productId);
+                const p = products.find((prod) => prod.id === productId || prod.code === productId);
                 if (p) onEnterProductWorkbench(p);
               }}
             />
