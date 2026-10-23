@@ -15,8 +15,8 @@ mkdir -p data/snapshots
 trap 'echo "正在停止服务..."; kill 0' SIGINT SIGTERM EXIT
 
 # 3. 启动 FastAPI 后端
-echo "▶ 正在启动后端 API 服务 (http://127.0.0.1:8000)..."
-PYTHONPATH=. backend/.venv/bin/uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload &
+echo "▶ 正在启动后端 API 服务 (http://127.0.0.1:8088)..."
+PYTHONPATH=. backend/.venv/bin/uvicorn backend.app.main:app --host 127.0.0.1 --port 8088 --reload &
 BACKEND_PID=$!
 
 # 等待后端就绪
@@ -32,7 +32,7 @@ echo ""
 echo "=========================================================="
 echo "  🚀 ModuFlow 平台已就绪："
 echo "  • 前端工作台: http://localhost:5173"
-echo "  • 后端接口文档: http://127.0.0.1:8000/docs"
+echo "  • 后端接口文档: http://127.0.0.1:8088/docs"
 echo "  按 Ctrl+C 退出所有服务"
 echo "=========================================================="
 
