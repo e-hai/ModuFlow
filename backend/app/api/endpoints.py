@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import selectinload
@@ -19,7 +20,9 @@ from backend.app.models.entities import (
     Issue,
     ExecutiveDecision,
     ExecutiveRisk,
-    AgentRoleDefinition
+    AgentRoleDefinition,
+    AgentSettingsModel,
+    ChangeReview
 )
 from backend.app.schemas.all_schemas import (
     StrategicInitiativeOut, StrategicInitiativeCreate, StrategicInitiativeUpdate,
@@ -34,7 +37,8 @@ from backend.app.schemas.all_schemas import (
     FinancialMetrics, FocusAlert, PortfolioProductItem, MarketingCockpitData, MarketingCategoryItem, MarketingSubChannelItem,
     OperationsCockpitData, ExecutiveRiskItem,
     AgentSettingsOut, AgentSettingsUpdate, AgentPresetItem,
-    AgentRoleDefinitionOut, ModuleRoleBundleOut
+    AgentRoleDefinitionOut, ModuleRoleBundleOut,
+    ChangeReviewOut, ChangeReviewAction
 )
 from backend.app.services.workflow_engine import (
     create_workflow_run_from_template,
@@ -42,6 +46,7 @@ from backend.app.services.workflow_engine import (
     unlock_downstream_modules
 )
 from backend.app.services.agent_runner import execute_agent_for_session
+from backend.app.services.bundle_storage import process_and_save_bundle_artifact
 
 api_router = APIRouter()
 
@@ -603,33 +608,63 @@ async def get_run(run_id: str, db: AsyncSession = Depends(get_db)):
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
     
-    # Calculate issue counts for each module
+    module_ids = [m.id for m in run.modules]
+    open_map = {}
+    blk_map = {}
+    art_map = {}
+    artifacts_map = {}
+
+    if module_ids:
+        # Batch count open issues using GROUP BY to eliminate N+1 queries
+        res_open = await db.execute(
+            select(Issue.target_module_id, func.count(Issue.id))
+            .where(
+                Issue.target_module_id.in_(module_ids),
+                Issue.status.in_(["open", "investigating", "fixing", "verifying"])
+            )
+            .group_by(Issue.target_module_id)
+        )
+        open_map = dict(res_open.all())
+
+        # Batch count blocking issues using GROUP BY
+        res_blk = await db.execute(
+            select(Issue.target_module_id, func.count(Issue.id))
+            .where(
+                Issue.target_module_id.in_(module_ids),
+                Issue.status.in_(["open", "investigating", "fixing", "verifying"]),
+                Issue.severity.in_(["critical", "major"])
+            )
+            .group_by(Issue.target_module_id)
+        )
+        blk_map = dict(res_blk.all())
+
+        # Batch count artifacts using GROUP BY
+        res_art = await db.execute(
+            select(Artifact.module_id, func.count(Artifact.id))
+            .where(Artifact.module_id.in_(module_ids))
+            .group_by(Artifact.module_id)
+        )
+        art_map = dict(res_art.all())
+
+        # Preload baseline artifacts in one query for downstream stale detection
+        baseline_art_ids = [m.baseline_artifact_id for m in run.modules if m.baseline_artifact_id]
+        if baseline_art_ids:
+            res_base = await db.execute(select(Artifact).where(Artifact.id.in_(baseline_art_ids)))
+            artifacts_map = {a.id: a for a in res_base.scalars().all()}
+
+    from backend.app.services.stale_checker import calculate_module_stale_status
     modules_dto = []
     for m in run.modules:
         dto = ModuleInstanceOut.model_validate(m)
-        
-        # open issues targeting this module
-        stmt_issues = select(func.count(Issue.id)).where(
-            Issue.target_module_id == m.id,
-            Issue.status.in_(["open", "investigating", "fixing", "verifying"])
-        )
-        res_issues = await db.execute(stmt_issues)
-        dto.open_issues_count = res_issues.scalar_one() or 0
+        dto.open_issues_count = open_map.get(m.id, 0)
+        dto.blocking_issues_count = blk_map.get(m.id, 0)
+        dto.artifacts_count = art_map.get(m.id, 0)
 
-        # blocking issues
-        stmt_blocking = select(func.count(Issue.id)).where(
-            Issue.target_module_id == m.id,
-            Issue.status.in_(["open", "investigating", "fixing", "verifying"]),
-            Issue.severity.in_(["critical", "major"])
+        is_stale, stale_details = await calculate_module_stale_status(
+            db, m, all_run_modules=run.modules, artifacts_map=artifacts_map
         )
-        res_blk = await db.execute(stmt_blocking)
-        dto.blocking_issues_count = res_blk.scalar_one() or 0
-
-        # artifact count
-        stmt_art = select(func.count(Artifact.id)).where(Artifact.module_id == m.id)
-        res_art = await db.execute(stmt_art)
-        dto.artifacts_count = res_art.scalar_one() or 0
-        
+        dto.is_upstream_stale = is_stale
+        dto.stale_details = stale_details
         modules_dto.append(dto)
         
     out = WorkflowRunOut.model_validate(run)
@@ -654,6 +689,26 @@ async def get_module(module_id: str, db: AsyncSession = Depends(get_db)):
         )
     )
     dto.open_issues_count = res_issues.scalar_one() or 0
+
+    res_blk = await db.execute(
+        select(func.count(Issue.id)).where(
+            Issue.target_module_id == mod.id,
+            Issue.status.in_(["open", "investigating", "fixing", "verifying"]),
+            Issue.severity.in_(["critical", "major"])
+        )
+    )
+    dto.blocking_issues_count = res_blk.scalar_one() or 0
+
+    res_art = await db.execute(
+        select(func.count(Artifact.id)).where(Artifact.module_id == mod.id)
+    )
+    dto.artifacts_count = res_art.scalar_one() or 0
+
+    # Downstream stale status
+    from backend.app.services.stale_checker import calculate_module_stale_status
+    is_stale, stale_details = await calculate_module_stale_status(db, mod)
+    dto.is_upstream_stale = is_stale
+    dto.stale_details = stale_details
 
     # Role bundle
     from backend.app.services.agent_roles import get_module_role_bundle
@@ -709,7 +764,44 @@ async def update_module_phase(module_id: str, data: ModulePhaseUpdate, db: Async
         await sync_run_workspace(db, mod.run_id)
     except Exception:
         pass
-    return ModuleInstanceOut.model_validate(mod)
+    return await get_module(module_id=mod.id, db=db)
+
+@api_router.post("/modules/{module_id}/ack-upstream", response_model=ModuleInstanceOut)
+async def ack_upstream_module(
+    module_id: str,
+    upstream_code: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Downstream explicitly confirms acknowledgment and sync of upstream specification version."""
+    stmt = select(ModuleInstance).where(ModuleInstance.id == module_id)
+    res = await db.execute(stmt)
+    mod = res.scalar_one_or_none()
+    if not mod:
+        raise HTTPException(status_code=404, detail="Module not found")
+
+    from backend.app.services.stale_checker import get_relevant_upstream_codes
+    target_upstreams = [upstream_code] if upstream_code else list(get_relevant_upstream_codes(mod.module_code, mod.dependencies))
+
+    # Fetch all modules in run to get baseline artifact versions
+    m_stmt = select(ModuleInstance).where(ModuleInstance.run_id == mod.run_id)
+    m_res = await db.execute(m_stmt)
+    all_mods = {m.module_code: m for m in m_res.scalars().all()}
+
+    current_sync = dict(mod.synced_upstream_versions or {})
+    for up_code in target_upstreams:
+        up_mod = all_mods.get(up_code)
+        if up_mod and up_mod.baseline_artifact_id:
+            art_res = await db.execute(select(Artifact.version).where(Artifact.id == up_mod.baseline_artifact_id))
+            ver = art_res.scalar_one_or_none()
+            if ver:
+                current_sync[up_code] = ver
+
+    mod.synced_upstream_versions = current_sync
+    db.add(mod)
+    await db.commit()
+    await db.refresh(mod)
+
+    return await get_module(module_id=mod.id, db=db)
 
 # --- Collaboration Session & Messages ---
 @api_router.get("/modules/{module_id}/session", response_model=CollaborationSessionOut)
@@ -791,6 +883,183 @@ async def get_artifact(artifact_id: str, db: AsyncSession = Depends(get_db)):
     if not art:
         raise HTTPException(status_code=404, detail="Artifact not found")
     return art
+
+@api_router.post("/modules/{module_id}/artifacts/upload")
+async def upload_module_artifact(
+    module_id: str,
+    file: UploadFile = File(...),
+    change_summary: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Accepts full deliveries (single Markdown file, HTML bundle, or ZIP archive).
+    Extracts archives, versions files under physical workspace, and generates ChangeReview.
+    """
+    stmt = select(ModuleInstance).where(ModuleInstance.id == module_id)
+    res = await db.execute(stmt)
+    mod = res.scalar_one_or_none()
+    if not mod:
+        raise HTTPException(status_code=404, detail="Module not found")
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    artifact, change_review = await process_and_save_bundle_artifact(
+        db=db,
+        module_id=module_id,
+        filename=file.filename or "artifact.zip",
+        file_bytes=file_bytes,
+        change_summary=change_summary
+    )
+
+    return {
+        "artifact": ArtifactOut.model_validate(artifact),
+        "change_review": ChangeReviewOut.model_validate(change_review)
+    }
+
+@api_router.get("/artifacts/{artifact_id}/preview")
+@api_router.get("/artifacts/{artifact_id}/preview/{path:path}")
+async def preview_artifact_file(
+    artifact_id: str,
+    path: str = "",
+    db: AsyncSession = Depends(get_db)
+):
+    """Serves static prototype files (HTML/CSS/JS/images) from extracted bundle directory."""
+    stmt = select(Artifact).where(Artifact.id == artifact_id)
+    res = await db.execute(stmt)
+    art = res.scalar_one_or_none()
+    if not art:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+
+    if not art.storage_rel_path:
+        raise HTTPException(status_code=400, detail="Artifact does not have stored files on disk")
+
+    base_dir = (settings.WORKSPACE_DIR / art.storage_rel_path).resolve()
+    target_rel = path.strip() if path and path.strip() else art.entry_file
+    target_path = (base_dir / target_rel).resolve()
+
+    # Traversal security check
+    if not str(target_path).startswith(str(base_dir)):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not target_path.exists():
+        fallback = base_dir / "index.html"
+        if fallback.exists():
+            return FileResponse(str(fallback))
+        raise HTTPException(status_code=404, detail=f"File '{target_rel}' not found in artifact bundle")
+
+    return FileResponse(str(target_path))
+
+# --- Change Reviews & Unified Approval Flow ---
+@api_router.get("/change-reviews", response_model=List[ChangeReviewOut])
+async def list_change_reviews(
+    module_id: Optional[str] = None,
+    run_id: Optional[str] = None,
+    status: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(ChangeReview)
+    if module_id:
+        stmt = stmt.where(ChangeReview.module_id == module_id)
+    if run_id:
+        stmt = stmt.join(ModuleInstance, ChangeReview.module_id == ModuleInstance.id).where(
+            ModuleInstance.run_id == run_id
+        )
+    if status:
+        stmt = stmt.where(ChangeReview.status == status)
+    stmt = stmt.order_by(ChangeReview.created_at.desc())
+    res = await db.execute(stmt)
+    return res.scalars().all()
+
+@api_router.get("/change-reviews/{review_id}", response_model=ChangeReviewOut)
+async def get_change_review(review_id: str, db: AsyncSession = Depends(get_db)):
+    stmt = select(ChangeReview).where(ChangeReview.id == review_id)
+    res = await db.execute(stmt)
+    item = res.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Change review not found")
+    return item
+
+@api_router.post("/change-reviews/{review_id}/approve", response_model=ChangeReviewOut)
+async def approve_change_review(
+    review_id: str,
+    action: Optional[ChangeReviewAction] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Unified change approval by leader/manager.
+    Promotes artifact to baseline, updates module phase, and triggers downstream sync alerts.
+    """
+    stmt = (
+        select(ChangeReview)
+        .options(selectinload(ChangeReview.artifact), selectinload(ChangeReview.module))
+        .where(ChangeReview.id == review_id)
+    )
+    res = await db.execute(stmt)
+    review = res.scalar_one_or_none()
+    if not review:
+        raise HTTPException(status_code=404, detail="Change review not found")
+
+    approver_name = action.approver if (action and action.approver) else "负责人"
+    review.status = "approved"
+    review.approver = approver_name
+    review.approved_at = datetime.utcnow()
+
+    # Promote artifact to baseline
+    art = review.artifact
+    if art:
+        # Un-baseline any previous artifacts in the module
+        old_arts_res = await db.execute(
+            select(Artifact).where(Artifact.module_id == review.module_id, Artifact.id != art.id)
+        )
+        for old_art in old_arts_res.scalars().all():
+            old_art.is_baseline = False
+            db.add(old_art)
+
+        art.is_baseline = True
+        db.add(art)
+
+    mod = review.module
+    if mod and art:
+        mod.baseline_artifact_id = art.id
+        mod.phase = "baselined"
+        db.add(mod)
+
+    await db.commit()
+    await db.refresh(review)
+
+    # Unlock downstream modules and sync workspace
+    if mod:
+        await unlock_downstream_modules(db, mod.run_id)
+        from backend.app.services.workspace_sync import sync_run_workspace
+        try:
+            await sync_run_workspace(db, mod.run_id)
+        except Exception:
+            pass
+
+    return review
+
+@api_router.post("/change-reviews/{review_id}/reject", response_model=ChangeReviewOut)
+async def reject_change_review(
+    review_id: str,
+    action: Optional[ChangeReviewAction] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(ChangeReview).where(ChangeReview.id == review_id)
+    res = await db.execute(stmt)
+    review = res.scalar_one_or_none()
+    if not review:
+        raise HTTPException(status_code=404, detail="Change review not found")
+
+    review.status = "rejected"
+    review.approver = action.approver if (action and action.approver) else "负责人"
+    review.rejection_reason = action.rejection_reason if (action and action.rejection_reason) else "未通过审批"
+    review.approved_at = datetime.utcnow()
+
+    await db.commit()
+    await db.refresh(review)
+    return review
 
 # --- Issues ---
 @api_router.get("/issues", response_model=List[IssueOut])
@@ -921,11 +1190,26 @@ async def update_issue(issue_id: str, data: IssueUpdate, db: AsyncSession = Depe
 
 # --- Agent CLI Settings Endpoints ---
 @api_router.get("/settings/agent", response_model=AgentSettingsOut)
-async def get_agent_settings():
+async def get_agent_settings(db: AsyncSession = Depends(get_db)):
     from backend.app.adapters.cli_adapter import find_cli_binary
     claude_path = find_cli_binary("claude")
     agy_path = find_cli_binary("agy")
     codex_path = find_cli_binary("codex")
+
+    # Load persistent settings from DB
+    stmt = select(AgentSettingsModel).where(AgentSettingsModel.id == "default")
+    res = await db.execute(stmt)
+    setting_row = res.scalar_one_or_none()
+    if not setting_row:
+        setting_row = AgentSettingsModel(
+            id="default",
+            adapter_type=settings.AGENT_ADAPTER_TYPE,
+            cli_command=settings.AGENT_CLI_COMMAND,
+            timeout=settings.AGENT_CLI_TIMEOUT
+        )
+        db.add(setting_row)
+        await db.commit()
+        await db.refresh(setting_row)
 
     presets = [
         AgentPresetItem(
@@ -962,21 +1246,34 @@ async def get_agent_settings():
         )
     ]
     return AgentSettingsOut(
-        adapter_type=settings.AGENT_ADAPTER_TYPE,
-        cli_command=settings.AGENT_CLI_COMMAND,
-        timeout=settings.AGENT_CLI_TIMEOUT,
+        adapter_type=setting_row.adapter_type,
+        cli_command=setting_row.cli_command,
+        timeout=setting_row.timeout,
         available_presets=presets
     )
 
 @api_router.patch("/settings/agent", response_model=AgentSettingsOut)
-async def update_agent_settings(data: AgentSettingsUpdate):
+async def update_agent_settings(data: AgentSettingsUpdate, db: AsyncSession = Depends(get_db)):
+    stmt = select(AgentSettingsModel).where(AgentSettingsModel.id == "default")
+    res = await db.execute(stmt)
+    setting_row = res.scalar_one_or_none()
+    if not setting_row:
+        setting_row = AgentSettingsModel(id="default")
+        db.add(setting_row)
+
     if data.adapter_type is not None:
+        setting_row.adapter_type = data.adapter_type
         settings.AGENT_ADAPTER_TYPE = data.adapter_type
     if data.cli_command is not None:
+        setting_row.cli_command = data.cli_command
         settings.AGENT_CLI_COMMAND = data.cli_command
     if data.timeout is not None:
+        setting_row.timeout = data.timeout
         settings.AGENT_CLI_TIMEOUT = data.timeout
-    return await get_agent_settings()
+
+    await db.commit()
+    await db.refresh(setting_row)
+    return await get_agent_settings(db)
 
 @api_router.post("/settings/agent/test")
 async def test_agent_settings():

@@ -30,9 +30,11 @@ frontend/.vite/
 .AppleDouble
 .LSOverride
 
-# Database temporary locks
+# Database temporary locks and local SQLite files
 *.db-wal
 *.db-shm
 *.db-journal
-data/test_moduflow.db*
+data/*.db
+data/*.db*
+data/backup/
 data/workspaces/

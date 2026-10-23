@@ -21,6 +21,15 @@ async def lifespan(app: FastAPI):
         await seed_agent_roles_if_empty(db)
         await seed_templates_if_empty(db)
         
+        # Load agent settings from DB into memory
+        from backend.app.models.entities import AgentSettingsModel
+        res = await db.execute(select(AgentSettingsModel).where(AgentSettingsModel.id == "default"))
+        agent_setting = res.scalar_one_or_none()
+        if agent_setting:
+            settings.AGENT_ADAPTER_TYPE = agent_setting.adapter_type
+            settings.AGENT_CLI_COMMAND = agent_setting.cli_command
+            settings.AGENT_CLI_TIMEOUT = agent_setting.timeout
+        
     yield
     # Shutdown
     await engine.dispose()

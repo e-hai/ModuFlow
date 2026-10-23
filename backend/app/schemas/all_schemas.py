@@ -71,12 +71,37 @@ class ArtifactOut(BaseModel):
     module_id: str
     title: str
     version: int
+    artifact_type: str = "markdown"
     content: str
+    storage_rel_path: Optional[str] = None
+    entry_file: str = "index.html"
+    change_summary: Optional[str] = None
     content_hash: str
     is_baseline: bool
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+class ChangeReviewOut(BaseModel):
+    id: str
+    module_id: str
+    artifact_id: str
+    from_version: int
+    to_version: int
+    title: str
+    diff_summary: str
+    impact_analysis: List[str] = []
+    status: str
+    approver: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    created_at: datetime
+    approved_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class ChangeReviewAction(BaseModel):
+    approver: str = "负责人"
+    rejection_reason: Optional[str] = None
 
 # --- Issue ---
 class IssueCreate(BaseModel):
@@ -190,6 +215,10 @@ class ModuleInstanceOut(BaseModel):
     baseline_artifact_id: Optional[str] = None
     primary_role_code: Optional[str] = "pm"
     collaborator_role_codes: List[str] = []
+    execution_mode: str = "agent_driven"
+    synced_upstream_versions: Dict[str, int] = {}
+    is_upstream_stale: bool = False
+    stale_details: List[Dict[str, Any]] = []
     primary_role: Optional[AgentRoleDefinitionOut] = None
     collaborator_roles: List[AgentRoleDefinitionOut] = []
     open_issues_count: Optional[int] = 0

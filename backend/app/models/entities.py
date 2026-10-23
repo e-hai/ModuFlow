@@ -1,11 +1,20 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Text, Integer, Float, Boolean, DateTime, ForeignKey, JSON
+from sqlalchemy import Column, String, Text, Integer, Float, Boolean, DateTime, ForeignKey, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 from backend.app.core.database import Base
 
 def gen_uuid() -> str:
     return str(uuid.uuid4())
+
+class AgentSettingsModel(Base):
+    __tablename__ = "agent_settings"
+    
+    id = Column(String(20), primary_key=True, default="default")
+    adapter_type = Column(String(30), nullable=False, default="cli")
+    cli_command = Column(String(50), nullable=False, default="agy")
+    timeout = Column(Integer, nullable=False, default=120)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class StrategicInitiative(Base):
     __tablename__ = "strategic_initiatives"
@@ -144,6 +153,11 @@ class ModuleInstance(Base):
     primary_role_code = Column(String(30), nullable=True, default="pm") # mr, ba, pm, ux, eng, qa, mkt, ops
     collaborator_role_codes = Column(JSON, nullable=False, default=list) # list of role_codes
     
+    # 实战型执行模式：智能体主导 / 真人主导 / 人机混合
+    execution_mode = Column(String(20), nullable=False, default="agent_driven") # agent_driven, human_driven, hybrid
+    # 追踪当前吸收的上游基线版本 (如 {"06": 1, "07": 1})，上游更新未跟进时标记为过期
+    synced_upstream_versions = Column(JSON, nullable=False, default=dict)
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -200,17 +214,44 @@ class AgentRoleDefinition(Base):
 
 class Artifact(Base):
     __tablename__ = "artifacts"
+    __table_args__ = (
+        UniqueConstraint("module_id", "version", name="uq_module_artifact_version"),
+    )
     
     id = Column(String, primary_key=True, default=gen_uuid)
     module_id = Column(String, ForeignKey("module_instances.id"), nullable=False)
     title = Column(String(100), nullable=False)
     version = Column(Integer, nullable=False, default=1)
+    artifact_type = Column(String(20), nullable=False, default="markdown") # markdown, html_bundle, file, link
     content = Column(Text, nullable=False)
+    storage_rel_path = Column(String(255), nullable=True) # 物理工作区相对路径 (如解压后的设计包 index.html 所在目录)
+    entry_file = Column(String(50), nullable=False, default="index.html")
+    change_summary = Column(Text, nullable=True) # 本次上传填写的变更说明
     content_hash = Column(String(64), nullable=False)
     is_baseline = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     
     module = relationship("ModuleInstance", back_populates="artifacts")
+
+class ChangeReview(Base):
+    __tablename__ = "change_reviews"
+    
+    id = Column(String, primary_key=True, default=gen_uuid)
+    module_id = Column(String, ForeignKey("module_instances.id"), nullable=False)
+    artifact_id = Column(String, ForeignKey("artifacts.id"), nullable=False)
+    from_version = Column(Integer, nullable=False, default=1)
+    to_version = Column(Integer, nullable=False, default=2)
+    title = Column(String(200), nullable=False)
+    diff_summary = Column(Text, nullable=False) # 结构化变更摘要 (Added/Modified/Removed)
+    impact_analysis = Column(JSON, nullable=False, default=list) # 受影响的下游工序列表 ["08", "09", "10"]
+    status = Column(String(20), nullable=False, default="pending_approval") # pending_approval, approved, rejected
+    approver = Column(String(50), nullable=True) # 统一审批人
+    rejection_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    approved_at = Column(DateTime, nullable=True)
+    
+    module = relationship("ModuleInstance")
+    artifact = relationship("Artifact")
 
 class Issue(Base):
     __tablename__ = "issues"

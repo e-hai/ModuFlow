@@ -145,7 +145,9 @@ async def create_workflow_run_from_template(
             is_unlocked=is_unlocked,
             dependencies=mod_deps,
             primary_role_code=stage_cfg["primary"],
-            collaborator_role_codes=stage_cfg["collaborators"]
+            collaborator_role_codes=stage_cfg["collaborators"],
+            execution_mode=stage_cfg.get("execution_mode", "agent_driven"),
+            synced_upstream_versions={}
         )
         db.add(mod_inst)
         await db.flush()
@@ -196,12 +198,25 @@ async def unlock_downstream_modules(db: AsyncSession, run_id: str):
     all_modules = res.scalars().all()
 
     baselined_codes = {m.module_code for m in all_modules if m.phase == "baselined"}
+    from backend.app.services.stale_checker import get_relevant_upstream_codes
 
     for m in all_modules:
         if not m.is_unlocked:
             # Check if all dependencies are satisfied
             if all(dep in baselined_codes for dep in m.dependencies):
                 m.is_unlocked = True
+                
+                # Auto-sync initial upstream versions so newly unlocked module starts synchronized
+                current_sync = dict(m.synced_upstream_versions or {})
+                relevant_upstreams = get_relevant_upstream_codes(m.module_code, m.dependencies)
+                for up_code in relevant_upstreams:
+                    up_mod = next((x for x in all_modules if x.module_code == up_code), None)
+                    if up_mod and up_mod.baseline_artifact_id:
+                        art_res = await db.execute(select(Artifact.version).where(Artifact.id == up_mod.baseline_artifact_id))
+                        v = art_res.scalar_one_or_none()
+                        if v:
+                            current_sync[up_code] = v
+                m.synced_upstream_versions = current_sync
                 db.add(m)
 
     await db.commit()

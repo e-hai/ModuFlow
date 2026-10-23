@@ -47,6 +47,17 @@ export interface AgentRoleDefinition {
   created_at: string;
 }
 
+export interface StaleDetail {
+  upstream_module_id: string;
+  upstream_code: string;
+  upstream_name: string;
+  current_synced_version: number;
+  latest_upstream_version: number;
+  artifact_id?: string;
+  artifact_type?: string;
+  message: string;
+}
+
 export interface ModuleInstance {
   id: string;
   run_id: string;
@@ -61,6 +72,10 @@ export interface ModuleInstance {
   collaborator_role_codes?: string[];
   primary_role?: AgentRoleDefinition;
   collaborator_roles?: AgentRoleDefinition[];
+  execution_mode?: 'agent_driven' | 'human_driven' | 'hybrid';
+  synced_upstream_versions?: Record<string, number>;
+  is_upstream_stale?: boolean;
+  stale_details?: StaleDetail[];
   open_issues_count?: number;
   blocking_issues_count?: number;
   artifacts_count?: number;
@@ -108,10 +123,30 @@ export interface Artifact {
   module_id: string;
   title: string;
   version: number;
+  artifact_type?: 'markdown' | 'html_bundle';
   content: string;
+  storage_rel_path?: string;
+  entry_file?: string;
+  change_summary?: string;
   content_hash: string;
   is_baseline: boolean;
   created_at: string;
+}
+
+export interface ChangeReview {
+  id: string;
+  module_id: string;
+  artifact_id: string;
+  from_version: number;
+  to_version: number;
+  title: string;
+  diff_summary: string;
+  impact_analysis: string[];
+  status: 'pending_approval' | 'approved' | 'rejected';
+  approver?: string;
+  rejection_reason?: string;
+  created_at: string;
+  approved_at?: string;
 }
 
 export interface Issue {

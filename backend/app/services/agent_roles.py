@@ -185,78 +185,91 @@ STAGE_ROLE_CONFIGS: Dict[str, Dict[str, Any]] = {
         "primary": "mr",
         "collaborators": ["ba"],
         "stage_name": "市场研究",
+        "execution_mode": "agent_driven",
         "mission_focus": "行业空间、用户痛点、竞品横向分析"
     },
     "02": {
         "primary": "ba",
         "collaborators": ["mr"],
         "stage_name": "商业模式分析",
+        "execution_mode": "agent_driven",
         "mission_focus": "变现路径、定价阶梯、单位经济模型(LTV/CAC)"
     },
     "03": {
         "primary": "pm",
         "collaborators": ["mr", "ba"],
         "stage_name": "产品方向决策",
+        "execution_mode": "agent_driven",
         "mission_focus": "核心价值主张、差异化定位与产品功能边界"
     },
     "04": {
         "primary": "mkt",
         "collaborators": ["ux", "ba"],
         "stage_name": "低成本市场验证",
+        "execution_mode": "agent_driven",
         "mission_focus": "假门测试、着陆页验证方案与获客成本阈值"
     },
     "05": {
         "primary": "pm",
         "collaborators": ["ba"],
         "stage_name": "产品方向确认",
+        "execution_mode": "agent_driven",
         "mission_focus": "验证数据复盘、Go/No-Go 决策与资源下注评估"
     },
     "06": {
         "primary": "pm",
         "collaborators": ["eng"],
         "stage_name": "MVP / PRD",
+        "execution_mode": "agent_driven",
         "mission_focus": "MVP需求减法刀法、用户旅程与字段级PRD规范"
     },
     "07": {
         "primary": "ux",
         "collaborators": ["pm"],
         "stage_name": "设计与可用性验证",
+        "execution_mode": "human_driven",
         "mission_focus": "信息架构、交互主流程原型与可用性测试用例"
     },
     "08": {
         "primary": "eng",
         "collaborators": ["qa"],
         "stage_name": "技术可行性",
+        "execution_mode": "hybrid",
         "mission_focus": "技术栈评估、第三方服务选型与整体架构蓝图"
     },
     "09": {
         "primary": "eng",
         "collaborators": ["qa"],
         "stage_name": "开发实现",
+        "execution_mode": "human_driven",
         "mission_focus": "工程工程骨架、接口契约规范与核心业务代码实现"
     },
     "10": {
         "primary": "qa",
         "collaborators": ["eng"],
         "stage_name": "QA 测试",
+        "execution_mode": "human_driven",
         "mission_focus": "冒烟测试用例、边界条件测试与阻断性Issue审查"
     },
     "11": {
         "primary": "qa",
         "collaborators": ["eng"],
         "stage_name": "发布上线",
+        "execution_mode": "hybrid",
         "mission_focus": "构建包合规质检、商店元数据与发布风险检查清单"
     },
     "12": {
         "primary": "mkt",
         "collaborators": ["ba", "ops"],
         "stage_name": "营销获客",
+        "execution_mode": "agent_driven",
         "mission_focus": "ASO关键词优化、买量投放脚本与分销渠道方案"
     },
     "13": {
         "primary": "ops",
         "collaborators": ["pm", "mkt"],
         "stage_name": "运营分析与迭代",
+        "execution_mode": "agent_driven",
         "mission_focus": "留存漏斗复盘、核心指标监控与下一阶段迭代建议"
     }
 }
@@ -319,8 +332,9 @@ async def get_module_role_bundle(db: AsyncSession, module_code: str) -> Dict[str
     }
 
 async def migrate_db_for_roles(db: AsyncSession):
-    """Safely adds missing role columns to SQLite database and populates roles for existing modules."""
+    """Safely adds missing role, execution mode, and bundle artifact columns to SQLite database."""
     try:
+        # 1. ModuleInstance columns
         mod_cols = (await db.execute(text("PRAGMA table_info(module_instances)"))).fetchall()
         existing_mod_col_names = [col[1] for col in mod_cols]
 
@@ -328,16 +342,40 @@ async def migrate_db_for_roles(db: AsyncSession):
             await db.execute(text("ALTER TABLE module_instances ADD COLUMN primary_role_code VARCHAR(30) DEFAULT 'pm'"))
         if "collaborator_role_codes" not in existing_mod_col_names:
             await db.execute(text("ALTER TABLE module_instances ADD COLUMN collaborator_role_codes JSON DEFAULT '[]'"))
+        if "execution_mode" not in existing_mod_col_names:
+            await db.execute(text("ALTER TABLE module_instances ADD COLUMN execution_mode VARCHAR(20) DEFAULT 'agent_driven'"))
+        if "synced_upstream_versions" not in existing_mod_col_names:
+            await db.execute(text("ALTER TABLE module_instances ADD COLUMN synced_upstream_versions JSON DEFAULT '{}'"))
 
+        # 2. SessionMessage columns
         msg_cols = (await db.execute(text("PRAGMA table_info(session_messages)"))).fetchall()
         existing_msg_col_names = [col[1] for col in msg_cols]
 
         if "role_code" not in existing_msg_col_names:
             await db.execute(text("ALTER TABLE session_messages ADD COLUMN role_code VARCHAR(30) DEFAULT NULL"))
 
+        # 3. Artifact columns
+        art_cols = (await db.execute(text("PRAGMA table_info(artifacts)"))).fetchall()
+        existing_art_col_names = [col[1] for col in art_cols]
+
+        if "artifact_type" not in existing_art_col_names:
+            await db.execute(text("ALTER TABLE artifacts ADD COLUMN artifact_type VARCHAR(20) DEFAULT 'markdown'"))
+        if "storage_rel_path" not in existing_art_col_names:
+            await db.execute(text("ALTER TABLE artifacts ADD COLUMN storage_rel_path VARCHAR(255) DEFAULT NULL"))
+        if "entry_file" not in existing_art_col_names:
+            await db.execute(text("ALTER TABLE artifacts ADD COLUMN entry_file VARCHAR(50) DEFAULT 'index.html'"))
+        if "change_summary" not in existing_art_col_names:
+            await db.execute(text("ALTER TABLE artifacts ADD COLUMN change_summary TEXT DEFAULT NULL"))
+
+        # 4. Unique index on artifacts(module_id, version)
+        try:
+            await db.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_module_artifact_version ON artifacts(module_id, version)"))
+        except Exception:
+            pass
+
         await db.commit()
 
-        # Update existing module instances to reflect their stage role configs
+        # 5. Update existing module instances to reflect their stage role configs & execution mode
         mod_stmt = select(ModuleInstance)
         res = await db.execute(mod_stmt)
         modules = res.scalars().all()
@@ -346,6 +384,9 @@ async def migrate_db_for_roles(db: AsyncSession):
             if cfg:
                 m.primary_role_code = cfg["primary"]
                 m.collaborator_role_codes = cfg["collaborators"]
+                m.execution_mode = cfg.get("execution_mode", "agent_driven")
+                if not m.synced_upstream_versions:
+                    m.synced_upstream_versions = {}
                 db.add(m)
         await db.commit()
     except Exception as e:

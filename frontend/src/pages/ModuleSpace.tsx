@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { api } from '../services/api';
-import { ModuleInstance, CollaborationSession, SessionMessage, Artifact, Issue } from '../types';
+import { ModuleInstance, CollaborationSession, SessionMessage, Artifact, Issue, ChangeReview, StaleDetail } from '../types';
 import { PhaseBadge, SeverityBadge } from '../components/StatusBadge';
 import { NewIssueModal } from '../components/NewIssueModal';
 import {
@@ -27,7 +27,18 @@ import {
   Cpu,
   Rocket,
   LineChart,
-  Info
+  Info,
+  UploadCloud,
+  ExternalLink,
+  Monitor,
+  Smartphone,
+  Tablet,
+  FileDiff,
+  CheckCheck,
+  X,
+  Eye,
+  ThumbsUp,
+  ThumbsDown
 } from 'lucide-react';
 
 interface ModuleSpaceProps {
@@ -57,6 +68,20 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
   const [agentStage, setAgentStage] = useState<'idle' | 'context' | 'spawning' | 'reasoning' | 'completed' | 'error'>('idle');
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
   const [showPersonaDetail, setShowPersonaDetail] = useState(false);
+
+  // Architecture Optimization & Unified Approvals state
+  const [changeReviews, setChangeReviews] = useState<ChangeReview[]>([]);
+  const [selectedReview, setSelectedReview] = useState<ChangeReview | null>(null);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isStaleDiffModalOpen, setIsStaleDiffModalOpen] = useState(false);
+  const [selectedStaleDetail, setSelectedStaleDetail] = useState<StaleDetail | null>(null);
+  const [prototypeViewport, setPrototypeViewport] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
+  const [artifactViewMode, setArtifactViewMode] = useState<'preview' | 'content'>('preview');
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadSummary, setUploadSummary] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [ackingUpstream, setAckingUpstream] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<any>(null);
@@ -88,23 +113,93 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
 
   const loadSessionAndArtifacts = async () => {
     try {
-      const [sess, arts, modData, issues] = await Promise.all([
+      const [sess, arts, modData, issues, reviews] = await Promise.all([
         api.getModuleSession(module.id),
         api.getModuleArtifacts(module.id),
         api.getModule(module.id),
-        api.getIssues({ target_module_id: module.id })
+        api.getIssues({ target_module_id: module.id }),
+        api.getChangeReviews({ module_id: module.id })
       ]);
       setSession(sess);
       setMessages(sess.messages || []);
       setArtifacts(arts);
       setModuleState(modData);
       setModuleIssues(issues);
+      setChangeReviews(reviews);
 
       if (arts.length > 0) {
         setSelectedArtifact(arts[0]);
+        if (arts[0].artifact_type === 'html_bundle') {
+          setArtifactViewMode('preview');
+        } else {
+          setArtifactViewMode('content');
+        }
       }
     } catch (e: any) {
       console.error(e);
+    }
+  };
+
+  const handleUploadBundle = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uploadFile) return;
+    try {
+      setUploading(true);
+      const res = await api.uploadModuleArtifact(module.id, uploadFile, uploadSummary);
+      setUploadFile(null);
+      setUploadSummary('');
+      setIsUploadModalOpen(false);
+      alert(`交付物已上传成功！版本 v${res.artifact.version} 已进入统一审批流程。`);
+      await loadSessionAndArtifacts();
+      onModuleUpdated();
+    } catch (e: any) {
+      alert(`上传失败: ${e.message}`);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleApproveReview = async (reviewId: string) => {
+    if (!confirm('确认批准该变更单并将其正式设为当前模块的锁定基线 (Baseline) 吗？')) return;
+    try {
+      await api.approveChangeReview(reviewId, { approver: '统一审批人 (我)' });
+      alert('变更单已批准！已正式设为基线并通知下游跟进。');
+      setSelectedReview(null);
+      await loadSessionAndArtifacts();
+      onModuleUpdated();
+    } catch (e: any) {
+      alert(`审批失败: ${e.message}`);
+    }
+  };
+
+  const handleRejectReview = async (reviewId: string) => {
+    try {
+      await api.rejectChangeReview(reviewId, {
+        approver: '统一审批人 (我)',
+        rejection_reason: rejectReason || '未通过审批，退回修改'
+      });
+      alert('变更单已驳回。');
+      setRejectReason('');
+      setSelectedReview(null);
+      await loadSessionAndArtifacts();
+      onModuleUpdated();
+    } catch (e: any) {
+      alert(`操作失败: ${e.message}`);
+    }
+  };
+
+  const handleAckUpstream = async (upstreamCode?: string) => {
+    try {
+      setAckingUpstream(true);
+      const updated = await api.ackUpstreamModule(module.id, upstreamCode);
+      setModuleState(updated);
+      setIsStaleDiffModalOpen(false);
+      alert('已成功确认跟进！当前工序已同步至最新上游基线版本。');
+      onModuleUpdated();
+    } catch (e: any) {
+      alert(`同步确认失败: ${e.message}`);
+    } finally {
+      setAckingUpstream(false);
     }
   };
 
@@ -244,10 +339,43 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
             </span>
             <h1 className="text-lg font-bold text-slate-900">{moduleState.name} 协作研讨空间</h1>
             <PhaseBadge phase={moduleState.phase} />
+            {moduleState.execution_mode === 'human_driven' ? (
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-200">
+                真人主导 (专业工具作业)
+              </span>
+            ) : moduleState.execution_mode === 'hybrid' ? (
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-700 font-semibold border border-teal-200">
+                人机协同 (混合执行)
+              </span>
+            ) : (
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 font-semibold border border-purple-200">
+                Agent 驱动
+              </span>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => setIsUploadModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition cursor-pointer"
+            title="上传 HTML 交互原型包或全量文档"
+          >
+            <UploadCloud className="w-3.5 h-3.5" />
+            上传交付包
+          </button>
+
+          {changeReviews.filter(r => r.status === 'pending_approval').length > 0 && (
+            <button
+              onClick={() => setSelectedReview(changeReviews.find(r => r.status === 'pending_approval') || null)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-xs transition cursor-pointer animate-pulse"
+              title="有待审批的交付物变更"
+            >
+              <FileDiff className="w-3.5 h-3.5" />
+              统一审批 ({changeReviews.filter(r => r.status === 'pending_approval').length})
+            </button>
+          )}
+
           <button
             onClick={() => setIsIssueModalOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition cursor-pointer"
@@ -272,6 +400,81 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
           )}
         </div>
       </div>
+
+      {/* ⚠️ 上游交付物变更待跟进警示条 */}
+      {moduleState.is_upstream_stale && (moduleState.stale_details?.length || 0) > 0 && (
+        <div className="bg-amber-50/90 border border-amber-300 rounded-2xl p-4 text-xs text-amber-900 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-xl bg-amber-100 text-amber-700 shrink-0">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="font-bold flex items-center gap-2 text-sm text-amber-900">
+                <span>⚠️ 上游规范基线已演进更新 (待跟进对齐)</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 font-semibold font-mono">
+                  {moduleState.stale_details?.length} 个待同步源
+                </span>
+              </div>
+              <div className="text-amber-800 mt-1 space-y-0.5">
+                {moduleState.stale_details?.map((detail, idx) => (
+                  <div key={idx} className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                    <span>{detail.message}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => {
+                if (moduleState.stale_details && moduleState.stale_details.length > 0) {
+                  setSelectedStaleDetail(moduleState.stale_details[0]);
+                  setIsStaleDiffModalOpen(true);
+                }
+              }}
+              className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+            >
+              <FileDiff className="w-3.5 h-3.5" />
+              查看变更 Diff
+            </button>
+            <button
+              onClick={() => handleAckUpstream()}
+              disabled={ackingUpstream}
+              className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-xs transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <CheckCheck className="w-4 h-4" />
+              {ackingUpstream ? '同步中...' : '确认已跟进'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 待统一审批的变更通知栏 */}
+      {changeReviews.filter(r => r.status === 'pending_approval').length > 0 && (
+        <div className="bg-indigo-50/80 border border-indigo-200 rounded-2xl p-4 text-xs text-indigo-900 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-indigo-100 text-indigo-700 shrink-0">
+              <FileDiff className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="font-bold text-sm text-indigo-900">
+                本工序存在 {changeReviews.filter(r => r.status === 'pending_approval').length} 个待统一审批的变更交付物
+              </div>
+              <p className="text-indigo-700 mt-0.5">
+                新上传的交付物需经由你统一审批裁决后，方可正式成为锁定基线并触发下游工序跟进。
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setSelectedReview(changeReviews.find(r => r.status === 'pending_approval') || null)}
+            className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-xs transition cursor-pointer shrink-0"
+          >
+            立即审核变更单
+          </button>
+        </div>
+      )}
 
       {/* 虚拟项目工位：驻场 Agent 角色卡片 */}
       <div className="bg-gradient-to-r from-blue-50/70 via-white to-indigo-50/50 border border-slate-200/90 rounded-2xl p-4 shadow-2xs">
@@ -675,61 +878,201 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
 
         {/* 右侧：产物看板与版本树 (6 栏) */}
         <div className="lg:col-span-6 bg-white border border-slate-200 rounded-2xl flex flex-col overflow-hidden shadow-xs">
-          <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/60 flex items-center justify-between">
+          <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/60 flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <FileCheck2 className="w-4 h-4 text-emerald-600" />
               <span className="text-xs font-semibold text-slate-800">交付物产物库 (Artifacts)</span>
             </div>
 
-            {/* 版本切换下拉 */}
-            {artifacts.length > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] text-slate-500">历史版本:</span>
-                <select
-                  value={selectedArtifact?.id}
-                  onChange={e => {
-                    const found = artifacts.find(a => a.id === e.target.value);
-                    if (found) setSelectedArtifact(found);
-                  }}
-                  className="bg-slate-50 border border-slate-200 rounded px-2 py-0.5 text-xs text-emerald-800 font-mono font-medium"
-                >
-                  {artifacts.map(a => (
-                    <option key={a.id} value={a.id}>
-                      v{a.version} {a.is_baseline ? '(基线)' : ''} - {new Date(a.created_at).toLocaleTimeString()}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsUploadModalOpen(true)}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs flex items-center gap-1 cursor-pointer transition"
+                title="上传 HTML 交互原型包或全量文档"
+              >
+                <UploadCloud className="w-3.5 h-3.5 text-blue-600" />
+                上传新版本
+              </button>
+
+              {/* 版本切换下拉 */}
+              {artifacts.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-slate-500">版本:</span>
+                  <select
+                    value={selectedArtifact?.id}
+                    onChange={e => {
+                      const found = artifacts.find(a => a.id === e.target.value);
+                      if (found) {
+                        setSelectedArtifact(found);
+                        if (found.artifact_type === 'html_bundle') {
+                          setArtifactViewMode('preview');
+                        }
+                      }
+                    }}
+                    className="bg-white border border-slate-200 rounded px-2 py-0.5 text-xs text-emerald-800 font-mono font-medium shadow-2xs"
+                  >
+                    {artifacts.map(a => (
+                      <option key={a.id} value={a.id}>
+                        v{a.version} {a.is_baseline ? '(基线)' : ''} {a.artifact_type === 'html_bundle' ? '[原型包]' : ''} - {new Date(a.created_at).toLocaleTimeString()}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* 产物内容实时渲染 */}
-          <div className="flex-1 p-5 overflow-y-auto bg-white">
-            {selectedArtifact ? (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                  <div>
-                    <h2 className="text-base font-bold text-slate-900">{selectedArtifact.title}</h2>
-                    <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono mt-1">
-                      <Hash className="w-3 h-3" />
-                      SHA-256: {selectedArtifact.content_hash.slice(0, 16)}...
-                    </div>
-                  </div>
-                  {selectedArtifact.is_baseline && (
-                    <span className="px-2 py-0.5 rounded text-[11px] bg-emerald-50 text-emerald-800 border border-emerald-200 font-medium flex items-center gap-1">
-                      <ShieldCheck className="w-3.5 h-3.5" />
-                      当前基线
-                    </span>
-                  )}
-                </div>
-
-                <div className="prose prose-slate prose-sm max-w-none text-slate-700 leading-relaxed">
-                  <ReactMarkdown>{selectedArtifact.content}</ReactMarkdown>
-                </div>
+          {/* 若为 HTML 原型包，展示视图切换条与视口缩放控制 */}
+          {selectedArtifact && selectedArtifact.artifact_type === 'html_bundle' && (
+            <div className="px-4 py-2 border-b border-slate-200 bg-slate-100/70 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-1 bg-slate-200/80 p-0.5 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setArtifactViewMode('preview')}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition cursor-pointer flex items-center gap-1 ${
+                    artifactViewMode === 'preview'
+                      ? 'bg-white text-slate-900 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Monitor className="w-3.5 h-3.5 text-blue-600" />
+                  交互原型预览
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setArtifactViewMode('content')}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition cursor-pointer flex items-center gap-1 ${
+                    artifactViewMode === 'content'
+                      ? 'bg-white text-slate-900 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Eye className="w-3.5 h-3.5 text-slate-500" />
+                  DOM与结构源码
+                </button>
               </div>
+
+              {artifactViewMode === 'preview' && (
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setPrototypeViewport('desktop')}
+                      className={`p-1 rounded transition cursor-pointer ${
+                        prototypeViewport === 'desktop' ? 'bg-slate-200 text-slate-900' : 'text-slate-400 hover:text-slate-600'
+                      }`}
+                      title="桌面全宽"
+                    >
+                      <Monitor className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPrototypeViewport('tablet')}
+                      className={`p-1 rounded transition cursor-pointer ${
+                        prototypeViewport === 'tablet' ? 'bg-slate-200 text-slate-900' : 'text-slate-400 hover:text-slate-600'
+                      }`}
+                      title="平板视口 (768px)"
+                    >
+                      <Tablet className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPrototypeViewport('mobile')}
+                      className={`p-1 rounded transition cursor-pointer ${
+                        prototypeViewport === 'mobile' ? 'bg-slate-200 text-slate-900' : 'text-slate-400 hover:text-slate-600'
+                      }`}
+                      title="手机视口 (375px)"
+                    >
+                      <Smartphone className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <a
+                    href={api.getArtifactPreviewUrl(selectedArtifact.id)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-blue-600 shadow-2xs transition"
+                    title="新窗口全屏打开原型"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 产物内容实时渲染 */}
+          <div className="flex-1 overflow-y-auto bg-white flex flex-col">
+            {selectedArtifact ? (
+              selectedArtifact.artifact_type === 'html_bundle' && artifactViewMode === 'preview' ? (
+                <div className="flex-1 bg-slate-100/80 p-3 flex items-center justify-center overflow-auto min-h-[460px]">
+                  <div
+                    className={`h-[580px] bg-white rounded-xl shadow-md border border-slate-300 overflow-hidden transition-all duration-300 flex flex-col ${
+                      prototypeViewport === 'mobile'
+                        ? 'w-[375px]'
+                        : prototypeViewport === 'tablet'
+                        ? 'w-[768px]'
+                        : 'w-full'
+                    }`}
+                  >
+                    <div className="h-6 bg-slate-200/80 border-b border-slate-300 flex items-center px-3 gap-1.5 shrink-0">
+                      <div className="w-2 h-2 rounded-full bg-rose-400"></div>
+                      <div className="w-2 h-2 rounded-full bg-amber-400"></div>
+                      <div className="w-2 h-2 rounded-full bg-emerald-400"></div>
+                      <span className="text-[10px] text-slate-500 font-mono ml-2 truncate">
+                        {selectedArtifact.entry_file || 'index.html'} (v{selectedArtifact.version})
+                      </span>
+                    </div>
+                    <iframe
+                      src={api.getArtifactPreviewUrl(selectedArtifact.id)}
+                      className="w-full flex-1 border-0 bg-white"
+                      title={selectedArtifact.title}
+                      sandbox="allow-scripts allow-same-origin allow-forms"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="p-5 space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-wrap gap-2">
+                    <div>
+                      <h2 className="text-base font-bold text-slate-900">{selectedArtifact.title}</h2>
+                      <div className="flex items-center gap-3 text-[10px] text-slate-400 font-mono mt-1">
+                        <span className="flex items-center gap-1">
+                          <Hash className="w-3 h-3" />
+                          SHA-256: {selectedArtifact.content_hash.slice(0, 16)}...
+                        </span>
+                        {selectedArtifact.artifact_type && (
+                          <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 uppercase">
+                            {selectedArtifact.artifact_type}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {selectedArtifact.is_baseline && (
+                      <span className="px-2 py-0.5 rounded text-[11px] bg-emerald-50 text-emerald-800 border border-emerald-200 font-medium flex items-center gap-1">
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        当前基线
+                      </span>
+                    )}
+                  </div>
+
+                  {selectedArtifact.change_summary && (
+                    <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3 text-xs text-blue-900">
+                      <strong>📝 本版本变更说明：</strong>
+                      <p className="mt-0.5 text-blue-800">{selectedArtifact.change_summary}</p>
+                    </div>
+                  )}
+
+                  <div className="prose prose-slate prose-sm max-w-none text-slate-700 leading-relaxed">
+                    <ReactMarkdown>{selectedArtifact.content}</ReactMarkdown>
+                  </div>
+                </div>
+              )
             ) : (
-              <div className="text-center py-24 text-slate-400 text-xs">
-                尚无生成产物。<br />在左侧输入指令后，Agent 自动在此生成交付物。
+              <div className="text-center py-24 text-slate-400 text-xs flex-1 flex flex-col items-center justify-center">
+                <UploadCloud className="w-10 h-10 text-slate-300 mb-2" />
+                尚无生成产物。<br />在左侧输入指令让 Agent 产出，或点击上方【上传新版本】提交原型与文档。
               </div>
             )}
           </div>
@@ -740,10 +1083,250 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
               <Bug className="w-3.5 h-3.5 text-rose-600" />
               关联 Issue: {openIssues.length} 个未关闭
             </span>
-            <span className="text-[11px] text-slate-400">不可变快照隔离存储</span>
+            <span className="text-[11px] text-slate-400 font-mono">不可变快照隔离存储</span>
           </div>
         </div>
       </div>
+
+      {/* 弹窗 1: 上传全量交付物包 (HTML/ZIP/MD) */}
+      {isUploadModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 w-full max-w-lg rounded-2xl p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                <UploadCloud className="w-5 h-5 text-blue-600" />
+                上传工序交付物包 (HTML 原型 / 文档)
+              </h3>
+              <button
+                onClick={() => setIsUploadModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUploadBundle} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  选择文件 (.zip, .html, .md, .txt) *
+                </label>
+                <p className="text-[11px] text-slate-500 mb-2">
+                  支持包含 <code>index.html</code>、<code>assets/</code>、<code>preview/</code> 等目录的 ZIP 交互原型包，系统将自动解压并提供交互 iframe 预览。
+                </p>
+                <input
+                  type="file"
+                  required
+                  accept=".zip,.html,.htm,.md,.markdown,.txt"
+                  onChange={e => setUploadFile(e.target.files ? e.target.files[0] : null)}
+                  className="w-full text-xs text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer border border-slate-300 rounded-xl p-2 bg-slate-50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  版本变更核心意图说明 (Change Summary) *
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="简要描述本次交付物更新的核心改动，例：依据业务评审调整了底部结算抽屉交互，增加多币种选择器规范..."
+                  value={uploadSummary}
+                  onChange={e => setUploadSummary(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-800">
+                💡 上传后系统将自动生成统一变更审批单 (ChangeReview)，经由统一审批通过后正式升级为基线，并通知下游工序跟进。
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsUploadModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={uploading || !uploadFile}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white transition cursor-pointer shadow-xs"
+                >
+                  {uploading ? '上传解压中...' : '确认上传并提交审批'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 弹窗 2: 统一审批单详情弹窗 (我统一审批) */}
+      {selectedReview && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 w-full max-w-2xl rounded-2xl p-6 shadow-2xl flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <FileDiff className="w-5 h-5 text-indigo-600" />
+                <h3 className="font-bold text-slate-900 text-base">{selectedReview.title}</h3>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                  selectedReview.status === 'approved'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : selectedReview.status === 'rejected'
+                    ? 'bg-rose-100 text-rose-800'
+                    : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {selectedReview.status === 'approved' ? '已批准' : selectedReview.status === 'rejected' ? '已驳回' : '待我统一审批'}
+                </span>
+              </div>
+              <button
+                onClick={() => setSelectedReview(null)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto py-4 space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-slate-700">
+                <div>
+                  <span className="text-slate-400">版本演进:</span>{' '}
+                  <span className="font-mono font-bold text-slate-900">
+                    v{selectedReview.from_version} → v{selectedReview.to_version}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400">提交时间:</span>{' '}
+                  <span>{new Date(selectedReview.created_at).toLocaleString()}</span>
+                </div>
+                {selectedReview.approver && (
+                  <div>
+                    <span className="text-slate-400">审批人:</span>{' '}
+                    <span className="font-semibold text-slate-900">{selectedReview.approver}</span>
+                  </div>
+                )}
+                {selectedReview.rejection_reason && (
+                  <div className="col-span-2 text-rose-700 bg-rose-50 p-2 rounded border border-rose-200">
+                    <strong>驳回原因:</strong> {selectedReview.rejection_reason}
+                  </div>
+                )}
+              </div>
+
+              {/* 差异分析报告 Markdown */}
+              <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-2">
+                <div className="font-bold text-slate-800 flex items-center gap-1.5 pb-2 border-b border-slate-100">
+                  <Sparkles className="w-4 h-4 text-indigo-600" />
+                  变更差异分析与影响评估
+                </div>
+                <div className="prose prose-slate prose-xs max-w-none text-slate-700 leading-relaxed font-sans">
+                  <ReactMarkdown>{selectedReview.diff_summary}</ReactMarkdown>
+                </div>
+              </div>
+
+              {/* 若为待审批状态，提供驳回原因输入 */}
+              {selectedReview.status === 'pending_approval' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    若驳回请输入原因 (可选):
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="如：缺少异常流交互规范，请补充后再提审..."
+                    value={rejectReason}
+                    onChange={e => setRejectReason(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setSelectedReview(null)}
+                className="px-4 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+              >
+                关闭
+              </button>
+              {selectedReview.status === 'pending_approval' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleRejectReview(selectedReview.id)}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition cursor-pointer"
+                  >
+                    驳回变更
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApproveReview(selectedReview.id)}
+                    className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <CheckCheck className="w-4 h-4" />
+                    批准并生效基线 (Baseline)
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 弹窗 3: 上游变更差异对齐弹窗 */}
+      {isStaleDiffModalOpen && selectedStaleDetail && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 w-full max-w-lg rounded-2xl p-6 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
+                <h3 className="font-bold text-slate-900 text-base">
+                  上游规范对齐：【{selectedStaleDetail.upstream_name}】
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsStaleDiffModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="py-4 space-y-3 text-xs">
+              <div className="bg-amber-50/80 border border-amber-200 p-3 rounded-xl text-amber-900 space-y-1">
+                <div className="font-bold">版本状态：</div>
+                <div>当前工序跟进基准：<strong>v{selectedStaleDetail.current_synced_version}</strong></div>
+                <div>上游最新已锁定基准：<strong>v{selectedStaleDetail.latest_upstream_version}</strong></div>
+                <div className="pt-1 text-amber-800">{selectedStaleDetail.message}</div>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-slate-700 text-xs">
+                <p>
+                  上游模块负责人已完成新版本交付并经统一审批通过。若研发或测试团队已查阅最新上游文档/原型，请点击下方【确认已跟进】，工序状态将恢复为最新对齐。
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsStaleDiffModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+              >
+                稍后跟进
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAckUpstream(selectedStaleDetail.upstream_code)}
+                disabled={ackingUpstream}
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-xs transition cursor-pointer flex items-center gap-1.5"
+              >
+                <CheckCheck className="w-4 h-4" />
+                {ackingUpstream ? '同步中...' : '确认已完成跟进与对齐'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 提报 Issue 弹窗 */}
       <NewIssueModal

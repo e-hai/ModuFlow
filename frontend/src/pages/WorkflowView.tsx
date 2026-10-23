@@ -431,12 +431,34 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
                   }`}
                 >
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-slate-100 text-slate-800">
-                        Module {mod.module_code}
-                      </span>
+                    <div className="flex items-center justify-between gap-1 flex-wrap">
+                      <div className="flex items-center gap-1.5">
+                        <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-slate-100 text-slate-800">
+                          Module {mod.module_code}
+                        </span>
+                        {mod.execution_mode === 'human_driven' ? (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200" title="由真人使用专业工具作业，交付完整工程产出物">
+                            真人主导
+                          </span>
+                        ) : mod.execution_mode === 'hybrid' ? (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-teal-50 text-teal-700 border border-teal-200" title="人机协同混合执行">
+                            人机协同
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-200" title="由专业 Agent 自动规划并产出交付物">
+                            Agent驱动
+                          </span>
+                        )}
+                      </div>
                       <PhaseBadge phase={mod.phase} />
                     </div>
+
+                    {mod.is_upstream_stale && (
+                      <div className="px-2 py-1 rounded-md bg-amber-50 border border-amber-300 text-amber-800 text-[11px] font-medium flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span className="truncate">上游规范已更新 · 待同步</span>
+                      </div>
+                    )}
 
                     <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
                       {isLocked && <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />}

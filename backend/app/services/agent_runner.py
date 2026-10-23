@@ -1,4 +1,5 @@
 import uuid
+import asyncio
 from typing import Optional, Dict, Any, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -15,6 +16,13 @@ from backend.app.adapters.base import AgentEventType, AgentStreamEvent
 from backend.app.services.workflow_engine import calculate_sha256
 from backend.app.services.workspace_sync import sync_run_workspace
 
+_session_locks: Dict[str, asyncio.Lock] = {}
+
+def get_session_lock(session_id: str) -> asyncio.Lock:
+    if session_id not in _session_locks:
+        _session_locks[session_id] = asyncio.Lock()
+    return _session_locks[session_id]
+
 async def execute_agent_for_session(
     db: AsyncSession,
     session: CollaborationSession,
@@ -23,18 +31,34 @@ async def execute_agent_for_session(
 ) -> Optional[SessionMessage]:
     """
     Executes the configured Agent Adapter for a given collaboration session message:
-    1. Assembles multi-layered strategic context (Mother blueprint + upstream baselines).
-    2. Invokes the Agent Adapter (CLI Subprocess or Simulator) inside the physical module workspace.
-    3. Captures output events, persists Artifact / SessionMessage in DB, and synchronizes workspace.
+    1. Enforces single-concurrency lock per session to prevent duplicate runs & artifact collisions.
+    2. Assembles multi-layered strategic context (Mother blueprint + upstream baselines).
+    3. Invokes the Agent Adapter (CLI Subprocess or Simulator) inside the physical module workspace.
+    4. Captures output events, persists Artifact / SessionMessage in DB, and synchronizes workspace.
     """
-    mod_stmt = select(ModuleInstance).where(ModuleInstance.id == session.module_id)
-    mod_res = await db.execute(mod_stmt)
-    module = mod_res.scalar_one_or_none()
-    if not module:
-        return None
+    lock = get_session_lock(session.id)
+    if lock.locked():
+        err_msg = SessionMessage(
+            session_id=session.id,
+            sender="系统互斥网关",
+            sender_role="agent",
+            message_type="error",
+            content="当前模块会话已有正在运行中的 Agent 任务，请等待前序推演结束或超时后再发送新指令。"
+        )
+        db.add(err_msg)
+        await db.commit()
+        await db.refresh(err_msg)
+        return err_msg
 
-    msg_type = user_message.message_type
-    content = user_message.content
+    async with lock:
+        mod_stmt = select(ModuleInstance).where(ModuleInstance.id == session.module_id)
+        mod_res = await db.execute(mod_stmt)
+        module = mod_res.scalar_one_or_none()
+        if not module:
+            return None
+
+        msg_type = user_message.message_type
+        content = user_message.content
 
     # 1. Assemble Strategic Context & Physical Workspace
     try:

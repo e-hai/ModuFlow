@@ -10,7 +10,8 @@ import {
   Issue,
   ExecutiveCockpitResponse,
   ExecutiveDecisionItem,
-  AgentSettings
+  AgentSettings,
+  ChangeReview
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -78,9 +79,55 @@ export const api = {
       body: JSON.stringify(message),
     }),
 
-  // Artifacts
+  // Artifacts & Bundles
   getModuleArtifacts: (moduleId: string) => fetchJSON<Artifact[]>(`/modules/${moduleId}/artifacts`),
   getArtifact: (artifactId: string) => fetchJSON<Artifact>(`/artifacts/${artifactId}`),
+  getArtifactPreviewUrl: (artifactId: string, path = '') =>
+    `${API_BASE}/artifacts/${artifactId}/preview${path ? `/${path}` : ''}`,
+  uploadModuleArtifact: async (moduleId: string, file: File, changeSummary?: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (changeSummary) {
+      formData.append('change_summary', changeSummary);
+    }
+    const res = await fetch(`${API_BASE}/modules/${moduleId}/artifacts/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+      let errorDetail = 'Upload failed';
+      try {
+        const err = await res.json();
+        errorDetail = err.detail || errorDetail;
+      } catch (_) {}
+      throw new Error(errorDetail);
+    }
+    return res.json() as Promise<{ artifact: Artifact; change_review: ChangeReview }>;
+  },
+
+  // Change Reviews & Unified Approvals
+  getChangeReviews: (params?: { module_id?: string; run_id?: string; status?: string }) => {
+    const query = new URLSearchParams(params as any).toString();
+    return fetchJSON<ChangeReview[]>(`/change-reviews${query ? `?${query}` : ''}`);
+  },
+  getChangeReview: (reviewId: string) => fetchJSON<ChangeReview>(`/change-reviews/${reviewId}`),
+  approveChangeReview: (reviewId: string, data?: { approver?: string; rejection_reason?: string }) =>
+    fetchJSON<ChangeReview>(`/change-reviews/${reviewId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify(data || { approver: '统一审批人' }),
+    }),
+  rejectChangeReview: (reviewId: string, data?: { approver?: string; rejection_reason?: string }) =>
+    fetchJSON<ChangeReview>(`/change-reviews/${reviewId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify(data || { approver: '统一审批人', rejection_reason: '未通过审核' }),
+    }),
+
+  // Downstream Upstream Acknowledgment
+  ackUpstreamModule: (moduleId: string, upstreamCode?: string) =>
+    fetchJSON<ModuleInstance>(`/modules/${moduleId}/ack-upstream`, {
+      method: 'POST',
+      body: JSON.stringify(upstreamCode ? { upstream_code: upstreamCode } : {}),
+    }),
 
   // Issues
   getIssues: (params?: { run_id?: string; target_module_id?: string; status?: string }) => {
