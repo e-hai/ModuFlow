@@ -200,7 +200,7 @@ export const App: React.FC = () => {
 
       {/* 2. 右侧主工作区 */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* 顶部极简导航：展开收起按钮、战略标题、主体身份与底稿弹窗入口、周期切换下拉 */}
+        {/* 顶部上下文动态感知导航栏 */}
         <Navbar
           isSidebarOpen={isSidebarOpen}
           onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -208,7 +208,13 @@ export const App: React.FC = () => {
           currentProduct={currentProduct}
           products={products}
           currentView={currentView}
+          activeModule={activeModule}
+          runModules={runModules}
           onNavigateToDashboard={() => setCurrentView('dashboard')}
+          onNavigateToWorkflow={() => setCurrentView('workflow')}
+          onNavigateToIssues={() => setCurrentView('issues')}
+          onSelectProduct={(p) => handleSelectProduct(p)}
+          onSelectModule={(m) => handleSelectModule(m, runModules)}
           selectedPeriod={selectedPeriod}
           onPeriodChange={setSelectedPeriod}
         />
@@ -245,6 +251,7 @@ export const App: React.FC = () => {
 
           {currentView === 'module' && activeModule && (
             <ModuleSpace
+              key={activeModule.id}
               module={activeModule}
               allModules={runModules}
               onBackToWorkflow={() => setCurrentView('workflow')}

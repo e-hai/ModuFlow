@@ -12,12 +12,15 @@ import {
   MapPin,
   Lightbulb,
   User,
-  ShieldCheck,
   FolderGit2,
   RefreshCw,
-  Check
+  Check,
+  Bug,
+  ArrowLeft,
+  Package,
+  Layers,
 } from 'lucide-react';
-import { StrategicInitiative, Product } from '../types';
+import { StrategicInitiative, Product, ModuleInstance } from '../types';
 import { api } from '../services/api';
 
 interface NavbarProps {
@@ -27,7 +30,13 @@ interface NavbarProps {
   currentProduct?: Product | null;
   products?: Product[];
   currentView: 'dashboard' | 'workflow' | 'module' | 'issues';
+  activeModule?: ModuleInstance | null;
+  runModules?: ModuleInstance[];
   onNavigateToDashboard: () => void;
+  onNavigateToWorkflow?: () => void;
+  onNavigateToIssues?: () => void;
+  onSelectProduct?: (product: Product) => void;
+  onSelectModule?: (module: ModuleInstance) => void;
   selectedPeriod?: string;
   onPeriodChange?: (period: string) => void;
 }
@@ -39,7 +48,13 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentProduct,
   products = [],
   currentView,
+  activeModule,
+  runModules = [],
   onNavigateToDashboard,
+  onNavigateToWorkflow,
+  onNavigateToIssues,
+  onSelectProduct,
+  onSelectModule,
   selectedPeriod = 'lifetime',
   onPeriodChange,
 }) => {
@@ -68,9 +83,9 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <>
-      <header className="border-b border-slate-200 bg-white/95 backdrop-blur sticky top-0 z-20 h-16 px-4 flex items-center justify-between">
-        {/* 左侧：展开收起按钮 + 战略工程标题与工作台上下文 */}
-        <div className="flex items-center space-x-3.5 min-w-0">
+      <header className="border-b border-slate-200 bg-white/95 backdrop-blur sticky top-0 z-20 h-16 px-4 flex items-center justify-between gap-3">
+        {/* 左侧：展开收起按钮 + 智能多级联动面包屑导航 */}
+        <div className="flex items-center space-x-2.5 min-w-0">
           <button
             onClick={onToggleSidebar}
             title={isSidebarOpen ? '收起侧边栏' : '展开侧边栏'}
@@ -83,65 +98,226 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </button>
 
-          <div className="flex items-center space-x-2 text-sm min-w-0">
+          {/* 多级联动面包屑导航 */}
+          <nav className="flex items-center space-x-1.5 text-xs min-w-0" aria-label="Breadcrumb">
+            {/* 1. 战略工程根节点 */}
             <button
               onClick={onNavigateToDashboard}
               title="返回战略驾驶舱"
-              className="flex items-center gap-1.5 font-bold text-slate-900 hover:text-emerald-700 tracking-tight transition cursor-pointer text-left truncate"
+              className={`flex items-center gap-1.5 font-bold tracking-tight transition cursor-pointer text-left truncate rounded-lg px-2 py-1 ${
+                currentView === 'dashboard'
+                  ? 'text-slate-900 bg-slate-100/90'
+                  : 'text-slate-600 hover:text-emerald-700 hover:bg-slate-100'
+              }`}
             >
               <Compass className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span className="truncate max-w-[160px] sm:max-w-xs md:max-w-md">
+              <span className="truncate max-w-[130px] sm:max-w-[180px] md:max-w-[240px]">
                 {currentInitiative?.name || '战略工程'}
               </span>
             </button>
 
-            {currentView === 'workflow' && currentProduct && (
-              <div className="hidden sm:flex items-center text-xs text-slate-500 shrink-0">
-                <ChevronRight className="w-3.5 h-3.5 text-slate-400 mx-1" />
-                <span className="text-emerald-700 font-semibold">{currentProduct.name}</span>
-                <span className="ml-1 text-slate-500">产研工作台</span>
-              </div>
+            {/* 2. 产研工作台 / 产品节点 (在 workflow 或 module 视图时展示) */}
+            {(currentView === 'workflow' || currentView === 'module') && currentProduct && (
+              <>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+
+                {products && products.length > 1 && onSelectProduct ? (
+                  /* 产品快速切换下拉 */
+                  <div className="relative flex items-center">
+                    <Package className="w-3.5 h-3.5 text-emerald-600 absolute left-2 pointer-events-none" />
+                    <select
+                      value={currentProduct.id}
+                      onChange={(e) => {
+                        const target = products.find((p) => p.id === e.target.value);
+                        if (target) onSelectProduct(target);
+                      }}
+                      className="appearance-none font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 rounded-lg pl-7 pr-6 py-1 cursor-pointer text-xs focus:outline-none transition max-w-[140px] sm:max-w-[180px] truncate shadow-2xs"
+                      title="点击切换当前战略下的矩阵产品"
+                    >
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-3 h-3 text-emerald-600 absolute right-1.5 pointer-events-none" />
+                  </div>
+                ) : (
+                  <button
+                    onClick={onNavigateToWorkflow}
+                    className={`flex items-center gap-1 font-semibold rounded-lg px-2 py-1 transition cursor-pointer truncate ${
+                      currentView === 'workflow'
+                        ? 'text-emerald-800 bg-emerald-50 border border-emerald-200'
+                        : 'text-slate-600 hover:text-emerald-700 hover:bg-slate-100'
+                    }`}
+                    title="产研工作台"
+                  >
+                    <Package className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span className="truncate max-w-[120px] sm:max-w-[160px]">{currentProduct.name}</span>
+                  </button>
+                )}
+
+                {currentView === 'workflow' && (
+                  <span className="hidden sm:inline-block text-[11px] text-slate-400 font-medium ml-0.5">
+                    / 产研工作台
+                  </span>
+                )}
+              </>
             )}
 
-            {currentView === 'issues' && (
-              <div className="hidden sm:flex items-center text-xs text-slate-500 shrink-0">
-                <ChevronRight className="w-3.5 h-3.5 text-slate-400 mx-1" />
-                <span className="text-rose-600 font-semibold">全局协同问题看板</span>
-              </div>
+            {/* 3. 子工序节点 (仅在 module 视图时展示) */}
+            {currentView === 'module' && activeModule && (
+              <>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+
+                {runModules && runModules.length > 1 && onSelectModule ? (
+                  /* 工序快速切换下拉 */
+                  <div className="relative flex items-center">
+                    <Layers className="w-3.5 h-3.5 text-slate-500 absolute left-2 pointer-events-none" />
+                    <select
+                      value={activeModule.id}
+                      onChange={(e) => {
+                        const target = runModules.find((m) => m.id === e.target.value);
+                        if (target) onSelectModule(target);
+                      }}
+                      className="appearance-none font-bold text-slate-800 bg-slate-100 hover:bg-slate-200/80 border border-slate-300 rounded-lg pl-7 pr-6 py-1 cursor-pointer text-xs focus:outline-none transition max-w-[150px] sm:max-w-[220px] truncate shadow-2xs"
+                      title="点击快速跳转至同产品其他工序"
+                    >
+                      {runModules.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          工序 {m.module_code} · {m.name} {m.phase === 'baselined' ? '✓' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-3 h-3 text-slate-500 absolute right-1.5 pointer-events-none" />
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 px-2 py-1 bg-slate-100 border border-slate-200 rounded-lg font-semibold text-slate-800 text-xs">
+                    <Layers className="w-3.5 h-3.5 text-slate-500" />
+                    <span>工序 {activeModule.module_code} · {activeModule.name}</span>
+                  </div>
+                )}
+              </>
             )}
-          </div>
+
+            {/* 4. 全局协同问题看板节点 */}
+            {currentView === 'issues' && (
+              <>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span className="font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md flex items-center gap-1">
+                  <Bug className="w-3.5 h-3.5 text-rose-600" />
+                  全局协同问题看板
+                </span>
+              </>
+            )}
+          </nav>
         </div>
 
-        {/* 右侧：主体身份与战略底稿 Icon 按钮 + 周期切换下拉列表 */}
-        {currentInitiative && (
-          <div className="flex items-center space-x-2.5 shrink-0 pl-3">
-            {/* 1. 主体身份与战略底稿 Icon 按钮 */}
-            <button
-              onClick={() => setShowStrategyModal(true)}
-              title="点击查看主体身份与战略底稿"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 border border-slate-200 hover:border-emerald-300 transition text-xs font-semibold cursor-pointer shadow-xs"
-            >
-              <FileText className="w-3.5 h-3.5 text-emerald-600" />
-              <span className="hidden sm:inline">主体身份与战略底稿</span>
-            </button>
-
-            {/* 2. 周期切换下拉列表 */}
-            <div className="relative flex items-center">
-              <Calendar className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
-              <select
-                value={selectedPeriod}
-                onChange={(e) => onPeriodChange?.(e.target.value)}
-                className="pl-8 pr-7 py-1.5 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 hover:border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-500 cursor-pointer appearance-none shadow-xs transition"
+        {/* 右侧功能操作区：根据不同视图场景精准展示，不常驻冗余信息 */}
+        <div className="flex items-center space-x-2.5 shrink-0">
+          {/* A. 战略驾驶舱专属：主体身份与战略底稿 + 周期核算切换 */}
+          {currentView === 'dashboard' && currentInitiative && (
+            <>
+              {/* 1. 主体身份与战略底稿 */}
+              <button
+                onClick={() => setShowStrategyModal(true)}
+                title="点击查看主体身份与战略底稿"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 border border-slate-200 hover:border-emerald-300 transition text-xs font-semibold cursor-pointer shadow-xs"
               >
-                <option value="MTD">本月 (MTD)</option>
-                <option value="QTD">本季 (QTD)</option>
-                <option value="YTD">本年 (YTD)</option>
-                <option value="lifetime">战役累计 (Lifetime)</option>
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
-            </div>
-          </div>
-        )}
+                <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="hidden sm:inline">主体身份与战略底稿</span>
+              </button>
+
+              {/* 2. 周期切换下拉列表（仅在驾驶舱控制指标核算周期） */}
+              <div className="relative flex items-center">
+                <Calendar className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
+                <select
+                  value={selectedPeriod}
+                  onChange={(e) => onPeriodChange?.(e.target.value)}
+                  className="pl-8 pr-7 py-1.5 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 hover:border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-500 cursor-pointer appearance-none shadow-xs transition"
+                  title="选择驾驶舱经营指标核算周期"
+                >
+                  <option value="MTD">本月 (MTD)</option>
+                  <option value="QTD">本季 (QTD)</option>
+                  <option value="YTD">本年 (YTD)</option>
+                  <option value="lifetime">战役累计 (Lifetime)</option>
+                </select>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
+              </div>
+            </>
+          )}
+
+          {/* B. 产研工作台专属：轻量战略参考 + 协同问题快捷入口 + 返回驾驶舱 */}
+          {currentView === 'workflow' && (
+            <>
+              {currentInitiative && (
+                <button
+                  onClick={() => setShowStrategyModal(true)}
+                  title="参考顶层战略背景与目标"
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 border border-slate-200 transition text-xs font-medium cursor-pointer shadow-2xs"
+                >
+                  <FileText className="w-3.5 h-3.5 text-slate-500" />
+                  <span className="hidden md:inline">战略背景参考</span>
+                </button>
+              )}
+
+              {onNavigateToIssues && (
+                <button
+                  onClick={onNavigateToIssues}
+                  title="查看协同问题与卡点"
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 hover:border-rose-200 transition text-xs font-medium cursor-pointer shadow-2xs"
+                >
+                  <Bug className="w-3.5 h-3.5 text-rose-500" />
+                  <span className="hidden md:inline">协同问题</span>
+                </button>
+              )}
+
+              <button
+                onClick={onNavigateToDashboard}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition text-xs font-semibold cursor-pointer shadow-xs"
+                title="返回战略驾驶舱"
+              >
+                <ArrowLeft className="w-3.5 h-3.5 text-slate-600" />
+                <span className="hidden sm:inline">返回驾驶舱</span>
+              </button>
+            </>
+          )}
+
+          {/* C. 子工序空间专属：工序主责 Agent 角色标签 + 快速返回工作台 */}
+          {currentView === 'module' && (
+            <>
+              {activeModule && (
+                <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600 shadow-2xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span className="font-medium">{activeModule.primary_role?.name || '专业 Agent'}</span>
+                </div>
+              )}
+
+              {onNavigateToWorkflow && (
+                <button
+                  onClick={onNavigateToWorkflow}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition text-xs font-semibold cursor-pointer shadow-xs"
+                  title="返回当前产品的产研工作台"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">返回工作台</span>
+                </button>
+              )}
+            </>
+          )}
+
+          {/* D. 全局协同问题看板专属：返回战略驾驶舱 */}
+          {currentView === 'issues' && (
+            <button
+              onClick={onNavigateToDashboard}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition text-xs font-semibold cursor-pointer shadow-xs"
+              title="返回战略驾驶舱"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 text-slate-600" />
+              <span>返回驾驶舱</span>
+            </button>
+          )}
+        </div>
       </header>
 
       {/* 主体身份与战略底稿内容弹窗 (Modal) */}
