@@ -44,10 +44,10 @@ async def test_bundle_upload_and_preview_flow():
         run_data = run_res.json()
         run_id = run_data["id"]
 
-        # Find 06 (PRD) and 07 (Design) and 09 (Dev) modules
+        # Find 05 (PRD) and 06 (Design) and 07 (Dev) modules
+        m05 = next(m for m in run_data["modules"] if m["module_code"] == "05")
         m06 = next(m for m in run_data["modules"] if m["module_code"] == "06")
         m07 = next(m for m in run_data["modules"] if m["module_code"] == "07")
-        m09 = next(m for m in run_data["modules"] if m["module_code"] == "09")
 
         # 3. Create a zip archive simulating a design prototype bundle
         zip_buf = io.BytesIO()
@@ -57,9 +57,9 @@ async def test_bundle_upload_and_preview_flow():
             zf.writestr("preview/screen1.png", b"fake-png-bytes")
         zip_bytes = zip_buf.getvalue()
 
-        # 4. Upload bundle to module 07 (Design)
+        # 4. Upload bundle to module 06 (Design)
         upload_res = await client.post(
-            f"/api/v1/modules/{m07['id']}/artifacts/upload",
+            f"/api/v1/modules/{m06['id']}/artifacts/upload",
             files={"file": ("prototype_v1.zip", zip_bytes, "application/zip")},
             data={"change_summary": "Initial high-fidelity interactive prototype bundle"}
         )
@@ -84,7 +84,7 @@ async def test_bundle_upload_and_preview_flow():
         assert "background: #fafafa" in css_res.text
 
         # 6. Test change reviews query
-        reviews_res = await client.get(f"/api/v1/change-reviews?module_id={m07['id']}&status=pending_approval")
+        reviews_res = await client.get(f"/api/v1/change-reviews?module_id={m06['id']}&status=pending_approval")
         assert reviews_res.status_code == 200
         reviews_list = reviews_res.json()
         assert len(reviews_list) >= 1
@@ -99,10 +99,10 @@ async def test_bundle_upload_and_preview_flow():
         assert approve_res.json()["status"] == "approved"
         assert approve_res.json()["approver"] == "产品总监"
 
-        # Verify module 07 is now baselined and artifact is baseline
-        m07_res = await client.get(f"/api/v1/modules/{m07['id']}")
-        assert m07_res.json()["phase"] == "baselined"
-        assert m07_res.json()["baseline_artifact_id"] == artifact_id
+        # Verify module 06 is now baselined and artifact is baseline
+        m06_res = await client.get(f"/api/v1/modules/{m06['id']}")
+        assert m06_res.json()["phase"] == "baselined"
+        assert m06_res.json()["baseline_artifact_id"] == artifact_id
 
 @pytest.mark.asyncio
 async def test_upstream_stale_detection_and_ack_flow():
@@ -121,13 +121,13 @@ async def test_upstream_stale_detection_and_ack_flow():
             "name": "Sprint-Stale"
         })
         run_data = run_res.json()
-        m06 = next(m for m in run_data["modules"] if m["module_code"] == "06") # PRD
-        m09 = next(m for m in run_data["modules"] if m["module_code"] == "09") # Dev
+        m05 = next(m for m in run_data["modules"] if m["module_code"] == "05") # PRD
+        m07 = next(m for m in run_data["modules"] if m["module_code"] == "07") # Dev
 
-        # 1. Upload PRD v1 to module 06
+        # 1. Upload PRD v1 to module 05
         prd_v1 = "# PRD v1\n- Feature A: User login with phone OTP\n- Feature B: Basic dashboard"
         up_v1_res = await client.post(
-            f"/api/v1/modules/{m06['id']}/artifacts/upload",
+            f"/api/v1/modules/{m05['id']}/artifacts/upload",
             files={"file": ("prd_v1.md", prd_v1.encode("utf-8"), "text/markdown")},
             data={"change_summary": "Initial PRD scope"}
         )
@@ -137,22 +137,22 @@ async def test_upstream_stale_detection_and_ack_flow():
         # Approve PRD v1
         await client.post(f"/api/v1/change-reviews/{rev1_id}/approve", json={"approver": "CEO"})
 
-        # Unlock module 09 (simulate unlocking downstream)
+        # Unlock module 07 (simulate unlocking downstream)
         async with AsyncSessionLocal() as db:
-            m09_db = (await db.execute(select(ModuleInstance).where(ModuleInstance.id == m09["id"]))).scalar_one()
-            m09_db.is_unlocked = True
+            m07_db = (await db.execute(select(ModuleInstance).where(ModuleInstance.id == m07["id"]))).scalar_one()
+            m07_db.is_unlocked = True
             # Downstream is tracking v1
-            m09_db.synced_upstream_versions = {"06": 1}
+            m07_db.synced_upstream_versions = {"05": 1}
             await db.commit()
 
-        # Check m09 stale status -> should be FALSE (synced with v1)
-        m09_check = await client.get(f"/api/v1/modules/{m09['id']}")
-        assert m09_check.json()["is_upstream_stale"] is False
+        # Check m07 stale status -> should be FALSE (synced with v1)
+        m07_check = await client.get(f"/api/v1/modules/{m07['id']}")
+        assert m07_check.json()["is_upstream_stale"] is False
 
-        # 2. Upload PRD v2 to module 06 with scope change
+        # 2. Upload PRD v2 to module 05 with scope change
         prd_v2 = "# PRD v2\n- Feature A: User login with OAuth (Google/Apple)\n- Feature B: Basic dashboard\n- Feature C: Multi-currency wallet"
         up_v2_res = await client.post(
-            f"/api/v1/modules/{m06['id']}/artifacts/upload",
+            f"/api/v1/modules/{m05['id']}/artifacts/upload",
             files={"file": ("prd_v2.md", prd_v2.encode("utf-8"), "text/markdown")},
             data={"change_summary": "Changed phone OTP to OAuth and added wallet"}
         )
@@ -163,25 +163,25 @@ async def test_upstream_stale_detection_and_ack_flow():
         # Lead approves PRD v2
         await client.post(f"/api/v1/change-reviews/{rev2_id}/approve", json={"approver": "CEO"})
 
-        # 3. Now check module 09 (Dev) -> MUST BE DETECTED AS STALE!
-        m09_stale_res = await client.get(f"/api/v1/modules/{m09['id']}")
-        m09_data = m09_stale_res.json()
-        assert m09_data["is_upstream_stale"] is True
-        assert len(m09_data["stale_details"]) > 0
-        detail = m09_data["stale_details"][0]
-        assert detail["upstream_code"] == "06"
+        # 3. Now check module 07 (Dev) -> MUST BE DETECTED AS STALE!
+        m07_stale_res = await client.get(f"/api/v1/modules/{m07['id']}")
+        m07_data = m07_stale_res.json()
+        assert m07_data["is_upstream_stale"] is True
+        assert len(m07_data["stale_details"]) > 0
+        detail = m07_data["stale_details"][0]
+        assert detail["upstream_code"] == "05"
         assert detail["current_synced_version"] == 1
         assert detail["latest_upstream_version"] == 2
 
         # Also verify in get_run batch endpoint
         run_batch_res = await client.get(f"/api/v1/runs/{run_data['id']}")
-        run_batch_m09 = next(m for m in run_batch_res.json()["modules"] if m["module_code"] == "09")
-        assert run_batch_m09["is_upstream_stale"] is True
+        run_batch_m07 = next(m for m in run_batch_res.json()["modules"] if m["module_code"] == "07")
+        assert run_batch_m07["is_upstream_stale"] is True
 
         # 4. Dev acknowledges the upstream update
-        ack_res = await client.post(f"/api/v1/modules/{m09['id']}/ack-upstream", json={"upstream_code": "06"})
+        ack_res = await client.post(f"/api/v1/modules/{m07['id']}/ack-upstream", json={"upstream_code": "05"})
         assert ack_res.status_code == 200
-        assert ack_res.json()["synced_upstream_versions"]["06"] == 2
+        assert ack_res.json()["synced_upstream_versions"]["05"] == 2
         assert ack_res.json()["is_upstream_stale"] is False
 
 @pytest.mark.asyncio

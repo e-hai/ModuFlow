@@ -87,10 +87,19 @@ async def assemble_module_context(
 
     # 4. Retrieve Agent Role Persona and Collaboration Bundle
     from backend.app.services.agent_roles import get_module_role_bundle
+    from backend.app.services.skill_mcp_mounter import mount_role_skills_and_mcp
     role_bundle = await get_module_role_bundle(db, mod.module_code)
     primary_role = role_bundle.get("primary_role")
     collab_roles = role_bundle.get("collaborator_roles", [])
     stage_cfg = role_bundle.get("config", {})
+
+    primary_role_code = primary_role.role_code if primary_role else "pm"
+    collab_role_codes = [c.role_code for c in collab_roles]
+    arsenal_info = mount_role_skills_and_mcp(
+        workspace_dir=workspace_path,
+        primary_role_code=primary_role_code,
+        collaborator_role_codes=collab_role_codes
+    )
 
     collab_desc = "、".join([f"{c.name} ({c.title})" for c in collab_roles]) if collab_roles else "无"
 
@@ -151,11 +160,13 @@ async def assemble_module_context(
         context_lines.extend([
             "",
             "---",
-            "## 四、本次工序驻场 Agent 角色档案与专业准则 (Resident Agent Role & Persona)",
+            "## 四、本次工序驻场 Agent 角色档案与独有 Skill / MCP 武器库 (Resident Agent Role & Arsenal)",
             f"- **当前执业角色**：**{primary_role.name}**（{primary_role.title}）",
             f"- **核心岗位职责**：{primary_role.responsibilities}",
             f"- **工序战略重点**：{stage_cfg.get('mission_focus', '业务规范推演')}",
             f"- **协同作战参谋**：{collab_desc}",
+            f"- **已挂载独有 Skill 技能包**：`{', '.join(arsenal_info['mounted_skills'])}`（路径：`.agents/skills/`）",
+            f"- **已挂载专属 MCP 服务**：`{', '.join(arsenal_info['mounted_mcp_servers'])}`（配置：`.agents/mcp_config.json`）",
             "",
             "**专业作业守则与思维准则**：",
             primary_role.system_persona,
@@ -168,10 +179,11 @@ async def assemble_module_context(
         f"**人类负责人指令**：",
         f"> {user_instruction}",
         "",
-        "**智能体履职守则**：",
-        "1. 严格遵守母战略工程的战略定性与商业模式假设，坚守本角色的专业准则，严禁空泛套话。",
-        "2. 输出交付物必须采用规范的专业 Markdown 格式，具备极高可落地性与工程穿透力。",
-        "3. 如发现前序基线与当前需求存在重大逻辑漏洞、可行性或商业风险，必须明确指出并建议提报 Issue。"
+        "**智能体履职守则（双层分层与反冗余铁律）**：",
+        "1. 【置顶 30 秒拍板摘要卡】：交付物最顶部（标题正下方）必须固定输出 `## 负责人 30 秒拍板摘要卡 (Executive Gate)`（严格控制在 300 字以内），用极简要点列出：①本工序 3 条核心量化结论；②需人类负责人拍板确认的 2~3 个关键决策项；③移交下游的核心指标锚点。",
+        "2. 【严禁跨工序复述抄写】：前序已封版基线中定稿的内容（如用户画像、竞品背景、价格阶梯），本工序直接写“继承工序 XX 基线”，绝对禁止再次画表重复抄写！",
+        "3. 【篇幅克制与高密度干货】：剔除一切教科书式的长篇铺垫，工序 01~05 全文总篇幅严格控制在 2,000~3,500 字以内，下方执行层仅保留供下游 AI 读取的高密度表格与关键参数。",
+        "4. 如发现前序基线与当前需求存在重大逻辑漏洞或商业风险，必须明确指出并建议提报问题单。"
     ])
 
     context_markdown = "\n".join(context_lines)
@@ -193,7 +205,9 @@ async def assemble_module_context(
         "workspace_path": str(workspace_path),
         "role_code": primary_role.role_code if primary_role else "pm",
         "role_name": primary_role.name if primary_role else "产品经理 Agent",
-        "role_title": primary_role.title if primary_role else "高级产品总监"
+        "role_title": primary_role.title if primary_role else "高级产品总监",
+        "mounted_skills": arsenal_info["mounted_skills"],
+        "mounted_mcp_servers": arsenal_info["mounted_mcp_servers"],
     }
 
     return context_markdown, workspace_path, metadata

@@ -87,7 +87,26 @@ class CliSubprocessAdapter(BaseAgentAdapter):
         prod_code = (metadata or {}).get("product_code") or ""
         target_mkt = (metadata or {}).get("target_market") or "目标市场"
         strat_intent = (metadata or {}).get("strategic_intent") or ""
+        role_code = (metadata or {}).get("role_code") or "pm"
         output_filename = f"交付物_{mod_code}_{mod_name}.md"
+
+        # Ensure exclusive role Skills and MCP config are mounted into workspace_dir
+        from backend.app.services.skill_mcp_mounter import mount_role_skills_and_mcp
+        from backend.app.services.agent_roles import STAGE_ROLE_CONFIGS
+        stage_cfg = STAGE_ROLE_CONFIGS.get(mod_code, {})
+        primary_rc = stage_cfg.get("primary", role_code)
+        collab_rcs = stage_cfg.get("collaborators", [])
+        arsenal_info = mount_role_skills_and_mcp(
+            workspace_dir=workspace_dir,
+            primary_role_code=primary_rc,
+            collaborator_role_codes=collab_rcs
+        )
+
+        yield AgentStreamEvent(
+            event_type=AgentEventType.LOG,
+            content=f"[Arsenal] 已为角色 `{primary_rc}` 挂载独有 Skill ({', '.join(arsenal_info['mounted_skills'])}) 与专属 MCP ({', '.join(arsenal_info['mounted_mcp_servers'])})",
+            metadata=arsenal_info
+        )
 
         cmd_path = find_cli_binary(self.cli_command)
         if not cmd_path:
@@ -243,28 +262,70 @@ class CliSubprocessAdapter(BaseAgentAdapter):
         extra_methodology = ""
         if mod_code == "01":
             extra_methodology = (
-                f"\n【市场研究 Agent 专业作业规范】\n"
-                f"- 必须采用自下而上 (Bottom-Up) 模型量化测算 TAM/SAM/SOM，给出保守、基准、乐观三套情景；\n"
-                f"- 必须包含 Top 5 核心标杆竞品 5 维对比矩阵（定位与规模、变现与定价、获客渠道、App Store 1-2星差评槽点挖掘、致命软肋与切入机会）；\n"
-                f"- 必须输出 3 个典型 ICP 目标用户画像（设备、Jobs-To-Be-Done、现有替代方案痛点、付费意愿）；\n"
-                f"- 必须提炼价值缝隙 (Value Gap) 与冷启动破局切入点 (Wedge Strategy)；\n"
-                f"- 输出内容必须为工序 02（商业模式）与工序 03（产品方向）提供直接事实支撑。\n"
+                f"\n【工序 01（市场研究）专项作业红线 —— 全球赛道摸底与截胡实战】\n"
+                f"- 1. 验真伪与全球含金量拆解：剖析该赛道/热门应用是自然裂变真风口还是买量虚火，拆解全球 T1 高利润区（美加英澳、西欧、日韩）与 T2/T3 流量区的真实营收潜能，采用自下而上模型算清首年可拿下的现实盘子 (SOM)；\n"
+                f"- 2. 扒全球流量密码：拆解头部爆款在 TikTok/Reels/Shorts/Reddit 上最吸量的 3 秒跨文化视觉钩子 (Visual Hook) 与高意图低竞争 ASO 搜索词；\n"
+                f"- 3. 扒 1-2 星差评找软肋：对标 3~5 家全球头部或近期蹿红竞品，深挖其被骂得最凶的痛点（如周卡扣费陷阱、核心功能缺陷、本地化缺失）；\n"
+                f"- 4. 全球跨区套利与截胡打法 (Global Wedge)：给出『干/不干/怎么改单点去截胡/全球首发与扩量区域梯队』的明确建议，支撑工序 02 与 03。\n"
             )
+        elif mod_code == "03":
+            extra_methodology = (
+                f"\n【工序 03（产品方向决策）专项作业红线 —— 严禁未验先定】\n"
+                f"- 本工序定位为「一页纸精益方向决策与假设提炼」，绝不是工程级详细 PRD！\n"
+                f"- 必须聚焦输出：①产品核心价值主张 (UVP) 与一句话定位；②目标画像痛点与价值映射；③MoSCoW 功能减法矩阵（明确 P0 必做与坚决砍除的伪需求 Non-Goals）；④10秒 Aha Moment 激活路径；⑤向工序 04（低成本市场验证）正式移交的 3~4 个可被真实流量证伪的生死假设清单（H1~H4，含通过阈值与熔断线）。\n"
+                f"- 【硬性禁令】：严禁在本工序提前编写代码级数据结构 (Schema)、TypeScript/JSON 接口字段、伪代码或长篇 Gherkin (Given/When/Then) 验收用例（这些工程细节必须留到工序 05 经过市场验证后再写）！\n"
+                f"- 【工序编号对齐】：向下游穿透指令必须严格指向真实的「工序 04：低成本市场验证 (Smoke Test)」，严禁错标为 UI 或架构设计。\n"
+            )
+        elif mod_code == "04":
+            extra_methodology = (
+                f"\n【工序 04（低成本市场验证）专项作业红线 —— 拒绝纸上谈兵，必须产出可交互 H5 假门网页】\n"
+                f"- 1. 交付物文档（`{output_filename}`）必须精炼务实，拒绝动辄三万字的学院派空谈！聚焦输出：①承接工序 03 的四大假设验证映射；②2~3 条可直接开拍的 10 秒短视频分镜脚本或 Reddit/社区零成本截流帖文案；③小额测试预算分配（如 $100~$350 / 3~7天）与绿灯/红灯止损阈值。\n"
+                f"- 2. 【强制真交付要求】：你必须在当前工作区目录下同步创建并写入一个单文件、零外部依赖、高颜值的移动端可交互 H5 假门测试着陆页 `index.html`！该网页必须包含：首屏核心功能交互模拟器、痛点对比、伪购买/下载抽屉，以及点击后的「早鸟内测坦白与留邮箱锁客弹窗 (Graceful Reveal)」，供业务负责人直接在右侧预览器交互体验或一键部署外测。\n"
+            )
+        elif mod_code == "05":
+            extra_methodology = (
+                f"\n【工序 05（产品立项与需求定义）专项作业红线 —— 严禁虚构实测数据 + 输出完整工程级 PRD 需求规格说明书】\n"
+                f"- 【反幻觉最高铁律】：绝对禁止凭空捏造任何未在人类【本次工序任务要求】中明确提供的“实盘投放花费、访客数(UV)、点击率(CTR)、收集到的早鸟邮箱数量、卡方检验 p 值或 PostHog 录屏分析结论”！\n"
+                f"- 1. 产品立项确认（实测复盘，占篇幅 10%）：\n"
+                f"  - 若人类在指令中明确粘贴了真实的外部测试数据：严格依据真实数据对 H1~H4 假设逐一复盘，做出客观的 Go（立项）/ Pivot（微调转型）/ Kill（熔断终止）决议。\n"
+                f"  - 若人类未提供具体实测数据：必须在报告正文的显著开头输出「外部实测数据未录入声明：当前尚未收到工序 04 的真实外测投放数据，以下为待回填立项评估框架与完整 MVP PRD 基线」，所有实测数据列必须填写为 `[待回填实测值 | 目标基准: xxx]`，绝不伪造“已测完”的假象！\n"
+                f"- 2. 完整工程级 PRD 需求规格说明书（占篇幅 90%，严禁缩水为简表！必须供工序 06 UI 设计与工序 07 研发直接照单施工）：\n"
+                f"  - 章节一：立项评估与 MVP 范围封版（In-Scope P0/P1 模块清单 vs Out-of-Scope 明确不做边界）；\n"
+                f"  - 章节二：全局信息架构 (IA) 与核心状态流转图（含 Mermaid 页面路由拓扑图与核心用户转化/变现状态机）；\n"
+                f"  - 章节三：逐模块、逐页面详细功能需求规格（M1~M6 全量展开：包含页面布局区域、UI 元素说明、手势与参数阈值公式、主流程交互、空状态/加载态/报错降级态）；\n"
+                f"  - 章节四：完整数据字典与云端/本地接口契约（完整 JSON Schema、SQLite 本地存储表结构、Keychain 持久化字段、CDN 路径规范与 Remote Config 下发契约）；\n"
+                f"  - 章节五：商业化计费与权限状态机（免费额度扣减、`24h Ad-Pass` 激励视频进度与跨天过期逻辑、StoreKit 2 订阅/买断/恢复购买 Restore 与早鸟码兑换状态机）；\n"
+                f"  - 章节六：全链路数据埋点字典（Tracking Plan：核心事件名、触发时机、必传属性字段与北极星漏斗归因公式，支撑工序 07 埋点与工序 11 运营分析）；\n"
+                f"  - 章节七：非功能性需求与全量 Gherkin 验收标准（AC-01 ~ AC-08+ Given/When/Then 完整用例、性能指标、灵动岛安全区 ≥ 71pt 规范、离线弱网与 Apple 4.3 审核合规红线）。\n"
+            )
+        elif mod_code == "07":
+            extra_methodology = (
+                f"\n【工序 07（开发实现）专项作业红线 —— 轻量架构选型 + 代码交付与自测】\n"
+                f"- 承接工序 05（产品立项与需求定义）与工序 06（设计实现），在开发启动前先用精简章节明确技术栈选型、核心模块划分与接口/存储方案（无需单独拆分长篇架构八股文），随后聚焦代码实现、核心逻辑交付与自测覆盖率报告。\n"
+            )
+
+        length_guideline = (
+            "工序 01~04（立项前精益探索期）全文总篇幅控制在 2,000~3,500 字高密度表格内。"
+            if mod_code in ("01", "02", "03", "04")
+            else "工序 05（完整工程级 PRD）及后续工程工序必须完整输出全部技术规格、逐页面交互细节、Schema、状态机、埋点字典与全量验收标准，严禁将功能模块缩水为几行简表（完整 PRD 篇幅通常为 6,000~12,000 字）。"
+        )
 
         prompt_for_cli = (
             f"【当前战略工程与单品上下文】\n"
             f"- 所属战略工程：{init_name}\n"
             f"- 目标单品：{prod_name} ({prod_code})\n"
             f"- 目标市场：{target_mkt}\n"
-            f"- 当前工序环节：{mod_name} (编号: {mod_code})\n\n"
-            f"请仔细阅读当前工作区下的战略底稿与前序工序基线文件 `.moduflow_agent_context.md`。\n\n"
+            f"- 当前工序环节：{mod_name} (编号: {mod_code})\n"
+            f"- 当前工作区已挂载独有 Skill：`{', '.join(arsenal_info['mounted_skills'])}` (位于 `.agents/skills/`)\n"
+            f"- 当前工作区已挂载专属 MCP：`{', '.join(arsenal_info['mounted_mcp_servers'])}` (位于 `.agents/mcp_config.json`)\n\n"
+            f"请仔细阅读当前工作区下的战略底稿与前序工序基线文件 `.moduflow_agent_context.md`，并优先激活工作区 `.agents/skills/` 下的专属技能与 MCP 工具辅助推演。\n\n"
             f"【本次工序任务要求】\n"
             f"{user_instruction}\n"
             f"{extra_methodology}\n"
-            f"【交付要求】\n"
-            f"1. 请结合战略定性与微观闭环，严格按照工序规范生成「{prod_name}」完整的交付物内容。\n"
-            f"2. 请将本次生成的交付物全文完整保存至当前工作区的 `{output_filename}` 文件中。\n"
-            f"3. 并在控制台标准输出 (stdout) 中打印出交付物全文内容。"
+            f"【双层分层与反冗余交付要求（强制执行）】\n"
+            f"1. 第一层（置顶首屏给人类负责人拍板）：文档标题下方第一章必须固定为 `## 负责人 30 秒拍板摘要卡 (Executive Gate)`（控制在 300 字内，含：3条核心量化结论 + 需负责人拍板的 2~3 个开关/选项 + 下游传参锚点）。\n"
+            f"2. 第二层（给下游 AI 传参的执行干货）：严禁重复抄写前序工序已定稿的用户画像、竞品常识或价格表（直接写“继承工序 XX 基线”），剔除废话；{length_guideline}\n"
+            f"3. 请将本次生成的交付物全文完整保存至当前工作区的 `{output_filename}` 文件中，并在控制台标准输出 (stdout) 中打印出交付物全文内容。"
         )
 
         args = build_cli_arguments(cmd_path, prompt_for_cli)

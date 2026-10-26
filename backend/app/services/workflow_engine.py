@@ -14,22 +14,20 @@ from backend.app.models.entities import (
 DEFAULT_TEMPLATES = [
     {
         "id": "full-product-launch",
-        "name": "完整产品研发 (13 模块)",
-        "description": "从市场调研到运营分析的完整闭环流程，适合从零开始的全新业务线。",
+        "name": "完整产品研发 (11 模块)",
+        "description": "从全球市场摸底、精益假门验证、产品立项与需求定义，到设计开发、上线获客与运营迭代的完整闭环。",
         "modules_config": [
             {"code": "01", "name": "市场研究", "required": True},
             {"code": "02", "name": "商业模式分析", "required": True},
             {"code": "03", "name": "产品方向决策", "required": True},
             {"code": "04", "name": "低成本市场验证", "required": True},
-            {"code": "05", "name": "产品方向确认", "required": True},
-            {"code": "06", "name": "MVP 定义与 PRD", "required": True},
-            {"code": "07", "name": "设计与可用性验证", "required": True},
-            {"code": "08", "name": "技术可行性评估", "required": True},
-            {"code": "09", "name": "开发实现", "required": True},
-            {"code": "10", "name": "测试与 QA", "required": True},
-            {"code": "11", "name": "发布与上线", "required": True},
-            {"code": "12", "name": "市场推广与获客", "required": False},
-            {"code": "13", "name": "运营分析与持续迭代", "required": False},
+            {"code": "05", "name": "产品立项与需求定义", "required": True},
+            {"code": "06", "name": "设计实现", "required": True},
+            {"code": "07", "name": "开发实现", "required": True},
+            {"code": "08", "name": "测试与 QA", "required": True},
+            {"code": "09", "name": "发布与上线", "required": True},
+            {"code": "10", "name": "市场推广与获客", "required": False},
+            {"code": "11", "name": "运营分析与持续迭代", "required": False},
         ],
         "default_dependencies": [
             {"from": "01", "to": "02"},
@@ -37,35 +35,32 @@ DEFAULT_TEMPLATES = [
             {"from": "03", "to": "04"},
             {"from": "04", "to": "05", "gate": "decision"},
             {"from": "05", "to": "06"},
+            {"from": "05", "to": "07"},
             {"from": "06", "to": "07"},
-            {"from": "06", "to": "08"},
-            {"from": "07", "to": "09"},
-            {"from": "08", "to": "09", "gate": "approval"},
+            {"from": "07", "to": "08"},
+            {"from": "08", "to": "09", "gate": "quality"},
             {"from": "09", "to": "10"},
-            {"from": "10", "to": "11", "gate": "quality"},
-            {"from": "11", "to": "12"},
-            {"from": "11", "to": "13"},
+            {"from": "09", "to": "11"},
         ]
     },
     {
         "id": "fast-iteration",
-        "name": "快速功能迭代 (7 模块)",
-        "description": "适合已有产品的大版本与重要功能迭代，跳过前期商业调研，直接进入 PRD 与开发。",
+        "name": "快速功能迭代 (6 模块)",
+        "description": "适合已有产品的大版本与重要功能迭代，直接从产品立项与需求定义进入设计、开发、测试、发布与运营复盘。",
         "modules_config": [
-            {"code": "06", "name": "MVP 定义与 PRD", "required": True},
-            {"code": "07", "name": "设计与可用性验证", "required": True},
-            {"code": "08", "name": "技术可行性评估", "required": False},
-            {"code": "09", "name": "开发实现", "required": True},
-            {"code": "10", "name": "测试与 QA", "required": True},
-            {"code": "11", "name": "发布与上线", "required": True},
-            {"code": "13", "name": "运营分析与持续迭代", "required": False},
+            {"code": "05", "name": "产品立项与需求定义", "required": True},
+            {"code": "06", "name": "设计实现", "required": True},
+            {"code": "07", "name": "开发实现", "required": True},
+            {"code": "08", "name": "测试与 QA", "required": True},
+            {"code": "09", "name": "发布与上线", "required": True},
+            {"code": "11", "name": "运营分析与持续迭代", "required": False},
         ],
         "default_dependencies": [
+            {"from": "05", "to": "06"},
             {"from": "06", "to": "07"},
-            {"from": "07", "to": "09"},
-            {"from": "09", "to": "10"},
-            {"from": "10", "to": "11", "gate": "quality"},
-            {"from": "11", "to": "13"}
+            {"from": "07", "to": "08"},
+            {"from": "08", "to": "09", "gate": "quality"},
+            {"from": "09", "to": "11"}
         ]
     },
     {
@@ -73,13 +68,13 @@ DEFAULT_TEMPLATES = [
         "name": "紧急热修复 (3 模块)",
         "description": "紧急缺陷与生产问题快速通道：开发 → 测试回归 → 紧急发布。",
         "modules_config": [
-            {"code": "09", "name": "开发实现", "required": True},
-            {"code": "10", "name": "测试与 QA", "required": True},
-            {"code": "11", "name": "发布与上线", "required": True},
+            {"code": "07", "name": "开发实现", "required": True},
+            {"code": "08", "name": "测试与 QA", "required": True},
+            {"code": "09", "name": "发布与上线", "required": True},
         ],
         "default_dependencies": [
-            {"from": "09", "to": "10"},
-            {"from": "10", "to": "11", "gate": "quality"}
+            {"from": "07", "to": "08"},
+            {"from": "08", "to": "09", "gate": "quality"}
         ]
     }
 ]
@@ -87,9 +82,9 @@ DEFAULT_TEMPLATES = [
 async def seed_templates_if_empty(db: AsyncSession):
     stmt = select(WorkflowTemplate)
     res = await db.execute(stmt)
-    existing = res.scalars().all()
-    if not existing:
-        for t in DEFAULT_TEMPLATES:
+    existing_map = {tpl.id: tpl for tpl in res.scalars().all()}
+    for t in DEFAULT_TEMPLATES:
+        if t["id"] not in existing_map:
             tpl = WorkflowTemplate(
                 id=t["id"],
                 name=t["name"],
@@ -98,7 +93,14 @@ async def seed_templates_if_empty(db: AsyncSession):
                 default_dependencies=t["default_dependencies"]
             )
             db.add(tpl)
-        await db.commit()
+        else:
+            tpl = existing_map[t["id"]]
+            tpl.name = t["name"]
+            tpl.description = t["description"]
+            tpl.modules_config = t["modules_config"]
+            tpl.default_dependencies = t["default_dependencies"]
+            db.add(tpl)
+    await db.commit()
 
 async def create_workflow_run_from_template(
     db: AsyncSession, product_id: str, template_id: str, run_name: str

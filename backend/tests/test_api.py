@@ -571,15 +571,16 @@ async def test_agent_roles_api():
         res_run_detail = await ac.get(f"/api/v1/runs/{run_id}")
         assert res_run_detail.status_code == 200
         modules = res_run_detail.json()["modules"]
-        # Check module 06 (MVP / PRD)
-        m06 = next(m for m in modules if m["module_code"] == "06")
-        res_m06 = await ac.get(f"/api/v1/modules/{m06['id']}")
-        assert res_m06.status_code == 200
-        m06_data = res_m06.json()
-        assert m06_data["primary_role"] is not None
-        assert m06_data["primary_role"]["role_code"] == "pm"
-        assert len(m06_data["collaborator_roles"]) == 1
-        assert m06_data["collaborator_roles"][0]["role_code"] == "eng"
+        # Check module 05 (方向确认与 MVP PRD)
+        m05 = next(m for m in modules if m["module_code"] == "05")
+        res_m05 = await ac.get(f"/api/v1/modules/{m05['id']}")
+        assert res_m05.status_code == 200
+        m05_data = res_m05.json()
+        assert m05_data["primary_role"] is not None
+        assert m05_data["primary_role"]["role_code"] == "pm"
+        collab_codes = [c["role_code"] for c in m05_data["collaborator_roles"]]
+        assert "ba" in collab_codes
+        assert "eng" in collab_codes
 
 
 

@@ -165,13 +165,27 @@ async def execute_agent_for_session(
             latest_art = art_res.scalars().first()
             next_version = (latest_art.version + 1) if latest_art else 1
 
+            artifact_type = "markdown"
+            storage_rel_path = None
+            entry_file = "index.html"
+
+            if workspace_path and (workspace_path / "index.html").exists():
+                artifact_type = "html_bundle"
+                try:
+                    from backend.app.core.config import settings
+                    storage_rel_path = str(workspace_path.relative_to(settings.WORKSPACE_DIR))
+                except Exception:
+                    storage_rel_path = None
+
             new_artifact = Artifact(
                 module_id=module.id,
                 version=next_version,
                 title=f"{module.name} 交付物 (V{next_version})",
                 content=produced_artifact_content,
                 content_hash=calculate_sha256(produced_artifact_content),
-                artifact_type="markdown",
+                artifact_type=artifact_type,
+                storage_rel_path=storage_rel_path,
+                entry_file=entry_file,
                 is_baseline=False
             )
             db.add(new_artifact)

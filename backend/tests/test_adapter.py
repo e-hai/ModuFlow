@@ -319,3 +319,67 @@ async def test_agent_runner_cli_failure_reports_error_without_mock_data():
         count_after = len((await db.execute(select(Artifact).where(Artifact.module_id == mod.id))).scalars().all())
         assert count_after == count_before
 
+
+@pytest.mark.asyncio
+async def test_role_exclusive_skill_and_mcp_mounting(tmp_path):
+    """Verify per-role exclusive Skill mounting (.agents/skills/) and Stdio MCP Server JSON-RPC execution."""
+    import asyncio
+    import json
+    import sys
+    from backend.app.services.skill_mcp_mounter import mount_role_skills_and_mcp, MCP_SERVER_SCRIPT
+
+    # 1. Mount for Stage 01 (mr primary, ba collaborator)
+    ws_01 = tmp_path / "01_market_research"
+    info_01 = mount_role_skills_and_mcp(ws_01, primary_role_code="mr", collaborator_role_codes=["ba"])
+    assert "mr-global-market-intelligence" in info_01["mounted_skills"]
+    assert "ba-unit-economics-calculator" in info_01["mounted_skills"]
+    # Ensure unrelated role skills (e.g. qa or eng) are NOT mounted in Stage 01 workspace
+    assert "qa-release-gatekeeper" not in info_01["mounted_skills"]
+    assert (ws_01 / ".agents" / "skills" / "mr-global-market-intelligence" / "SKILL.md").exists()
+    assert (ws_01 / ".agents" / "mcp_config.json").exists()
+    assert (ws_01 / ".mcp.json").exists()
+
+    mcp_cfg = json.loads((ws_01 / ".agents" / "mcp_config.json").read_text(encoding="utf-8"))
+    assert "moduflow-mr-mcp" in mcp_cfg["mcpServers"]
+    assert "moduflow-qa-mcp" not in mcp_cfg["mcpServers"]
+
+    # 2. Test Stdio JSON-RPC 2.0 interaction with role_mcp_server.py for role 'mr'
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        str(MCP_SERVER_SCRIPT),
+        "--role",
+        "mr",
+        "--workspace",
+        str(ws_01),
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    reqs = [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "calculate_bottom_up_som",
+                "arguments": {
+                    "monthly_search_volume": 200000,
+                    "target_capture_rate": 0.05,
+                    "blended_arpu_usd": 1.85
+                }
+            }
+        }
+    ]
+    input_bytes = ("\n".join(json.dumps(r) for r in reqs) + "\n").encode("utf-8")
+    stdout_data, _ = await proc.communicate(input=input_bytes)
+    lines = [json.loads(line) for line in stdout_data.decode("utf-8").strip().splitlines() if line.strip()]
+    assert len(lines) == 3
+    assert lines[0]["result"]["serverInfo"]["name"] == "moduflow-mr-mcp"
+    tool_names = [t["name"] for t in lines[1]["result"]["tools"]]
+    assert "calculate_bottom_up_som" in tool_names
+    call_output = json.loads(lines[2]["result"]["content"][0]["text"])
+    assert call_output["first_year_som_usd"] == 222000.0
+
+

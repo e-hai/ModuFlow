@@ -283,27 +283,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             </>
           )}
 
-          {/* C. 子工序空间专属：工序主责 Agent 角色标签 + 快速返回工作台 */}
-          {currentView === 'module' && (
-            <>
-              {activeModule && (
-                <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600 shadow-2xs">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <span className="font-medium">{activeModule.primary_role?.name || '专业 Agent'}</span>
-                </div>
-              )}
-
-              {onNavigateToWorkflow && (
-                <button
-                  onClick={onNavigateToWorkflow}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition text-xs font-semibold cursor-pointer shadow-xs"
-                  title="返回当前产品的产研工作台"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">返回工作台</span>
-                </button>
-              )}
-            </>
+          {/* C. 子工序空间专属：快速返回工作台 */}
+          {currentView === 'module' && onNavigateToWorkflow && (
+            <button
+              onClick={onNavigateToWorkflow}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition text-xs font-semibold cursor-pointer shadow-xs"
+              title="返回当前产品的产研工作台"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">返回工作台</span>
+            </button>
           )}
 
           {/* D. 全局协同问题看板专属：返回战略驾驶舱 */}

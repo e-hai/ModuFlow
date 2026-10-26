@@ -401,7 +401,7 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
         </div>
       )}
 
-      {/* 工序流程看板 (13 模块 Pipeline) */}
+      {/* 工序流程看板 (11 模块 Pipeline) */}
       {selectedRun ? (
         <div className="space-y-3">
           <div className="text-xs text-slate-500 flex items-center justify-between px-1">

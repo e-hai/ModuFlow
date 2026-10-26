@@ -386,8 +386,12 @@ def generate_comprehensive_market_report(
 
 ---
 
-## Executive Summary (执行摘要)
-本报告基于战略工程顶层意图，深度剖析了 **{product_name}** 在 **{mkt_model['region_label']}** 所面临的竞争红蓝海格局。当前行业存在显著的“**体验断层与变现反噬**”现象：老牌头部应用（如 {competitors[0]['name']}、{competitors[2]['name'] if len(competitors) > 2 else competitors[1]['name']}）因过度追求短平快广告和激进周订阅变现，导致 App Store 差评与用户流失严重；而小众精品虽口碑极佳却停滞不前。这为 `{product_code}` 凭借**更锋利的单点破局刀法（Wedge）**切入并夺取首批核心用户提供了关键窗口期。
+## 负责人 30 秒拍板摘要卡 (Executive Gate)
+- **1. 市场天花板 (SOM)**：首年基准可获取 **{mkt_model['som_base_formatted']}**（目标区域 SAM: {mkt_model['sam_formatted']}）。
+- **2. 竞品致命软肋**：头部应用（{competitors[0]['name']}、{competitors[1]['name']}）因激进周扣费与全屏广告反噬，差评集中；小众精品更新缓慢。
+- **3. 需负责人拍板的破局点 (Wedge)**：{cat['wedge_strategy']}
+
+<!-- EXECUTIVE_GATE_END -->
 
 ---
 

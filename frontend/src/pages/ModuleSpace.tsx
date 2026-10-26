@@ -45,7 +45,8 @@ import {
   Download,
   FileText,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Columns2
 } from 'lucide-react';
 
 interface ModuleSpaceProps {
@@ -66,7 +67,9 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(null);
   const [inputText, setInputText] = useState('');
-  const [messageType, setMessageType] = useState<SessionMessage['message_type']>('instruction');
+  const [messageType, setMessageType] = useState<SessionMessage['message_type']>(
+    module.module_code === '01' ? 'question' : 'instruction'
+  );
   const [sending, setSending] = useState(false);
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
   const [moduleState, setModuleState] = useState<ModuleInstance>(module);
@@ -88,13 +91,37 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
   const [uploading, setUploading] = useState(false);
   const [ackingUpstream, setAckingUpstream] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
-  const [showSkillMenu, setShowSkillMenu] = useState(false);
   const [copiedArtifact, setCopiedArtifact] = useState(false);
   const [panelLayout, setPanelLayout] = useState<'equal' | 'wide' | 'full'>('equal');
+  const [isLayoutDropdownOpen, setIsLayoutDropdownOpen] = useState(false);
+  const layoutDropdownRef = useRef<HTMLDivElement>(null);
+  const [readingLayer, setReadingLayer] = useState<'executive' | 'full'>('executive');
+
+  const splitArtifactLayers = (rawContent: string) => {
+    if (!rawContent) return { executiveContent: '', hasSecondLayer: false, hiddenChars: 0 };
+    if (rawContent.includes('<!-- EXECUTIVE_GATE_END -->')) {
+      const [execPart, restPart] = rawContent.split('<!-- EXECUTIVE_GATE_END -->');
+      return {
+        executiveContent: execPart.trim(),
+        hasSecondLayer: Boolean(restPart && restPart.trim().length > 100),
+        hiddenChars: restPart ? restPart.trim().length : 0,
+      };
+    }
+    const sec1Idx = rawContent.indexOf('\n## 一、');
+    if (sec1Idx !== -1 && (rawContent.includes('拍板摘要') || rawContent.includes('Executive Gate'))) {
+      const execPart = rawContent.slice(0, sec1Idx).trim();
+      const restPart = rawContent.slice(sec1Idx).trim();
+      return {
+        executiveContent: execPart,
+        hasSecondLayer: restPart.length > 100,
+        hiddenChars: restPart.length,
+      };
+    }
+    return { executiveContent: rawContent, hasSecondLayer: false, hiddenChars: 0 };
+  };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<any>(null);
-  const skillMenuRef = useRef<HTMLDivElement>(null);
 
   const handleCopyArtifact = () => {
     if (!selectedArtifact) return;
@@ -116,20 +143,6 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (skillMenuRef.current && !skillMenuRef.current.contains(event.target as Node)) {
-        setShowSkillMenu(false);
-      }
-    };
-    if (showSkillMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [showSkillMenu]);
-
   const renderRoleIcon = (iconName?: string, className = "w-4 h-4") => {
     switch (iconName) {
       case 'TrendingUp': return <TrendingUp className={className} />;
@@ -145,6 +158,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
   };
 
   useEffect(() => {
+    setMessageType(module.module_code === '01' ? 'question' : 'instruction');
     loadSessionAndArtifacts();
     api.getAgentSettings().then(s => {
       if (s?.cli_command) setAgentCommand(s.cli_command);
@@ -154,6 +168,16 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, sending, agentStage]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (layoutDropdownRef.current && !layoutDropdownRef.current.contains(event.target as Node)) {
+        setIsLayoutDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const loadSessionAndArtifacts = async () => {
     try {
@@ -381,34 +405,12 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
             <span className="font-mono text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
               {moduleState.module_code}
             </span>
-            <h1 className="text-lg font-bold text-slate-900">{moduleState.name} 协作研讨空间</h1>
+            <h1 className="text-lg font-bold text-slate-900">{moduleState.name}</h1>
             <PhaseBadge phase={moduleState.phase} />
-            {moduleState.execution_mode === 'human_driven' ? (
-              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-200">
-                专家主导 (专业工具作业)
-              </span>
-            ) : moduleState.execution_mode === 'hybrid' ? (
-              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-700 font-semibold border border-teal-200">
-                人机协同 (联合执行)
-              </span>
-            ) : (
-              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 font-semibold border border-purple-200">
-                AI 智能体主导
-              </span>
-            )}
           </div>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => setIsUploadModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition cursor-pointer"
-            title="上传 HTML 交互原型包或全量文档"
-          >
-            <UploadCloud className="w-3.5 h-3.5" />
-            上传成果包
-          </button>
-
           {changeReviews.filter(r => r.status === 'pending_approval').length > 0 && (
             <button
               onClick={() => setSelectedReview(changeReviews.find(r => r.status === 'pending_approval') || null)}
@@ -437,12 +439,16 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
               <FileCheck2 className="w-4 h-4" />
               定稿发布基准 (Baseline)
             </button>
-          ) : (
-            <span className="flex items-center gap-1 px-3 py-1 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-medium">
-              <ShieldCheck className="w-4 h-4" />
-              已正式定稿
-            </span>
-          )}
+          ) : selectedArtifact && !selectedArtifact.is_baseline ? (
+            <button
+              onClick={handleBaseline}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs transition cursor-pointer"
+              title="将当前最新版本设为工序定稿基准"
+            >
+              <FileCheck2 className="w-4 h-4" />
+              更新定稿基准
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -521,56 +527,12 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
         </div>
       )}
 
-      {/* 虚拟项目工位：驻场 Agent 角色卡片（精简去冗余介绍） */}
-      <div className="bg-gradient-to-r from-blue-50/60 via-white to-indigo-50/40 border border-slate-200/90 rounded-2xl px-4 py-2.5 shadow-2xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
-              {renderRoleIcon(moduleState.primary_role?.avatar_icon, "w-4 h-4")}
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-bold text-slate-900">
-                {moduleState.primary_role?.name || '驻场主责 Agent'}
-              </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold border border-blue-200">
-                主责责任人
-              </span>
-              {moduleState.primary_role?.title && (
-                <span className="text-xs text-slate-500 font-medium">
-                  {moduleState.primary_role?.title}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {moduleState.collaborator_roles && moduleState.collaborator_roles.length > 0 && (
-            <div className="flex items-center gap-2 shrink-0 border-t md:border-t-0 md:border-l border-slate-200 pt-2 md:pt-0 md:pl-4">
-              <span className="text-[11px] text-slate-400 font-medium">参谋协同:</span>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {moduleState.collaborator_roles.map(collab => (
-                  <span
-                    key={collab.id}
-                    className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 shadow-2xs font-medium"
-                  >
-                    <span className="text-slate-500">{renderRoleIcon(collab.avatar_icon, "w-3.5 h-3.5")}</span>
-                    <span>{collab.name.replace(' Agent', '')}</span>
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* 阻塞性 Issue 警示条 */}
       {blockingIssues.length > 0 && (
         <div className="bg-rose-50 border border-rose-200 rounded-xl p-3.5 text-xs text-rose-800 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span>
-              <strong>定稿门禁警示：</strong>当前工序存在 {blockingIssues.length} 个未解决的严重卡点问题（
-              {blockingIssues.map(i => i.id).join(', ')}），在责任工序彻底解决并验证关闭前，暂不能正式定稿。
-            </span>
+          <div>
+            <strong>定稿门禁警示：</strong>当前工序存在 {blockingIssues.length} 个未解决的严重卡点问题（
+            {blockingIssues.map(i => i.id).join(', ')}），在责任工序彻底解决并验证关闭前，暂不能正式定稿。
           </div>
         </div>
       )}
@@ -584,21 +546,30 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
           } bg-white border border-slate-200 rounded-2xl flex flex-col overflow-hidden shadow-xs transition-all duration-200`}>
           <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/60 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-emerald-600" />
-              <span className="text-xs font-semibold text-slate-800">人机交互研讨流</span>
+              <span className="text-xs font-semibold text-slate-800">讨论与生成记录</span>
               <span className="text-[10px] text-slate-500 font-mono">({messages.length} 轮)</span>
-            </div>
-            <div className="text-[11px] text-slate-500">
-              AI 负责推演与拟稿 · 专家负责审定把关
             </div>
           </div>
 
           {/* 消息滚动列表 */}
           <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-slate-50/30">
+            {/* 工序 01 顶部极简一行文字动线说明（无多余图标与重复按钮） */}
+            {moduleState.module_code === '01' && (
+              <div className="bg-slate-100/80 border border-slate-200/90 rounded-lg px-3 py-2 text-[11px] text-slate-600 flex items-center justify-between gap-2">
+                <span>
+                  <strong className="text-slate-800">使用顺序：</strong>
+                  1. 先在下方输入您观察到的应用/趋势（或点选快捷追问）与市场负责人探讨 &nbsp;→&nbsp; 2. 聊透后切至「生成右侧报告」汇总定稿。
+                </span>
+              </div>
+            )}
+
             {messages.length === 0 && !sending ? (
-              <div className="text-center py-16 text-slate-400 text-xs">
-                <Bot className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                当前协作室尚未发起讨论。<br />可在下方选择【下达任务】输入要求，由 AI 智能体生成首版成果初稿。
+              <div className="text-center py-12 text-slate-400 text-xs">
+                {moduleState.module_code === '01' ? (
+                  <>当前尚未开始对话。请直接在下方输入你看到的<strong>热门应用或趋势想法</strong>，先与市场负责人探讨。</>
+                ) : (
+                  <>当前协作室尚未发起讨论。<br />可在下方先与负责人对话探讨，或直接生成右侧成果初稿。</>
+                )}
               </div>
             ) : (
               messages.map(msg => {
@@ -656,16 +627,8 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                 return (
                   <div
                     key={msg.id}
-                    className={`flex gap-3 ${isAgent ? 'bg-white shadow-2xs' : 'bg-slate-50/80'} p-3 rounded-xl border border-slate-200`}
+                    className={`${isAgent ? 'bg-white shadow-2xs' : 'bg-slate-50/80'} p-3 rounded-xl border border-slate-200`}
                   >
-                    <div
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        isAgent ? 'bg-blue-50 text-blue-600 border border-blue-200' : 'bg-slate-100 text-slate-700 border border-slate-200'
-                      }`}
-                    >
-                      {isAgent ? renderRoleIcon(moduleState.primary_role?.avatar_icon, "w-4 h-4") : <User className="w-4 h-4" />}
-                    </div>
-
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-2">
@@ -712,8 +675,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                       )}
 
                       {msg.artifact_ref_id && (
-                        <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded bg-emerald-50 text-[11px] text-emerald-800 border border-emerald-200">
-                          <FileCheck2 className="w-3.5 h-3.5 text-emerald-600" />
+                        <div className="mt-2 inline-flex items-center px-2 py-0.5 rounded bg-emerald-50 text-[11px] text-emerald-800 border border-emerald-200">
                           已关联生成右侧成果版本
                         </div>
                       )}
@@ -733,11 +695,10 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                       <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-600"></span>
                     </div>
                     <span className="text-xs font-bold text-slate-800">
-                      {moduleState.primary_role?.name || 'Agent'} 正在处理任务 ({elapsedSeconds}s)
+                      {moduleState.primary_role?.name?.replace(' Agent', '') || '系统'} 正在处理 ({elapsedSeconds}s)
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <Terminal className="w-3.5 h-3.5 text-slate-400" />
                     <span className="text-[11px] font-mono text-slate-600 bg-white px-2 py-0.5 rounded-md border border-slate-200 shadow-2xs font-medium">
                       {agentCommand} 引擎
                     </span>
@@ -753,16 +714,11 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                       : 'bg-white border-slate-200 text-slate-600'
                   }`}>
                     <div className="flex items-center gap-1.5">
-                      {agentStage === 'context' ? (
-                        <Loader2 className="w-3.5 h-3.5 text-blue-600 animate-spin shrink-0" />
-                      ) : (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      )}
                       <span className="truncate">1. 组装前置资料</span>
                     </div>
                     <div className="text-[10px] text-slate-500 mt-1 leading-tight">
                       {agentStage === 'context'
-                        ? `注入战略背景与【${moduleState.primary_role?.name || '主责'}】工作要求...`
+                        ? '正在分析战略背景与工序输入...'
                         : '背景资料与指导原则已就位'}
                     </div>
                   </div>
@@ -776,20 +732,13 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                       : 'bg-slate-50/70 border-slate-200 text-slate-400'
                   }`}>
                     <div className="flex items-center gap-1.5">
-                      {agentStage === 'spawning' ? (
-                        <Loader2 className="w-3.5 h-3.5 text-blue-600 animate-spin shrink-0" />
-                      ) : agentStage === 'reasoning' ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      ) : (
-                        <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      )}
-                      <span className="truncate">2. 唤起智能体</span>
+                      <span className="truncate">2. 准备运行环境</span>
                     </div>
                     <div className="text-[10px] text-slate-500 mt-1 leading-tight">
                       {agentStage === 'spawning'
-                        ? `正在初始化【${moduleState.primary_role?.name || '专业 Agent'}】...`
+                        ? '正在初始化运行环境与推演模型...'
                         : agentStage === 'reasoning'
-                        ? 'AI 协作环境已就位'
+                        ? '协作环境已就位'
                         : '等待资料就绪'}
                     </div>
                   </div>
@@ -801,28 +750,22 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                       : 'bg-slate-50/70 border-slate-200 text-slate-400'
                   }`}>
                     <div className="flex items-center gap-1.5">
-                      {agentStage === 'reasoning' ? (
-                        <Loader2 className="w-3.5 h-3.5 text-blue-600 animate-spin shrink-0" />
-                      ) : (
-                        <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      )}
                       <span className="truncate">3. 自主推演生成</span>
                     </div>
                     <div className="text-[10px] text-slate-500 mt-1 leading-tight">
                       {agentStage === 'reasoning'
-                        ? `基于【${moduleState.primary_role?.name?.replace(' Agent', '') || '业务'}】专业框架推演输出...`
-                        : '等待智能体就绪'}
+                        ? '基于专业框架推演并输出成果...'
+                        : '等待模型就绪'}
                     </div>
                   </div>
                 </div>
 
                 <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5">
-                  <span className="flex items-center gap-1 text-slate-400">
-                    <Sparkles className="w-3 h-3 text-amber-500" />
-                    AI 独立安全思考与推演中
+                  <span className="text-slate-400">
+                    系统推演与生成中
                   </span>
                   <span className="text-slate-400 font-mono text-[10px]">
-                    当前阶段: {agentStage === 'context' ? '组装前置资料' : agentStage === 'spawning' ? '唤起智能体' : '自主推演生成中'}
+                    当前阶段: {agentStage === 'context' ? '组装前置资料' : agentStage === 'spawning' ? '加载运行环境' : '自主推演生成中'}
                   </span>
                 </div>
               </div>
@@ -831,176 +774,243 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
             <div ref={messagesEndRef} />
           </div>
 
-          {/* 输入框与操作条 */}
-          <div className="p-3 border-t border-slate-200 bg-white">
-            {/* 消息类型快速切换与专属技能入口 */}
-            <div className="flex items-center justify-between mb-2 text-xs">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] text-slate-400">发言类型:</span>
+          {/* 输入框与操作条（去图标干扰，纯文字清晰层级） */}
+          <div className="p-3 border-t border-slate-200 bg-white space-y-2">
+            {/* 第一行：按直觉顺序排列的操作步骤切换 */}
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] font-medium text-slate-500">当前动作:</span>
                 <button
                   type="button"
-                  onClick={() => setMessageType('instruction')}
-                  className={`px-2 py-0.5 rounded text-[11px] transition cursor-pointer ${
-                    messageType === 'instruction'
-                      ? 'bg-emerald-600 text-white font-medium'
+                  onClick={() => setMessageType('question')}
+                  className={`px-2.5 py-1 rounded-md text-[11px] transition cursor-pointer ${
+                    messageType === 'question'
+                      ? 'bg-blue-600 text-white font-semibold'
                       : 'bg-slate-100 text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  下达任务
+                  1. 先和负责人聊 (仅左侧对话)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMessageType('instruction')}
+                  className={`px-2.5 py-1 rounded-md text-[11px] transition cursor-pointer ${
+                    messageType === 'instruction'
+                      ? 'bg-emerald-600 text-white font-semibold'
+                      : 'bg-slate-100 text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  2.{' '}
+                  {moduleState.module_code === '01'
+                    ? '汇总生成右侧报告'
+                    : moduleState.module_code === '03'
+                    ? '生成方向与假设清单'
+                    : moduleState.module_code === '04'
+                    ? '生成假门网页与方案'
+                    : moduleState.module_code === '05'
+                    ? '确认立项并生成需求规范'
+                    : '生成/重写右侧成果'}
                 </button>
                 <button
                   type="button"
                   onClick={() => setMessageType('feedback')}
-                  className={`px-2 py-0.5 rounded text-[11px] transition cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-md text-[11px] transition cursor-pointer ${
                     messageType === 'feedback'
-                      ? 'bg-amber-600 text-white font-medium'
+                      ? 'bg-amber-600 text-white font-semibold'
                       : 'bg-slate-100 text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  修改建议
+                  3. 局部修改右侧报告
+                </button>
+              </div>
+            </div>
+
+            {/* 第二行：随当前动作自动切换的纯文字快捷填入胶囊 */}
+            {moduleState.module_code === '01' && messageType === 'question' && (
+              <div className="flex flex-wrap items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px]">
+                <span className="text-slate-500 shrink-0">快捷追问 (点击填入):</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setInputText('我看到近期这个细分方向/应用下载量和讨论度很热，帮我深扒：这波全球热度是真赚钱还是买量虚火？拆解其在全球 T1 利润区（美加英澳/西欧/日韩）与 T2/T3 流量区的真实含金量与首年可获盘子 (SOM)。')
+                  }
+                  className="px-2 py-0.5 rounded bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 transition cursor-pointer"
+                >
+                  1. 验全球真伪
                 </button>
                 <button
                   type="button"
-                  onClick={() => setMessageType('question')}
-                  className={`px-2 py-0.5 rounded text-[11px] transition cursor-pointer ${
-                    messageType === 'question'
-                      ? 'bg-blue-600 text-white font-medium'
-                      : 'bg-slate-100 text-slate-600 hover:text-slate-900'
-                  }`}
+                  onClick={() =>
+                    setInputText('扒出该赛道头部爆款应用的全球流量密码：它们在 TikTok / Reels / Shorts / Reddit 上最吸量的前 3 秒跨文化视觉钩子 (Visual Hook) 是什么？有哪些高意图、低竞争的全球多语种 ASO 搜索词可以截流？')
+                  }
+                  className="px-2 py-0.5 rounded bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 transition cursor-pointer"
                 >
-                  提问探讨
+                  2. 扒流量钩子与ASO
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setInputText('深挖该赛道全球 Top 5 热门竞品近 3 个月的 App Store / Google Play 1-2 星差评与社媒吐槽：用户骂得最凶的是什么（周扣费陷阱、核心功能缺陷还是本地化拉胯）？')
+                  }
+                  className="px-2 py-0.5 rounded bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 transition cursor-pointer"
+                >
+                  3. 扒1-2星差评
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setInputText('从全球跨区套利 (Geo-Arbitrage) 视角看，该品类是否存在“英语区刚火，但西欧/日韩/中东/拉美尚未饱和”的空白机会？我们进场应该怎么改单点去截胡，全球首发和扩量梯队怎么排？')
+                  }
+                  className="px-2 py-0.5 rounded bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 transition cursor-pointer"
+                >
+                  4. 跨区套利打法
                 </button>
               </div>
+            )}
 
-              {/* 工序 01 (市场研究) 技能下拉弹窗入口 */}
-              {moduleState.module_code === '01' && (
-                <div className="relative" ref={skillMenuRef}>
+            {moduleState.module_code === '01' && messageType === 'instruction' && (
+              <div className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px]">
+                <span className="text-slate-600">
+                  将把左侧讨论结论或您的指令整理成右侧正式的《全球市场研究报告》。
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setInputText('围绕当前赛道与讨论结论，按双层精简标准生成《全球赛道摸底与立项可行性报告》：置顶30秒拍板摘要卡（干/不干/怎么截胡/全球首发梯队），下方输出全球T1-T3含金量与SOM测算、Top5竞品差评与流量钩子拆解、3类核心画像与单点破局刀法。')
+                  }
+                  className="px-2.5 py-0.5 rounded bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium transition cursor-pointer shrink-0"
+                >
+                  填入标准报告生成指令
+                </button>
+              </div>
+            )}
+
+            {moduleState.module_code === '03' && (
+              <div className="flex flex-wrap items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-700">
+                <span>一页纸精益决策：聚焦核心卖点、功能减法与 4 个待验证生死假设 (H1~H4)。</span>
+                <div className="flex items-center gap-1">
                   <button
                     type="button"
-                    onClick={() => setShowSkillMenu(!showSkillMenu)}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition shadow-2xs cursor-pointer"
+                    onClick={() => {
+                      setMessageType('question');
+                      setInputText('结合前序市场与商业基线，本产品首版最应该砍掉哪些容易亏钱或拖慢进度的伪需求？');
+                    }}
+                    className="px-2 py-0.5 rounded bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition cursor-pointer"
                   >
-                    <TrendingUp className="w-3.5 h-3.5 text-blue-600" />
-                    <span>调研技能</span>
-                    <ChevronDown className={`w-3.5 h-3.5 text-blue-500 transition-transform duration-150 ${showSkillMenu ? 'rotate-180' : ''}`} />
+                    探讨功能减法
                   </button>
-
-                  {showSkillMenu && (
-                    <div className="absolute right-0 bottom-full mb-1.5 w-76 bg-white border border-slate-200 rounded-xl shadow-xl p-1.5 z-30 animate-in fade-in zoom-in-95 duration-150">
-                      <div className="px-2.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 mb-1 flex items-center justify-between">
-                        <span>市场研究专项技能</span>
-                        <span className="text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded font-mono">5 项可用</span>
-                      </div>
-                      <div className="space-y-0.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMessageType('question');
-                            setInputText('请用自下而上 (Bottom-Up) 模型量化测算本产品的 TAM/SAM/SOM 市场空间与发展情景');
-                            setShowSkillMenu(false);
-                          }}
-                          className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-blue-50 transition flex items-start gap-2 group cursor-pointer"
-                        >
-                          <span className="text-sm shrink-0 mt-0.5">📊</span>
-                          <div>
-                            <div className="text-xs font-medium text-slate-800 group-hover:text-blue-700">TAM/SAM/SOM 测算</div>
-                            <div className="text-[10px] text-slate-400">自下而上量化设备盘与 Blended ARPU</div>
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMessageType('question');
-                            setInputText('深入拆解目标市场 Top 5 核心标杆竞品 5 维矩阵及 App Store 1-2星差评槽点');
-                            setShowSkillMenu(false);
-                          }}
-                          className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-blue-50 transition flex items-start gap-2 group cursor-pointer"
-                        >
-                          <span className="text-sm shrink-0 mt-0.5">🔍</span>
-                          <div>
-                            <div className="text-xs font-medium text-slate-800 group-hover:text-blue-700">竞品 5 维对比与差评</div>
-                            <div className="text-[10px] text-slate-400">定价阶梯、流量来源与真实差评槽点</div>
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMessageType('question');
-                            setInputText('提炼本产品核心 3 个典型目标客户画像 (ICP) 与真实未满足痛点');
-                            setShowSkillMenu(false);
-                          }}
-                          className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-blue-50 transition flex items-start gap-2 group cursor-pointer"
-                        >
-                          <span className="text-sm shrink-0 mt-0.5">🎯</span>
-                          <div>
-                            <div className="text-xs font-medium text-slate-800 group-hover:text-blue-700">目标客群画像 (ICP)</div>
-                            <div className="text-[10px] text-slate-400">3类典型用户画像与 Jobs-To-Be-Done</div>
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMessageType('question');
-                            setInputText('推演对抗巨头的价值缝隙 (Value Gap) 与前10,000名用户冷启动单点击穿切口 (Wedge)');
-                            setShowSkillMenu(false);
-                          }}
-                          className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-blue-50 transition flex items-start gap-2 group cursor-pointer"
-                        >
-                          <span className="text-sm shrink-0 mt-0.5">⚡</span>
-                          <div>
-                            <div className="text-xs font-medium text-slate-800 group-hover:text-blue-700">破局切入点 (Wedge)</div>
-                            <div className="text-[10px] text-slate-400">价值缝隙与种子用户单点击穿打法</div>
-                          </div>
-                        </button>
-
-                        <div className="border-t border-slate-100 my-1 pt-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setMessageType('instruction');
-                              setInputText('综合上述分析，生成本单品正式的《市场研究与竞品深度洞察报告》成果交付物');
-                              setShowSkillMenu(false);
-                            }}
-                            className="w-full text-left px-2.5 py-1.5 rounded-lg bg-emerald-50/70 hover:bg-emerald-100 text-emerald-900 transition flex items-start gap-2 group cursor-pointer border border-emerald-200/60"
-                          >
-                            <span className="text-sm shrink-0 mt-0.5">📑</span>
-                            <div>
-                              <div className="text-xs font-semibold text-emerald-800">生成完整市场研究报告</div>
-                              <div className="text-[10px] text-emerald-600">全量推演并归档至成果基准</div>
-                            </div>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMessageType('instruction');
+                      setInputText('按精益一页纸标准生成《产品方向决策与精益验证基线决策书》：明确核心UVP、MoSCoW减法边界，并提炼移交工序04验证的4个生死假设(H1~H4)，严禁提前编写代码级Schema与详细PRD。');
+                    }}
+                    className="px-2 py-0.5 rounded bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium transition cursor-pointer"
+                  >
+                    填入生成方向书指令
+                  </button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+
+            {moduleState.module_code === '04' && (
+              <div className="flex flex-wrap items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-700">
+                <span>真原型实测：直接生成「可交互 H5 假门落地页 index.html + 3条测试脚本」。</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMessageType('question');
+                      setInputText('如果不花钱投广告，怎么在 Reddit / TikTok 用零成本自然流在 3 天内测出真实用户意愿？');
+                    }}
+                    className="px-2 py-0.5 rounded bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition cursor-pointer"
+                  >
+                    探讨零成本测法
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMessageType('instruction');
+                      setInputText('围绕工序03移交的H1~H4假设，在工作区直接生成可交互的移动端H5假门着陆页原型(index.html)，并输出精炼的3条买量/社区测试脚本与止损红线方案。');
+                    }}
+                    className="px-2 py-0.5 rounded bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium transition cursor-pointer"
+                  >
+                    填入生成假门网页指令
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {moduleState.module_code === '05' && (
+              <div className="flex flex-wrap items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-50/70 border border-amber-200 text-[11px] text-amber-900">
+                <span>产品立项 + 需求定义：严禁 AI 捏造假数据，基于实测复盘并一次性冻结施工级 PRD。</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMessageType('instruction');
+                      setInputText('【录入工序04外部实测数据】：测试周期 3 天，总花费 $___，外层广告/帖子点击率 CTR = ___%，假门落地页互动率 = ___%，主下载按钮点击率 = ___%，付费选项点击率 = ___%，收集早鸟邮箱 ___ 个，用户主要评论反馈为：“___”。请严格基于以上真实数据复盘 H1~H4 假设并给出 Go/Pivot/Kill 立项决议；若通过立项，请在同一份报告中直接输出字段级 PRD 需求规范与技术可行性边界评审。');
+                    }}
+                    className="px-2 py-0.5 rounded bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium transition cursor-pointer"
+                  >
+                    填入实测数据与需求定义指令
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMessageType('instruction');
+                      setInputText('当前尚未执行外部实盘买量投放，请严格以「未录入外部实测数据 · 待回填立项评估框架 + 产品需求定义 (PRD) 施工基线」口径输出报告（严禁捏造虚假实盘花费或早鸟人数），上方列出待回填指标表，下方完整输出字段级 PRD 规范、数据 Schema 与 Gherkin 验收标准。');
+                    }}
+                    className="px-2 py-0.5 rounded bg-white hover:bg-amber-100 text-amber-800 border border-amber-300 transition cursor-pointer"
+                  >
+                    生成待回填立项框架+需求规范
+                  </button>
+                </div>
+              </div>
+            )}
 
             <form onSubmit={handleSendMessage} className="flex gap-2">
               <input
                 type="text"
                 placeholder={
-                  messageType === 'instruction'
-                    ? '输入任务指令，让 AI 智能体产出成果初稿...'
-                    : messageType === 'feedback'
-                    ? '提出针对成果交付物的补充与修改建议...'
-                    : '输入提问或探讨内容...'
+                  messageType === 'question'
+                    ? moduleState.module_code === '01'
+                      ? '直接输入你看到的某款热门应用或趋势想法（或点击上方快捷追问），先与市场负责人探讨...'
+                      : '输入你的想法或疑问，先在左侧与负责人探讨（不会覆盖右侧成果）...'
+                    : messageType === 'instruction'
+                    ? moduleState.module_code === '01'
+                      ? '输入报告生成要求（或点击上方【填入标准报告生成指令】），产出右侧正式报告...'
+                      : moduleState.module_code === '03'
+                      ? '输入方向要求（如：明确核心卖点、砍除伪需求，提炼移交04的4个生死假设）...'
+                      : moduleState.module_code === '04'
+                      ? '输入验证要求（如：生成可交互 H5 假门落地页 index.html 与 3 条测试脚本）...'
+                      : moduleState.module_code === '05'
+                      ? '请粘贴工序 04 的真实外测数据（如 CTR、转化率、用户反馈），或点击上方【填入实测数据模板】...'
+                      : '输入任务指令，让 AI 智能体在右侧生成正式成果...'
+                    : '输入对右侧现有报告的具体修改意见（如：补充日本市场的定价策略）...'
                 }
                 value={inputText}
                 onChange={e => setInputText(e.target.value)}
-                className="flex-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-emerald-500"
+                className="flex-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-blue-500"
               />
               <button
                 type="submit"
                 disabled={sending || !inputText.trim()}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition flex items-center gap-1 cursor-pointer"
+                className={`px-4 py-2 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                  messageType === 'question'
+                    ? 'bg-blue-600 hover:bg-blue-500'
+                    : messageType === 'feedback'
+                    ? 'bg-amber-600 hover:bg-amber-500'
+                    : 'bg-emerald-600 hover:bg-emerald-500'
+                }`}
               >
-                <Send className="w-3.5 h-3.5" />
-                {sending ? '处理中...' : '发送'}
+                {sending
+                  ? '处理中...'
+                  : messageType === 'question'
+                  ? '发送探讨'
+                  : messageType === 'feedback'
+                  ? '提交修改'
+                  : '生成报告'}
               </button>
             </form>
           </div>
@@ -1017,7 +1027,6 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
         } bg-white border border-slate-200 rounded-2xl flex flex-col overflow-hidden shadow-xs transition-all duration-200`}>
           <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/60 flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
-              <FileCheck2 className="w-4 h-4 text-emerald-600" />
               <span className="text-xs font-semibold text-slate-800">成果交付库 (Artifacts)</span>
               {panelLayout === 'full' && (
                 <span className="text-[10px] text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200 font-medium">
@@ -1027,55 +1036,93 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
-              {/* 分栏布局比例控制 */}
-              <div className="flex items-center bg-slate-200/70 p-0.5 rounded-lg text-[11px]">
+              {/* 布局切换下拉菜单 (1:1 / 1:2 / 全屏) */}
+              <div className="relative" ref={layoutDropdownRef}>
                 <button
                   type="button"
-                  onClick={() => setPanelLayout('equal')}
-                  className={`px-2 py-0.5 rounded-md transition cursor-pointer font-medium ${
-                    panelLayout === 'equal'
-                      ? 'bg-white text-slate-800 shadow-2xs font-semibold'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                  title="双栏平衡 (5:5)"
+                  onClick={() => setIsLayoutDropdownOpen(!isLayoutDropdownOpen)}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs flex items-center gap-1.5 cursor-pointer transition"
+                  title="切换分栏比例与视口模式 (1:1 / 1:2 / 全屏)"
                 >
-                  1:1
+                  {panelLayout === 'full' ? (
+                    <Maximize2 className="w-3.5 h-3.5 text-indigo-600" />
+                  ) : (
+                    <Columns2 className="w-3.5 h-3.5 text-slate-500" />
+                  )}
+                  <span className="font-medium text-slate-700">
+                    {panelLayout === 'equal' && '1:1'}
+                    {panelLayout === 'wide' && '1:2'}
+                    {panelLayout === 'full' && '全屏'}
+                  </span>
+                  <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform duration-150 ${isLayoutDropdownOpen ? 'rotate-180' : ''}`} />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setPanelLayout('wide')}
-                  className={`px-2 py-0.5 rounded-md transition cursor-pointer font-medium ${
-                    panelLayout === 'wide'
-                      ? 'bg-white text-slate-800 shadow-2xs font-semibold'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                  title="成果加宽 (4:8)"
-                >
-                  1:2
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPanelLayout(panelLayout === 'full' ? 'equal' : 'full')}
-                  className={`px-2 py-0.5 rounded-md transition cursor-pointer font-medium flex items-center gap-1 ${
-                    panelLayout === 'full'
-                      ? 'bg-white text-indigo-700 shadow-2xs font-semibold'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                  title={panelLayout === 'full' ? '还原为双栏视图' : '成果全宽沉浸阅读'}
-                >
-                  {panelLayout === 'full' ? <Minimize2 className="w-3 h-3 text-indigo-600" /> : <Maximize2 className="w-3 h-3" />}
-                  <span>{panelLayout === 'full' ? '还原' : '全宽'}</span>
-                </button>
+
+                {isLayoutDropdownOpen && (
+                  <div className="absolute right-0 mt-1.5 w-36 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-30 text-[11px] divide-y divide-slate-100 animate-in fade-in duration-100">
+                    <div className="py-0.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPanelLayout('equal');
+                          setIsLayoutDropdownOpen(false);
+                        }}
+                        className={`w-full px-3 py-1.5 text-left flex items-center justify-between cursor-pointer hover:bg-slate-50 transition ${
+                          panelLayout === 'equal' ? 'text-indigo-600 font-semibold bg-indigo-50/50' : 'text-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Columns2 className="w-3.5 h-3.5 text-slate-400" />
+                          <span>1:1 (双栏平衡)</span>
+                        </div>
+                        {panelLayout === 'equal' && <Check className="w-3.5 h-3.5 text-indigo-600" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPanelLayout('wide');
+                          setIsLayoutDropdownOpen(false);
+                        }}
+                        className={`w-full px-3 py-1.5 text-left flex items-center justify-between cursor-pointer hover:bg-slate-50 transition ${
+                          panelLayout === 'wide' ? 'text-indigo-600 font-semibold bg-indigo-50/50' : 'text-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Columns2 className="w-3.5 h-3.5 text-slate-400" />
+                          <span>1:2 (成果加宽)</span>
+                        </div>
+                        {panelLayout === 'wide' && <Check className="w-3.5 h-3.5 text-indigo-600" />}
+                      </button>
+                    </div>
+                    <div className="py-0.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPanelLayout('full');
+                          setIsLayoutDropdownOpen(false);
+                        }}
+                        className={`w-full px-3 py-1.5 text-left flex items-center justify-between cursor-pointer hover:bg-slate-50 transition ${
+                          panelLayout === 'full' ? 'text-indigo-600 font-semibold bg-indigo-50/50' : 'text-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Maximize2 className="w-3.5 h-3.5 text-slate-400" />
+                          <span>全屏 (沉浸模式)</span>
+                        </div>
+                        {panelLayout === 'full' && <Check className="w-3.5 h-3.5 text-indigo-600" />}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <button
                 type="button"
                 onClick={() => setIsUploadModalOpen(true)}
                 className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs flex items-center gap-1 cursor-pointer transition"
-                title="上传 HTML 交互原型包或全量文档"
+                title="上传外部成果文件 (HTML 交互原型包或 Markdown 规范文档)"
               >
                 <UploadCloud className="w-3.5 h-3.5 text-blue-600" />
-                上传新版本
+                上传成果 (HTML/文档)
               </button>
 
               {/* 版本切换下拉 */}
@@ -1132,7 +1179,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                   }`}
                 >
                   <Eye className="w-3.5 h-3.5 text-slate-500" />
-                  页面结构源码
+                  方案文档与源码
                 </button>
               </div>
 
@@ -1251,8 +1298,37 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                         </div>
                       </div>
 
-                      {/* 快捷操作区：复制全文与下载 */}
-                      <div className="flex items-center gap-2">
+                      {/* 快捷操作区：双层阅读视图切换、复制全文与下载 */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {splitArtifactLayers(selectedArtifact.content).hasSecondLayer && (
+                          <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => setReadingLayer('executive')}
+                              className={`px-2.5 py-1 rounded-md text-xs font-medium transition cursor-pointer ${
+                                readingLayer === 'executive'
+                                  ? 'bg-indigo-600 text-white shadow-2xs'
+                                  : 'text-slate-600 hover:text-slate-900'
+                              }`}
+                              title="仅展示负责人拍板所需的核心量化结论与决策开关"
+                            >
+                              30秒拍板视图
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setReadingLayer('full')}
+                              className={`px-2.5 py-1 rounded-md text-xs font-medium transition cursor-pointer ${
+                                readingLayer === 'full'
+                                  ? 'bg-slate-800 text-white shadow-2xs'
+                                  : 'text-slate-600 hover:text-slate-900'
+                              }`}
+                              title="展开包含供下游 AI 读取的完整执行与传参细节"
+                            >
+                              完整执行细节
+                            </button>
+                          </div>
+                        )}
+
                         <button
                           type="button"
                           onClick={handleCopyArtifact}
@@ -1260,15 +1336,9 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                           title="复制 Markdown 源码全文"
                         >
                           {copiedArtifact ? (
-                            <>
-                              <Check className="w-3.5 h-3.5 text-emerald-600" />
-                              <span className="text-emerald-700">已复制全文</span>
-                            </>
+                            <span className="text-emerald-700">已复制全文</span>
                           ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5 text-slate-500" />
-                              <span>复制全文</span>
-                            </>
+                            <span>复制全文</span>
                           )}
                         </button>
 
@@ -1278,7 +1348,6 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-2xs transition cursor-pointer"
                           title="下载为 Markdown 文件 (.md)"
                         >
-                          <Download className="w-3.5 h-3.5 text-slate-500" />
                           <span>下载 .md</span>
                         </button>
                       </div>
@@ -1287,26 +1356,50 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                     {/* 版本变更说明 */}
                     {selectedArtifact.change_summary && (
                       <div className="bg-blue-50/80 border border-blue-200 rounded-xl p-3.5 text-xs text-blue-900 mb-6 shadow-2xs">
-                        <div className="font-semibold flex items-center gap-1.5 text-blue-900 mb-1">
-                          <span>📝</span>
-                          <span>本版本关键变更说明：</span>
+                        <div className="font-semibold text-blue-900 mb-1">
+                          本版本关键变更说明：
                         </div>
-                        <p className="text-blue-800 leading-relaxed pl-5">
+                        <p className="text-blue-800 leading-relaxed">
                           {selectedArtifact.change_summary}
                         </p>
                       </div>
                     )}
 
-                    {/* 文档排版正文 */}
-                    <div className="flex-1">
-                      <MarkdownViewer content={selectedArtifact.content} variant="artifact" />
-                    </div>
+                    {/* 文档排版正文（支持双层决策/执行分层渲染） */}
+                    {(() => {
+                      const layerInfo = splitArtifactLayers(selectedArtifact.content);
+                      const showShortOnly = layerInfo.hasSecondLayer && readingLayer === 'executive';
+                      return (
+                        <div className="flex-1">
+                          <MarkdownViewer
+                            content={showShortOnly ? layerInfo.executiveContent : selectedArtifact.content.replace('<!-- EXECUTIVE_GATE_END -->', '')}
+                            variant="artifact"
+                          />
+                          {showShortOnly && (
+                            <div className="mt-6 p-4 rounded-xl bg-slate-50 border border-slate-200/90 flex items-center justify-between flex-wrap gap-3">
+                              <div className="text-xs text-slate-600">
+                                <span className="font-semibold text-slate-800">第二层（执行与传参层）已折叠</span>
+                                <span className="ml-2 text-slate-500">
+                                  已隐藏 {layerInfo.hiddenChars.toLocaleString()} 字底层推导与供下游 AI 读取的参数细节，让您专注核心拍板。
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setReadingLayer('full')}
+                                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white hover:bg-slate-100 text-indigo-700 border border-indigo-200 shadow-2xs transition cursor-pointer"
+                              >
+                                展开完整执行层细节
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               )
             ) : (
               <div className="text-center py-24 text-slate-400 text-xs flex-1 flex flex-col items-center justify-center">
-                <UploadCloud className="w-10 h-10 text-slate-300 mb-2" />
                 当前暂无成果交付物。<br />可在左侧输入需求让 AI 智能体生成，或点击上方【上传新版本】提交原型与文档。
               </div>
             )}
@@ -1314,8 +1407,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
 
           {/* 底部关联的 Issue 状态预览 */}
           <div className="px-4 py-2.5 border-t border-slate-200 bg-slate-50/60 flex items-center justify-between text-xs text-slate-500">
-            <span className="flex items-center gap-1.5">
-              <Bug className="w-3.5 h-3.5 text-rose-600" />
+            <span>
               关联协同问题: {openIssues.length} 个待解决
             </span>
             <span className="text-[11px] text-slate-400 font-medium">版本安全归档防篡改</span>

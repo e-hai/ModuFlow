@@ -194,10 +194,21 @@ async def sync_strategic_initiative_workspace(db: AsyncSession, initiative_id: s
             (run_dir / "README.md").write_text(run_readme, encoding="utf-8")
 
             # 各工序模块目录
+            from backend.app.services.agent_roles import STAGE_ROLE_CONFIGS
+            from backend.app.services.skill_mcp_mounter import mount_role_skills_and_mcp
             for m in run.modules:
                 mod_dirname = f"{m.order_index:02d}_{m.module_code}_{sanitize_dirname(m.name)}"
                 mod_dir = run_dir / mod_dirname
                 mod_dir.mkdir(parents=True, exist_ok=True)
+
+                stage_cfg = STAGE_ROLE_CONFIGS.get(m.module_code, {})
+                primary_rc = stage_cfg.get("primary", "pm")
+                collab_rcs = stage_cfg.get("collaborators", [])
+                mount_role_skills_and_mcp(
+                    workspace_dir=mod_dir,
+                    primary_role_code=primary_rc,
+                    collaborator_role_codes=collab_rcs
+                )
 
                 mod_readme = f"""# 工序 {m.module_code}：{m.name}
 
