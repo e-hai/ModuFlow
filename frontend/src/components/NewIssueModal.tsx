@@ -68,7 +68,7 @@ export const NewIssueModal: React.FC<NewIssueModalProps> = ({
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50/50">
           <div className="flex items-center gap-2 text-rose-600">
             <Bug className="w-5 h-5" />
-            <h3 className="font-semibold text-slate-900">提报结构化反馈 / 跨模块缺陷 (Issue)</h3>
+            <h3 className="font-semibold text-slate-900">发起协同问题与修改反馈</h3>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer">
             <X className="w-5 h-5" />
@@ -81,7 +81,7 @@ export const NewIssueModal: React.FC<NewIssueModalProps> = ({
             <input
               type="text"
               required
-              placeholder="例：登录页面在 Android 11 下点击登录后闪退"
+              placeholder="例：PRD 登录方案在弱网或多端场景下缺少重试与降级说明"
               value={title}
               onChange={e => setTitle(e.target.value)}
               className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:bg-white focus:outline-none focus:border-rose-500"
@@ -90,7 +90,7 @@ export const NewIssueModal: React.FC<NewIssueModalProps> = ({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">发现模块 (来源)</label>
+              <label className="block text-xs font-medium text-slate-700 mb-1">发现工序 (来源环节)</label>
               <input
                 disabled
                 value={currentModule.name}
@@ -98,7 +98,7 @@ export const NewIssueModal: React.FC<NewIssueModalProps> = ({
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-rose-700 mb-1">责任/修复模块 (目标) *</label>
+              <label className="block text-xs font-medium text-rose-700 mb-1">责任工序 (指派修改环节) *</label>
               <select
                 value={targetModuleId}
                 onChange={e => setTargetModuleId(e.target.value)}
@@ -106,7 +106,7 @@ export const NewIssueModal: React.FC<NewIssueModalProps> = ({
               >
                 {allModules.map(m => (
                   <option key={m.id} value={m.id}>
-                    {m.module_code} {m.name} {m.id === currentModule.id ? '(本模块)' : ''}
+                    {m.module_code} {m.name} {m.id === currentModule.id ? '(本环节)' : ''}
                   </option>
                 ))}
               </select>
@@ -115,25 +115,25 @@ export const NewIssueModal: React.FC<NewIssueModalProps> = ({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">严重度 (Severity)</label>
+              <label className="block text-xs font-medium text-slate-700 mb-1">严重程度</label>
               <select
                 value={severity}
                 onChange={e => setSeverity(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900"
               >
-                <option value="critical">Critical (阻断发布/基线)</option>
-                <option value="major">Major (严重缺陷)</option>
-                <option value="minor">Minor (次要优化)</option>
+                <option value="critical">Critical (严重卡点 · 阻止定稿)</option>
+                <option value="major">Major (重要问题 · 需修正)</option>
+                <option value="minor">Minor (一般建议 · 可后续优化)</option>
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">优先级 (Priority)</label>
+              <label className="block text-xs font-medium text-slate-700 mb-1">处理优先级</label>
               <select
                 value={priority}
                 onChange={e => setPriority(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900"
               >
-                <option value="P0">P0 (最高)</option>
+                <option value="P0">P0 (紧急优先)</option>
                 <option value="P1">P1 (高)</option>
                 <option value="P2">P2 (中)</option>
               </select>
@@ -141,7 +141,7 @@ export const NewIssueModal: React.FC<NewIssueModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">复现步骤 (Steps)</label>
+            <label className="block text-xs font-medium text-slate-700 mb-1">现象说明与复现步骤</label>
             <textarea
               rows={3}
               value={steps}
@@ -152,7 +152,7 @@ export const NewIssueModal: React.FC<NewIssueModalProps> = ({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">预期行为</label>
+              <label className="block text-xs font-medium text-slate-700 mb-1">预期效果 / 规范要求</label>
               <input
                 value={expected}
                 onChange={e => setExpected(e.target.value)}
@@ -160,7 +160,7 @@ export const NewIssueModal: React.FC<NewIssueModalProps> = ({
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">实际行为</label>
+              <label className="block text-xs font-medium text-slate-700 mb-1">实际现状 / 矛盾问题</label>
               <input
                 value={actual}
                 onChange={e => setActual(e.target.value)}
@@ -170,7 +170,7 @@ export const NewIssueModal: React.FC<NewIssueModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">测试环境</label>
+            <label className="block text-xs font-medium text-slate-700 mb-1">关联环境 / 平台端</label>
             <input
               value={osEnv}
               onChange={e => setOsEnv(e.target.value)}
@@ -181,7 +181,7 @@ export const NewIssueModal: React.FC<NewIssueModalProps> = ({
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-800 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
             <span>
-              若选择 Critical/Major 级别，目标模块如果已处于基线锁定（baselined）状态，将自动触发**回退至协作研讨（discussing）**，以确保缺陷彻底关闭前不会带病上线。
+              若选择 Critical/Major 级别，目标环节如果已处于基线锁定（baselined）状态，将自动触发**回退至协作研讨（discussing）**，以确保问题彻底解决前不会带病定稿推进。
             </span>
           </div>
 
@@ -198,7 +198,7 @@ export const NewIssueModal: React.FC<NewIssueModalProps> = ({
               disabled={isSubmitting}
               className="px-4 py-2 rounded-lg text-xs font-medium bg-rose-600 hover:bg-rose-500 text-white transition disabled:opacity-50 cursor-pointer"
             >
-              {isSubmitting ? '提交中...' : '确认提报并派发'}
+              {isSubmitting ? '提交中...' : '确认提交并派发'}
             </button>
           </div>
         </form>

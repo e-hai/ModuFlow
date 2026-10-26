@@ -485,7 +485,7 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
                           {mod.open_issues_count}
                         </span>
                       ) : (
-                        <span className="text-slate-400 text-[11px]">无阻塞缺陷</span>
+                        <span className="text-slate-400 text-[11px]">无阻断卡点</span>
                       )}
                     </div>
 

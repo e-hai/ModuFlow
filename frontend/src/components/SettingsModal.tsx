@@ -353,7 +353,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                   ModuFlow 专为多产品矩阵体系设计，以顶层<strong className="text-emerald-700 font-medium">“战略工程 (Strategic Initiative)”</strong>为牵引，将宏观业务目标下沉为矩阵子产品的端到端研发流水线。
                 </p>
                 <p className="text-slate-600">
-                  平台覆盖从市场机会识别、PRD、交互设计、架构、开发、QA 测试到灰度发布与运营复盘等 <strong className="text-slate-900 font-medium">13 个产研生命周期模块</strong>，通过多轮人机协同会话、成果交付物基线锁定（Baseline Gate）与跨模块缺陷反向路由，保障全矩阵交付质量。
+                  平台覆盖从市场机会识别、PRD、交互设计、架构、开发、QA 测试到灰度发布与运营复盘等 <strong className="text-slate-900 font-medium">13 个产研生命周期工序</strong>，通过多轮人机协同会话、成果交付物定稿基线锁定（Baseline Gate）与协同问题反向穿透，保障全矩阵交付质量。
                 </p>
               </div>
 

@@ -355,7 +355,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
 
   const handleCreateIssue = async (issueData: any) => {
     await api.createIssue(issueData);
-    alert('跨模块 Issue 已提交并反向流转！');
+    alert('协同问题已提交并派发至责任环节！');
     await loadSessionAndArtifacts();
     onModuleUpdated();
   };
@@ -423,9 +423,10 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
           <button
             onClick={() => setIsIssueModalOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition cursor-pointer"
+            title="向相关环节反馈协同问题或修改诉求"
           >
             <Bug className="w-3.5 h-3.5" />
-            提报跨模块缺陷
+            反馈协同问题
           </button>
 
           {moduleState.phase !== 'baselined' ? (
@@ -567,8 +568,8 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
             <span>
-              <strong>门禁警示：</strong>当前模块存在 {blockingIssues.length} 个未解决的阻断性 Issue（
-              {blockingIssues.map(i => i.id).join(', ')}），在彻底修复并验证关闭前，禁止锁定基线。
+              <strong>定稿门禁警示：</strong>当前环节存在 {blockingIssues.length} 个未解决的严重卡点问题（
+              {blockingIssues.map(i => i.id).join(', ')}），在责任环节彻底解决并验证关闭前，禁止锁定定稿基线。
             </span>
           </div>
         </div>
@@ -1315,7 +1316,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
           <div className="px-4 py-2.5 border-t border-slate-200 bg-slate-50/60 flex items-center justify-between text-xs text-slate-500">
             <span className="flex items-center gap-1.5">
               <Bug className="w-3.5 h-3.5 text-rose-600" />
-              关联 Issue: {openIssues.length} 个未关闭
+              关联协同问题: {openIssues.length} 个待解决
             </span>
             <span className="text-[11px] text-slate-400 font-mono">不可变快照隔离存储</span>
           </div>

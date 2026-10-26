@@ -106,7 +106,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {currentView === 'issues' && (
               <div className="hidden sm:flex items-center text-xs text-slate-500 shrink-0">
                 <ChevronRight className="w-3.5 h-3.5 text-slate-400 mx-1" />
-                <span className="text-rose-600 font-semibold">全局 Issue 闭环流转</span>
+                <span className="text-rose-600 font-semibold">全局协同问题看板</span>
               </div>
             )}
           </div>

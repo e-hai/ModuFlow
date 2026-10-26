@@ -1144,7 +1144,7 @@ async def create_issue(data: IssueCreate, db: AsyncSession = Depends(get_db)):
             sender="系统提醒",
             sender_role="system",
             message_type="issue",
-            content=f"收到来自外部模块的新【{data.severity.upper()}】反馈：[{issue.id}] {data.title}。请相关人员排查并处理。",
+            content=f"收到来自协同环节的新【{data.severity.upper()}】问题反馈：[{issue.id}] {data.title}。请责任人排查并修正。",
             issue_ref_id=issue.id
         )
         db.add(notif_msg)

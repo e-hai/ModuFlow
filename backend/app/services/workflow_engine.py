@@ -180,7 +180,7 @@ async def can_baseline_module(db: AsyncSession, module_id: str) -> Tuple[bool, s
     blocking_issues = res.scalars().all()
     if blocking_issues:
         issue_titles = ", ".join([f"{i.id} ({i.title})" for i in blocking_issues[:3]])
-        return False, f"存在未解决的阻塞性 Issue: {issue_titles}"
+        return False, f"存在未解决的严重卡点问题: {issue_titles}"
 
     # Check if module has at least one artifact
     art_stmt = select(Artifact).where(Artifact.module_id == module_id)

@@ -58,10 +58,10 @@ export const IssueBoard: React.FC = () => {
         <div>
           <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
             <AlertCircle className="w-5 h-5 text-rose-600" />
-            跨模块 Issue 与缺陷闭环追踪
+            协同问题与风险闭环看板
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            支持下游测试/运营将问题穿透反馈至前序需求或开发模块，Critical 级问题将阻塞基线锁定
+            支持下游环节将问题穿透反馈至前序工序进行修正，严重卡点问题将阻断定稿基线锁定
           </p>
         </div>
 
@@ -99,17 +99,17 @@ export const IssueBoard: React.FC = () => {
           onChange={e => setSeverityFilter(e.target.value)}
           className="bg-slate-50 border border-slate-200 rounded px-2.5 py-1 text-slate-800"
         >
-          <option value="all">全部严重度</option>
-          <option value="critical">Critical (阻断性)</option>
-          <option value="major">Major (严重)</option>
-          <option value="minor">Minor (次要)</option>
+          <option value="all">全部严重程度</option>
+          <option value="critical">Critical (严重卡点)</option>
+          <option value="major">Major (重要问题)</option>
+          <option value="minor">Minor (次要建议)</option>
         </select>
 
         <div className="relative flex-1 max-w-xs">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
           <input
             type="text"
-            placeholder="搜索缺陷标题..."
+            placeholder="搜索问题标题..."
             value={searchKeyword}
             onChange={e => setSearchKeyword(e.target.value)}
             className="w-full bg-slate-50 border border-slate-200 rounded pl-8 pr-3 py-1 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none"
@@ -123,10 +123,10 @@ export const IssueBoard: React.FC = () => {
 
       {/* Issue 表格 / 列表 */}
       {loading ? (
-        <div className="text-center py-12 text-slate-400 text-xs">加载 Issue 列表中...</div>
+        <div className="text-center py-12 text-slate-400 text-xs">加载协同问题列表中...</div>
       ) : filteredIssues.length === 0 ? (
         <div className="bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-400 text-xs shadow-xs">
-          暂无符合条件的 Issue
+          暂无匹配的协同问题
         </div>
       ) : (
         <div className="space-y-3">
@@ -158,12 +158,12 @@ export const IssueBoard: React.FC = () => {
 
                     <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
                       <div className="flex items-center gap-1.5 font-medium">
-                        <span className="text-slate-700">{issue.source_module_name || '来源模块'}</span>
+                        <span className="text-slate-700">{issue.source_module_name || '发现工序'}</span>
                         <ArrowRight className="w-3.5 h-3.5 text-rose-500" />
-                        <span className="text-emerald-700">{issue.target_module_name || '责任模块'}</span>
+                        <span className="text-emerald-700">{issue.target_module_name || '责任工序'}</span>
                       </div>
                       <span>•</span>
-                      <span>提报人: {issue.reporter} ({issue.reporter_role})</span>
+                      <span>发起人: {issue.reporter} ({issue.reporter_role})</span>
                       <span>•</span>
                       <span>{new Date(issue.created_at).toLocaleString()}</span>
                     </div>

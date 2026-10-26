@@ -307,7 +307,7 @@ async def test_initiatives_and_runs():
             json={"phase": "baselined"}
         )
         assert res_baseline_fail.status_code == 400
-        assert "未解决的阻塞性 Issue" in res_baseline_fail.json()["detail"]
+        assert "未解决的严重卡点问题" in res_baseline_fail.json()["detail"]
 
         # 5. Close the issue and then baseline should succeed!
         res_close = await ac.patch(
