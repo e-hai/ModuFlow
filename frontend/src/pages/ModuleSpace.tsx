@@ -204,10 +204,10 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
   };
 
   const handleApproveReview = async (reviewId: string) => {
-    if (!confirm('确认批准该变更单并将其正式设为当前模块的锁定基线 (Baseline) 吗？')) return;
+    if (!confirm('确认批准该变更单并将其正式设为当前工序的定稿基准 (Baseline) 吗？')) return;
     try {
-      await api.approveChangeReview(reviewId, { approver: '统一审批人 (我)' });
-      alert('变更单已批准！已正式设为基线并通知下游跟进。');
+      await api.approveChangeReview(reviewId, { approver: '定稿审批人' });
+      alert('变更单已批准！已正式设为定稿基准并通知下游跟进。');
       setSelectedReview(null);
       await loadSessionAndArtifacts();
       onModuleUpdated();
@@ -342,14 +342,14 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
   };
 
   const handleBaseline = async () => {
-    if (!confirm('确认将当前模块交付物锁定为正式基线 (Baseline) 吗？')) return;
+    if (!confirm('确认将当前工序成果定稿为正式基准 (Baseline) 吗？')) return;
     try {
       const updated = await api.updateModulePhase(module.id, 'baselined');
       setModuleState(updated);
-      alert('已成功锁定基线版本！');
+      alert('已成功定稿！');
       onModuleUpdated();
     } catch (e: any) {
-      alert(`基线检查未通过: ${e.message}`);
+      alert(`定稿检查未通过: ${e.message}`);
     }
   };
 
@@ -385,15 +385,15 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
             <PhaseBadge phase={moduleState.phase} />
             {moduleState.execution_mode === 'human_driven' ? (
               <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-200">
-                真人主导 (专业工具作业)
+                专家主导 (专业工具作业)
               </span>
             ) : moduleState.execution_mode === 'hybrid' ? (
               <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-700 font-semibold border border-teal-200">
-                人机协同 (混合执行)
+                人机协同 (联合执行)
               </span>
             ) : (
               <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 font-semibold border border-purple-200">
-                Agent 驱动
+                AI 智能体主导
               </span>
             )}
           </div>
@@ -406,7 +406,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
             title="上传 HTML 交互原型包或全量文档"
           >
             <UploadCloud className="w-3.5 h-3.5" />
-            上传交付包
+            上传成果包
           </button>
 
           {changeReviews.filter(r => r.status === 'pending_approval').length > 0 && (
@@ -435,12 +435,12 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
               className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs transition cursor-pointer"
             >
               <FileCheck2 className="w-4 h-4" />
-              锁定基线版本 (Baseline)
+              定稿发布基准 (Baseline)
             </button>
           ) : (
             <span className="flex items-center gap-1 px-3 py-1 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-medium">
               <ShieldCheck className="w-4 h-4" />
-              基线已锁定
+              已正式定稿
             </span>
           )}
         </div>
@@ -455,7 +455,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
             </div>
             <div>
               <div className="font-bold flex items-center gap-2 text-sm text-amber-900">
-                <span>⚠️ 上游规范基线已演进更新 (待跟进对齐)</span>
+                <span>⚠️ 上游成果已有最新定稿 (待同步跟进)</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 font-semibold font-mono">
                   {moduleState.stale_details?.length} 个待同步源
                 </span>
@@ -482,7 +482,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
               className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
             >
               <FileDiff className="w-3.5 h-3.5" />
-              查看变更 Diff
+              对比版本修改
             </button>
             <button
               onClick={() => handleAckUpstream()}
@@ -490,7 +490,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
               className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-xs transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
             >
               <CheckCheck className="w-4 h-4" />
-              {ackingUpstream ? '同步中...' : '确认已跟进'}
+              {ackingUpstream ? '同步中...' : '确认已同步跟进'}
             </button>
           </div>
         </div>
@@ -508,7 +508,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                 本工序存在 {changeReviews.filter(r => r.status === 'pending_approval').length} 个待统一审批的变更交付物
               </div>
               <p className="text-indigo-700 mt-0.5">
-                新上传的交付物需经由你统一审批裁决后，方可正式成为锁定基线并触发下游工序跟进。
+                新上传的成果需经由统一审批裁决后，方可正式生效为定稿基准并触发下游工序跟进。
               </p>
             </div>
           </div>
@@ -568,8 +568,8 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
             <span>
-              <strong>定稿门禁警示：</strong>当前环节存在 {blockingIssues.length} 个未解决的严重卡点问题（
-              {blockingIssues.map(i => i.id).join(', ')}），在责任环节彻底解决并验证关闭前，禁止锁定定稿基线。
+              <strong>定稿门禁警示：</strong>当前工序存在 {blockingIssues.length} 个未解决的严重卡点问题（
+              {blockingIssues.map(i => i.id).join(', ')}），在责任工序彻底解决并验证关闭前，暂不能正式定稿。
             </span>
           </div>
         </div>
@@ -589,7 +589,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
               <span className="text-[10px] text-slate-500 font-mono">({messages.length} 轮)</span>
             </div>
             <div className="text-[11px] text-slate-500">
-              Agent 负责草拟与执行 · 人类负责质量把关
+              AI 负责推演与拟稿 · 专家负责审定把关
             </div>
           </div>
 
@@ -598,7 +598,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
             {messages.length === 0 && !sending ? (
               <div className="text-center py-16 text-slate-400 text-xs">
                 <Bot className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                协作室尚未发起讨论。<br />在下方选择【指令 (Instruction)】输入要求，让 Agent 产出初稿。
+                当前协作室尚未发起讨论。<br />可在下方选择【下达任务】输入要求，由 AI 智能体生成首版成果初稿。
               </div>
             ) : (
               messages.map(msg => {
@@ -646,7 +646,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
 
                         <div className="mt-2 text-[11px] text-rose-600/90 flex items-center gap-1.5">
                           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                          <span>底层 Agent 进程执行异常已真实报告，绝不伪造正常答复。请检查右上角 Agent 适配设置或底层 CLI 配置。</span>
+                          <span>AI 智能体执行遇到异常。系统已如实记录，请检查网络连接、AI 引擎设置或稍后重试。</span>
                         </div>
                       </div>
                     </div>
@@ -686,15 +686,15 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                             }`}
                           >
                             {msg.message_type === 'draft_artifact'
-                              ? '交付物初稿'
+                              ? '成果初稿'
                               : msg.message_type === 'revised_artifact'
-                              ? '交付物修订'
+                              ? '成果修订稿'
                               : msg.message_type === 'feedback'
-                              ? '反馈修正'
+                              ? '修改建议'
                               : msg.message_type === 'question'
-                              ? '疑问讨论'
+                              ? '探讨咨询'
                               : msg.message_type === 'answer'
-                              ? 'Agent 答复'
+                              ? 'AI 答复'
                               : msg.message_type}
                           </span>
                         </div>
@@ -714,7 +714,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                       {msg.artifact_ref_id && (
                         <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded bg-emerald-50 text-[11px] text-emerald-800 border border-emerald-200">
                           <FileCheck2 className="w-3.5 h-3.5 text-emerald-600" />
-                          已关联生成右侧交付物版本
+                          已关联生成右侧成果版本
                         </div>
                       )}
                     </div>
@@ -739,7 +739,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                   <div className="flex items-center gap-1.5">
                     <Terminal className="w-3.5 h-3.5 text-slate-400" />
                     <span className="text-[11px] font-mono text-slate-600 bg-white px-2 py-0.5 rounded-md border border-slate-200 shadow-2xs font-medium">
-                      {agentCommand} CLI
+                      {agentCommand} 引擎
                     </span>
                   </div>
                 </div>
@@ -758,12 +758,12 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                       ) : (
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                       )}
-                      <span className="truncate">1. 装配上下文</span>
+                      <span className="truncate">1. 组装前置资料</span>
                     </div>
                     <div className="text-[10px] text-slate-500 mt-1 leading-tight">
                       {agentStage === 'context'
-                        ? `注入战略底稿与【${moduleState.primary_role?.name || '主责'}】专业准则...`
-                        : '底稿与角色准则已注入'}
+                        ? `注入战略背景与【${moduleState.primary_role?.name || '主责'}】工作要求...`
+                        : '背景资料与指导原则已就位'}
                     </div>
                   </div>
 
@@ -783,14 +783,14 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                       ) : (
                         <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                       )}
-                      <span className="truncate">2. 唤起 Agent</span>
+                      <span className="truncate">2. 唤起智能体</span>
                     </div>
                     <div className="text-[10px] text-slate-500 mt-1 leading-tight">
                       {agentStage === 'spawning'
-                        ? `启动 ${agentCommand} CLI 子进程...`
+                        ? `正在初始化【${moduleState.primary_role?.name || '专业 Agent'}】...`
                         : agentStage === 'reasoning'
-                        ? '物理隔离进程已就位'
-                        : '等待底稿就绪'}
+                        ? 'AI 协作环境已就位'
+                        : '等待资料就绪'}
                     </div>
                   </div>
 
@@ -806,12 +806,12 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                       ) : (
                         <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                       )}
-                      <span className="truncate">3. 推演与生成</span>
+                      <span className="truncate">3. 自主推演生成</span>
                     </div>
                     <div className="text-[10px] text-slate-500 mt-1 leading-tight">
                       {agentStage === 'reasoning'
                         ? `基于【${moduleState.primary_role?.name?.replace(' Agent', '') || '业务'}】专业框架推演输出...`
-                        : '等待进程就绪'}
+                        : '等待智能体就绪'}
                     </div>
                   </div>
                 </div>
@@ -819,10 +819,10 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                 <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5">
                   <span className="flex items-center gap-1 text-slate-400">
                     <Sparkles className="w-3 h-3 text-amber-500" />
-                    物理工作区安全隔离运行中
+                    AI 独立安全思考与推演中
                   </span>
                   <span className="text-slate-400 font-mono text-[10px]">
-                    状态: {agentStage === 'context' ? 'Context Assembly' : agentStage === 'spawning' ? 'Process Spawn' : 'Autonomous Reasoning'}
+                    当前阶段: {agentStage === 'context' ? '组装前置资料' : agentStage === 'spawning' ? '唤起智能体' : '自主推演生成中'}
                   </span>
                 </div>
               </div>
@@ -836,7 +836,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
             {/* 消息类型快速切换与专属技能入口 */}
             <div className="flex items-center justify-between mb-2 text-xs">
               <div className="flex items-center gap-1.5">
-                <span className="text-[11px] text-slate-400">动作类型:</span>
+                <span className="text-[11px] text-slate-400">发言类型:</span>
                 <button
                   type="button"
                   onClick={() => setMessageType('instruction')}
@@ -846,7 +846,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                       : 'bg-slate-100 text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  指令 (Instruction)
+                  下达任务
                 </button>
                 <button
                   type="button"
@@ -857,7 +857,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                       : 'bg-slate-100 text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  反馈修正 (Feedback)
+                  修改建议
                 </button>
                 <button
                   type="button"
@@ -868,7 +868,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                       : 'bg-slate-100 text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  疑问讨论 (Question)
+                  提问探讨
                 </button>
               </div>
 
@@ -961,7 +961,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                             type="button"
                             onClick={() => {
                               setMessageType('instruction');
-                              setInputText('综合上述分析，生成本单品正式的《市场研究与竞品深度洞察报告》交付物');
+                              setInputText('综合上述分析，生成本单品正式的《市场研究与竞品深度洞察报告》成果交付物');
                               setShowSkillMenu(false);
                             }}
                             className="w-full text-left px-2.5 py-1.5 rounded-lg bg-emerald-50/70 hover:bg-emerald-100 text-emerald-900 transition flex items-start gap-2 group cursor-pointer border border-emerald-200/60"
@@ -969,7 +969,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                             <span className="text-sm shrink-0 mt-0.5">📑</span>
                             <div>
                               <div className="text-xs font-semibold text-emerald-800">生成完整市场研究报告</div>
-                              <div className="text-[10px] text-emerald-600">全量推演并归档至交付物基准</div>
+                              <div className="text-[10px] text-emerald-600">全量推演并归档至成果基准</div>
                             </div>
                           </button>
                         </div>
@@ -985,10 +985,10 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                 type="text"
                 placeholder={
                   messageType === 'instruction'
-                    ? '输入指令，让 Agent 产出交付物初稿...'
+                    ? '输入任务指令，让 AI 智能体产出成果初稿...'
                     : messageType === 'feedback'
-                    ? '提出针对交付物的补充与质疑意见...'
-                    : '输入讨论内容...'
+                    ? '提出针对成果交付物的补充与修改建议...'
+                    : '输入提问或探讨内容...'
                 }
                 value={inputText}
                 onChange={e => setInputText(e.target.value)}
@@ -1018,7 +1018,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
           <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/60 flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <FileCheck2 className="w-4 h-4 text-emerald-600" />
-              <span className="text-xs font-semibold text-slate-800">交付物产物库 (Artifacts)</span>
+              <span className="text-xs font-semibold text-slate-800">成果交付库 (Artifacts)</span>
               {panelLayout === 'full' && (
                 <span className="text-[10px] text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200 font-medium">
                   全宽沉浸模式
@@ -1049,7 +1049,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                       ? 'bg-white text-slate-800 shadow-2xs font-semibold'
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
-                  title="产物加宽 (4:8)"
+                  title="成果加宽 (4:8)"
                 >
                   1:2
                 </button>
@@ -1061,7 +1061,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                       ? 'bg-white text-indigo-700 shadow-2xs font-semibold'
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
-                  title={panelLayout === 'full' ? '还原为双栏视图' : '产物全宽沉浸阅读'}
+                  title={panelLayout === 'full' ? '还原为双栏视图' : '成果全宽沉浸阅读'}
                 >
                   {panelLayout === 'full' ? <Minimize2 className="w-3 h-3 text-indigo-600" /> : <Maximize2 className="w-3 h-3" />}
                   <span>{panelLayout === 'full' ? '还原' : '全宽'}</span>
@@ -1097,7 +1097,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                   >
                     {artifacts.map(a => (
                       <option key={a.id} value={a.id}>
-                        v{a.version} {a.is_baseline ? '(基线)' : ''} {a.artifact_type === 'html_bundle' ? '[原型包]' : ''} - {new Date(a.created_at).toLocaleTimeString()}
+                        v{a.version} {a.is_baseline ? '(定稿基准)' : ''} {a.artifact_type === 'html_bundle' ? '[原型包]' : ''} - {new Date(a.created_at).toLocaleTimeString()}
                       </option>
                     ))}
                   </select>
@@ -1132,7 +1132,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                   }`}
                 >
                   <Eye className="w-3.5 h-3.5 text-slate-500" />
-                  DOM与结构源码
+                  页面结构源码
                 </button>
               </div>
 
@@ -1229,7 +1229,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                           {selectedArtifact.is_baseline && (
                             <span className="px-2 py-0.5 rounded-md text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold flex items-center gap-1 shadow-2xs">
                               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                              当前工序锁定基线 (Baseline)
+                              当前工序正式定稿基准 (Baseline)
                             </span>
                           )}
                           <span className="text-xs text-slate-400 font-mono">
@@ -1244,9 +1244,9 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                             <Clock className="w-3 h-3 text-slate-400" />
                             {new Date(selectedArtifact.created_at).toLocaleString('zh-CN', { hour12: false })}
                           </span>
-                          <span className="flex items-center gap-1">
+                          <span className="flex items-center gap-1" title="防篡改唯一数字指纹">
                             <Hash className="w-3 h-3 text-slate-400" />
-                            SHA-256: {selectedArtifact.content_hash.slice(0, 12)}...
+                            版本指纹: {selectedArtifact.content_hash.slice(0, 12)}...
                           </span>
                         </div>
                       </div>
@@ -1307,7 +1307,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
             ) : (
               <div className="text-center py-24 text-slate-400 text-xs flex-1 flex flex-col items-center justify-center">
                 <UploadCloud className="w-10 h-10 text-slate-300 mb-2" />
-                尚无生成产物。<br />在左侧输入指令让 Agent 产出，或点击上方【上传新版本】提交原型与文档。
+                当前暂无成果交付物。<br />可在左侧输入需求让 AI 智能体生成，或点击上方【上传新版本】提交原型与文档。
               </div>
             )}
           </div>
@@ -1318,7 +1318,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
               <Bug className="w-3.5 h-3.5 text-rose-600" />
               关联协同问题: {openIssues.length} 个待解决
             </span>
-            <span className="text-[11px] text-slate-400 font-mono">不可变快照隔离存储</span>
+            <span className="text-[11px] text-slate-400 font-medium">版本安全归档防篡改</span>
           </div>
         </div>
       </div>
@@ -1330,7 +1330,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
             <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
               <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
                 <UploadCloud className="w-5 h-5 text-blue-600" />
-                上传工序交付物包 (HTML 原型 / 文档)
+                上传工序成果包 (HTML 原型 / 规范文档)
               </h3>
               <button
                 onClick={() => setIsUploadModalOpen(false)}
@@ -1346,7 +1346,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                   选择文件 (.zip, .html, .md, .txt) *
                 </label>
                 <p className="text-[11px] text-slate-500 mb-2">
-                  支持包含 <code>index.html</code>、<code>assets/</code>、<code>preview/</code> 等目录的 ZIP 交互原型包，系统将自动解压并提供交互 iframe 预览。
+                  支持包含 <code>index.html</code>、<code>assets/</code> 等目录的 ZIP 交互原型包，系统将自动解压并提供可交互原型预览。
                 </p>
                 <input
                   type="file"
@@ -1359,7 +1359,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  版本变更核心意图说明 (Change Summary) *
+                  本次修改主要内容说明 *
                 </label>
                 <textarea
                   rows={3}
@@ -1372,7 +1372,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
               </div>
 
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-800">
-                💡 上传后系统将自动生成统一变更审批单 (ChangeReview)，经由统一审批通过后正式升级为基线，并通知下游工序跟进。
+                💡 上传后系统将自动生成成果变更审批单，经审批通过后正式生效为定稿基准，并通知下游工序跟进。
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
@@ -1411,7 +1411,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                     ? 'bg-rose-100 text-rose-800'
                     : 'bg-amber-100 text-amber-800'
                 }`}>
-                  {selectedReview.status === 'approved' ? '已批准' : selectedReview.status === 'rejected' ? '已驳回' : '待我统一审批'}
+                  {selectedReview.status === 'approved' ? '已通过' : selectedReview.status === 'rejected' ? '已退回' : '待审批'}
                 </span>
               </div>
               <button
@@ -1442,7 +1442,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                 )}
                 {selectedReview.rejection_reason && (
                   <div className="col-span-2 text-rose-700 bg-rose-50 p-2 rounded border border-rose-200">
-                    <strong>驳回原因:</strong> {selectedReview.rejection_reason}
+                    <strong>退回原因:</strong> {selectedReview.rejection_reason}
                   </div>
                 )}
               </div>
@@ -1462,7 +1462,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
               {selectedReview.status === 'pending_approval' && (
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    若驳回请输入原因 (可选):
+                    若退回请输入修改建议 (可选):
                   </label>
                   <input
                     type="text"
@@ -1490,7 +1490,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                     onClick={() => handleRejectReview(selectedReview.id)}
                     className="px-4 py-2 rounded-xl text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition cursor-pointer"
                   >
-                    驳回变更
+                    退回修改
                   </button>
                   <button
                     type="button"
@@ -1498,7 +1498,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                     className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs transition cursor-pointer flex items-center gap-1.5"
                   >
                     <CheckCheck className="w-4 h-4" />
-                    批准并生效基线 (Baseline)
+                    批准并生效为定稿基准 (Baseline)
                   </button>
                 </>
               )}
@@ -1530,13 +1530,13 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
               <div className="bg-amber-50/80 border border-amber-200 p-3 rounded-xl text-amber-900 space-y-1">
                 <div className="font-bold">版本状态：</div>
                 <div>当前工序跟进基准：<strong>v{selectedStaleDetail.current_synced_version}</strong></div>
-                <div>上游最新已锁定基准：<strong>v{selectedStaleDetail.latest_upstream_version}</strong></div>
+                <div>上游最新已定稿基准：<strong>v{selectedStaleDetail.latest_upstream_version}</strong></div>
                 <div className="pt-1 text-amber-800">{selectedStaleDetail.message}</div>
               </div>
 
               <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-slate-700 text-xs">
                 <p>
-                  上游模块负责人已完成新版本交付并经统一审批通过。若研发或测试团队已查阅最新上游文档/原型，请点击下方【确认已跟进】，工序状态将恢复为最新对齐。
+                  上游工序负责人已完成新版本交付并经统一审批通过。若业务或产研团队已查阅最新上游成果，请点击下方【确认已完成跟进与对齐】，工序状态将恢复为最新对齐。
                 </p>
               </div>
             </div>

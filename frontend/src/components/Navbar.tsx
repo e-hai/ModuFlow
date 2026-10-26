@@ -244,7 +244,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block font-mono">
-                    三、本地物理工作区 (Physical Filesystem)
+                    三、本地工作区目录 (Project Workspace)
                   </span>
                   <button
                     onClick={handleSyncWorkspace}
@@ -258,7 +258,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     ) : (
                       <FolderGit2 className="w-3 h-3 text-emerald-600" />
                     )}
-                    <span>{isSyncing ? '同步中...' : syncStatus || '重新同步落盘'}</span>
+                    <span>{isSyncing ? '同步中...' : syncStatus || '刷新本地文件'}</span>
                   </button>
                 </div>
 
@@ -269,7 +269,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </div>
                   <div className="text-[11px] text-slate-400 space-y-1 pl-1 border-l-2 border-slate-700">
                     <div>├── <span className="text-slate-300">00_战略工程底稿与公共资产/</span> (底稿/公共市场调研/生态闭环)</div>
-                    <div>└── <span className="text-slate-300">products/</span> (子产品文件夹严格物理隔离)</div>
+                    <div>└── <span className="text-slate-300">products/</span> (子产品文件夹严格独立隔离)</div>
                     {products && products.length > 0 ? (
                       products.map((p, idx) => {
                         const isLast = idx === products.length - 1;

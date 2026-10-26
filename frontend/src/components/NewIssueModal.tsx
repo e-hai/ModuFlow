@@ -121,9 +121,9 @@ export const NewIssueModal: React.FC<NewIssueModalProps> = ({
                 onChange={e => setSeverity(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900"
               >
-                <option value="critical">Critical (严重卡点 · 阻止定稿)</option>
-                <option value="major">Major (重要问题 · 需修正)</option>
-                <option value="minor">Minor (一般建议 · 可后续优化)</option>
+                <option value="critical">P0 严重阻断 (Critical · 阻止工序定稿)</option>
+                <option value="major">P1 核心缺陷 (Major · 必须修正)</option>
+                <option value="minor">P2 一般问题 (Minor · 可后续优化)</option>
               </select>
             </div>
             <div>
@@ -141,12 +141,12 @@ export const NewIssueModal: React.FC<NewIssueModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">现象说明与复现步骤</label>
+            <label className="block text-xs font-medium text-slate-700 mb-1">问题现象与详细说明</label>
             <textarea
               rows={3}
               value={steps}
               onChange={e => setSteps(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-900 font-mono focus:bg-white focus:outline-none focus:border-rose-500"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-rose-500"
             />
           </div>
 
@@ -181,7 +181,7 @@ export const NewIssueModal: React.FC<NewIssueModalProps> = ({
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-800 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
             <span>
-              若选择 Critical/Major 级别，目标环节如果已处于基线锁定（baselined）状态，将自动触发**回退至协作研讨（discussing）**，以确保问题彻底解决前不会带病定稿推进。
+              若选择严重阻断或核心缺陷级别，目标工序如果已正式定稿，将自动触发**回退至协作研讨状态**，以确保问题彻底解决前不会带病定稿推进。
             </span>
           </div>
 

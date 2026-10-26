@@ -61,7 +61,7 @@ export const IssueBoard: React.FC = () => {
             协同问题与风险闭环看板
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            支持下游环节将问题穿透反馈至前序工序进行修正，严重卡点问题将阻断定稿基线锁定
+            支持各环节将问题透传反馈至前序工序进行修正，严重卡点问题将阻止工序定稿
           </p>
         </div>
 

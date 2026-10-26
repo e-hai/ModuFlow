@@ -126,7 +126,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                   v0.1.0-alpha
                 </span>
               </h3>
-              <p className="text-xs text-slate-500">管理 Agent CLI 适配器、物理工作区与平台规格</p>
+              <p className="text-xs text-slate-500">管理 AI 智能体适配器、项目工作区与平台规格</p>
             </div>
           </div>
           <button
@@ -148,7 +148,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             }`}
           >
             <Bot className="w-3.5 h-3.5" />
-            <span>智能体引擎配置 (Agent CLI)</span>
+            <span>智能体引擎配置 (AI 引擎)</span>
           </button>
           <button
             onClick={() => setActiveTab('platform')}
@@ -184,12 +184,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-bold text-slate-900 flex items-center gap-1.5">
                         <Terminal className="w-4 h-4 text-emerald-600" />
-                        CLI 子进程适配器
+                        命令行工具适配器 (CLI)
                       </span>
                       {selectedAdapter === 'cli' && <Check className="w-4 h-4 text-emerald-600" />}
                     </div>
                     <p className="text-[11px] text-slate-500 leading-normal">
-                      挂载至各单品物理工作区子目录执行，支持真实工程文件读写与终端能力。（推荐）
+                      连接至各单品项目工作区目录执行，支持真实工程文件读写与终端能力。（推荐）
                     </p>
                   </div>
 
@@ -220,7 +220,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block font-mono">
-                      ② 底层 Agent CLI 工具预设
+                      ② 底层 AI 引擎工具预设
                     </label>
                     <span className="text-[11px] text-slate-400">已自动探测本机 PATH 环境</span>
                   </div>
@@ -317,7 +317,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
                 <div>
                   <span className="font-semibold text-slate-800 text-xs block">单次工序执行超时保护 (Timeout)</span>
-                  <span className="text-[11px] text-slate-500">超时后适配器将自动终止子进程并安全降级，防止进程挂起</span>
+                  <span className="text-[11px] text-slate-500">超时后系统将自动停止该任务并安全处理，防止长时间等待</span>
                 </div>
                 <select
                   value={timeoutSeconds}
@@ -326,8 +326,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                 >
                   <option value={60}>60 秒 (快速问答)</option>
                   <option value={120}>120 秒 (常规分析)</option>
-                  <option value={180}>180 秒 (推荐: Agent CLI 深度调研)</option>
-                  <option value={300}>300 秒 (推荐: agy 交付物全量生成)</option>
+                  <option value={180}>180 秒 (推荐: AI 深度调研与推演)</option>
+                  <option value={300}>300 秒 (推荐: agy 成果全量生成)</option>
                   <option value={600}>600 秒 (全量单测与复杂构建)</option>
                 </select>
               </div>
@@ -353,7 +353,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                   ModuFlow 专为多产品矩阵体系设计，以顶层<strong className="text-emerald-700 font-medium">“战略工程 (Strategic Initiative)”</strong>为牵引，将宏观业务目标下沉为矩阵子产品的端到端研发流水线。
                 </p>
                 <p className="text-slate-600">
-                  平台覆盖从市场机会识别、PRD、交互设计、架构、开发、QA 测试到灰度发布与运营复盘等 <strong className="text-slate-900 font-medium">13 个产研生命周期工序</strong>，通过多轮人机协同会话、成果交付物定稿基线锁定（Baseline Gate）与协同问题反向穿透，保障全矩阵交付质量。
+                  平台覆盖从市场机会识别、PRD、交互设计、架构、开发、QA 测试到灰度发布与运营复盘等 <strong className="text-slate-900 font-medium">13 个产研生命周期工序</strong>，通过多轮人机协同会话、成果交付物正式定稿基准（Baseline Gate）与协同问题反向穿透，保障全矩阵交付质量。
                 </p>
               </div>
 

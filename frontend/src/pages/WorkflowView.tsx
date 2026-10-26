@@ -233,7 +233,7 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
             </div>
 
             <p className="text-xs text-slate-500 line-clamp-1">
-              {activeProduct.description || '当前产品全生命周期工序与基线锁定空间'}
+              {activeProduct.description || '当前产品全生命周期工序与定稿空间'}
             </p>
           </div>
         </div>
@@ -360,7 +360,7 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
         {selectedRun && (
           <div className="flex items-center justify-between text-xs text-slate-500">
             <div className="flex items-center gap-2">
-              <span>基线锁定达成率:</span>
+              <span>工序定稿达成率:</span>
               <span className="font-mono font-bold text-slate-900">{baselinedCount}/{totalModules}</span>
               <span className="text-slate-400">({progressPercent}%)</span>
             </div>
@@ -387,7 +387,7 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
             <Archive className="w-4 h-4 text-slate-500 shrink-0" />
             <span>
               <strong>历史归档快照模式：</strong> 当前查看的「{selectedRun.name}」已于{' '}
-              {new Date(selectedRun.updated_at).toLocaleDateString()} 封版归档，工序基线已锁定只读，仅供制品回溯。
+              {new Date(selectedRun.updated_at).toLocaleDateString()} 封版归档，所有工序已正式定稿只读，仅供追溯查阅。
             </span>
           </div>
           {activeRun && (
@@ -434,19 +434,19 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
                     <div className="flex items-center justify-between gap-1 flex-wrap">
                       <div className="flex items-center gap-1.5">
                         <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-slate-100 text-slate-800">
-                          Module {mod.module_code}
+                          工序 {mod.module_code}
                         </span>
                         {mod.execution_mode === 'human_driven' ? (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200" title="由真人使用专业工具作业，交付完整工程产出物">
-                            真人主导
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200" title="由人工专家使用专业工具作业，交付完整成果">
+                            专家主导
                           </span>
                         ) : mod.execution_mode === 'hybrid' ? (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-teal-50 text-teal-700 border border-teal-200" title="人机协同混合执行">
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-teal-50 text-teal-700 border border-teal-200" title="人机协同联合执行">
                             人机协同
                           </span>
                         ) : (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-200" title="由专业 Agent 自动规划并产出交付物">
-                            Agent驱动
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-200" title="由专业 AI 智能体协同推演并生成成果">
+                            AI 智能体主导
                           </span>
                         )}
                       </div>
