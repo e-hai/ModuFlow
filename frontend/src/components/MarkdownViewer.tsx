@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import { Copy, Check } from 'lucide-react';
 import { MermaidDiagram } from './MermaidDiagram';
 
@@ -25,10 +26,17 @@ export const MarkdownViewer: React.FC<MarkdownViewerProps> = ({
 
   const isArtifact = variant === 'artifact';
 
+  // 预处理内容：确保表格中常见的多行换行符 <br>、<br/> 或被转义的 &lt;br&gt; 均能被 rehype-raw 正常识别并换行渲染
+  const processedContent = React.useMemo(() => {
+    if (!content) return '';
+    return content.replace(/&lt;br\s*\/?&gt;/gi, '<br />');
+  }, [content]);
+
   return (
     <div className={`moduflow-markdown ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeRaw]}
         components={{
           h1: ({ children }) => (
             <h1 className={`${isArtifact ? 'text-xl' : 'text-base'} font-bold text-slate-900 mt-6 mb-3 pb-2 border-b border-slate-200 first:mt-0 tracking-tight leading-snug`}>
@@ -175,10 +183,11 @@ export const MarkdownViewer: React.FC<MarkdownViewerProps> = ({
             <strong className="font-semibold text-slate-900">
               {children}
             </strong>
-          )
+          ),
+          br: () => <br className="my-0.5" />
         }}
       >
-        {content}
+        {processedContent}
       </ReactMarkdown>
     </div>
   );
