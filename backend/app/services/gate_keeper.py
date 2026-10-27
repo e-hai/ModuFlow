@@ -61,7 +61,9 @@ def get_stage_gate_config(module_code: str, template_id: Optional[str] = None) -
 def evaluate_gate_level(
     module_code: str,
     context: Optional[Dict[str, Any]] = None,
-    template_id: Optional[str] = None
+    template_id: Optional[str] = None,
+    platform: str = "ios",
+    client_zero_inference: bool = True
 ) -> Dict[str, Any]:
     """
     Evaluates gate level and checks automatic escalation rules (Zero LLM).
@@ -119,6 +121,13 @@ def evaluate_gate_level(
             effective_approver = "human"
             escalation_reasons.append("工序 11 涉及大版本规划 (Major Version)，关口由 🟢 升级为 🟡 yellow (需人类批量审批)")
 
+    from backend.app.services.agent_roles import get_stage_gate_conditions
+    dynamic_conditions = get_stage_gate_conditions(
+        module_code,
+        platform=platform,
+        client_zero_inference=client_zero_inference
+    )
+
     return {
         "gate_name": base_cfg["name"],
         "base_level": base_level,
@@ -127,7 +136,7 @@ def evaluate_gate_level(
         "effective_approver": effective_approver,
         "is_escalated": is_escalated,
         "escalation_reasons": escalation_reasons,
-        "conditions": base_cfg["conditions"]
+        "conditions": dynamic_conditions
     }
 
 
@@ -164,8 +173,19 @@ async def create_or_update_gate_application(
     product_code = product.code if product else "UNKNOWN"
     initiative_id = product.initiative_id if product else "platform"
 
-    # Evaluate gate level
-    gate_eval = evaluate_gate_level(mod.module_code, context, run_obj.template_id)
+    # Evaluate gate level with project profile
+    prod_platform = getattr(product, "platform", "ios") or "ios"
+    prod_zero_inf = getattr(product, "client_zero_inference", True)
+    if prod_zero_inf is None:
+        prod_zero_inf = True
+
+    gate_eval = evaluate_gate_level(
+        mod.module_code,
+        context,
+        run_obj.template_id,
+        platform=prod_platform,
+        client_zero_inference=prod_zero_inf
+    )
 
     # Check for existing gate application
     g_stmt = select(GateApplication).where(GateApplication.module_id == module_id)

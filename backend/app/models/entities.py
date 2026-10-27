@@ -75,6 +75,10 @@ class Product(Base):
     # 影子模式 (Shadow Mode) 开关：默认为 True，仅人类可关闭
     shadow_mode = Column(Boolean, nullable=False, default=True)
     
+    # 项目 Profile 参数化 (Phase 6)
+    platform = Column(String(30), nullable=False, default="ios") # ios, android, web, cross_platform
+    client_zero_inference = Column(Boolean, nullable=False, default=True)
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

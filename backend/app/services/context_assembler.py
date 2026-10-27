@@ -98,7 +98,9 @@ async def assemble_module_context(
     arsenal_info = mount_role_skills_and_mcp(
         workspace_dir=workspace_path,
         primary_role_code=primary_role_code,
-        collaborator_role_codes=collab_role_codes
+        collaborator_role_codes=collab_role_codes,
+        platform=getattr(prod, "platform", "ios") or "ios",
+        client_zero_inference=getattr(prod, "client_zero_inference", True)
     )
 
     collab_desc = "、".join([f"{c.name} ({c.title})" for c in collab_roles]) if collab_roles else "无"

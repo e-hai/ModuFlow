@@ -207,7 +207,9 @@ async def sync_strategic_initiative_workspace(db: AsyncSession, initiative_id: s
                 mount_role_skills_and_mcp(
                     workspace_dir=mod_dir,
                     primary_role_code=primary_rc,
-                    collaborator_role_codes=collab_rcs
+                    collaborator_role_codes=collab_rcs,
+                    platform=getattr(prod, "platform", "ios") or "ios",
+                    client_zero_inference=getattr(prod, "client_zero_inference", True)
                 )
 
                 mod_readme = f"""# 工序 {m.module_code}：{m.name}

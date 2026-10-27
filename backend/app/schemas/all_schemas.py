@@ -40,6 +40,8 @@ class ProductBase(BaseModel):
     code: str
     description: Optional[str] = None
     initiative_id: Optional[str] = None
+    platform: Optional[str] = "ios"
+    client_zero_inference: Optional[bool] = True
 
 class ProductCreate(ProductBase):
     id: Optional[str] = None
@@ -51,6 +53,8 @@ class ProductUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     stage: Optional[str] = None
+    platform: Optional[str] = None
+    client_zero_inference: Optional[bool] = None
     budget_allocated: Optional[float] = None
     actual_spent: Optional[float] = None
     revenue_contribution: Optional[float] = None
@@ -64,6 +68,8 @@ class ProductUpdate(BaseModel):
 class ProductOut(ProductBase):
     id: str
     stage: Optional[str] = "growth"
+    platform: Optional[str] = "ios"
+    client_zero_inference: Optional[bool] = True
     budget_allocated: Optional[float] = 0.0
     actual_spent: Optional[float] = 0.0
     revenue_contribution: Optional[float] = 0.0

@@ -197,32 +197,58 @@ def audit_stage_compliance(
                     risk_level = "medium"
                     status = "needs_fix"
 
-        # 2.3 Apple ATT Tracking
-        if "idfa" in content_lower or "广告追踪" in content_lower or "att" in content_lower:
-            findings.append({
-                "category": "platform_policy",
-                "item": "Apple App Tracking Transparency (ATT) 弹窗规格",
-                "severity": "medium",
-                "passed": False,
-                "advice": "如需采集 IDFA 进行跨应用广告归因，PRD 必须包含 ATT 授权弹窗文案与用户拒绝后的降级分支。"
-            })
-            if risk_level == "low":
-                risk_level = "medium"
-                status = "needs_fix"
+        # 2.3 Platform-specific Tracking
+        norm_platform = (platform or "all").lower()
+        if norm_platform in ["ios", "all", "cross_platform"]:
+            if "idfa" in content_lower or "广告追踪" in content_lower or "att" in content_lower:
+                findings.append({
+                    "category": "platform_policy",
+                    "item": "Apple App Tracking Transparency (ATT) 弹窗规格",
+                    "severity": "medium",
+                    "passed": False,
+                    "advice": "如需采集 IDFA 进行跨应用广告归因，PRD 必须包含 ATT 授权弹窗文案与用户拒绝后的降级分支。"
+                })
+                if risk_level == "low":
+                    risk_level = "medium"
+                    status = "needs_fix"
+        elif norm_platform == "android":
+            if "广告追踪" in content_lower or "ad_id" in content_lower or "gaid" in content_lower:
+                findings.append({
+                    "category": "platform_policy",
+                    "item": "Google Play Advertising ID (AD_ID) 权限声明与家庭政策",
+                    "severity": "medium",
+                    "passed": False,
+                    "advice": "如需使用 Google Play 广告标识符，PRD 必须声明 AD_ID 权限并符合家庭政策规范。"
+                })
+                if risk_level == "low":
+                    risk_level = "medium"
+                    status = "needs_fix"
 
     # =========================================================================
     # Checkpoint 3: Stage 09 - 提审上线合规
     # =========================================================================
     elif stage_code == "09":
-        # 3.1 Apple 4.3 Copycat / Spam App check
-        if "4.3" in content_lower or "查重" in content_lower or "重复应用" in content_lower:
-            findings.append({
-                "category": "platform_policy",
-                "item": "Apple 4.3 查重度排查",
-                "severity": "low",
-                "passed": True,
-                "advice": "提审包需具备独有 UVP 价值主张与差异化 UI 架构，严禁换皮打包。"
-            })
+        norm_platform = (platform or "all").lower()
+        # 3.1 Store Policy & Spam/Copycat check
+        if norm_platform == "android":
+            if "查重" in content_lower or "重复应用" in content_lower or "换皮" in content_lower:
+                findings.append({
+                    "category": "platform_policy",
+                    "item": "Google Play 重复内容与抄袭政策排查 (Repetitive Content Policy)",
+                    "severity": "low",
+                    "passed": True,
+                    "advice": "提审包需具备独有 UVP 价值主张与差异化体验，严禁换皮打包违反 Google Play 政策。"
+                })
+        else:
+            # iOS or cross-platform / default
+            if "4.3" in content_lower or "查重" in content_lower or "重复应用" in content_lower:
+                findings.append({
+                    "category": "platform_policy",
+                    "item": "Apple 4.3 查重度排查",
+                    "severity": "low",
+                    "passed": True,
+                    "advice": "提审包需具备独有 UVP 价值主张与差异化 UI 架构，严禁换皮打包。"
+                })
 
         # 3.2 Privacy Policy URL check
         if not any(k in content_lower for k in ["privacy", "隐私协议", "隐私政策", "privacy_policy"]):
@@ -328,11 +354,16 @@ async def run_stage_compliance_check(
     artifact = art_res.scalars().first()
     deliverable_text = artifact.content if artifact else f"工序 {module.name} 待审查草案"
 
+    target_platform = "ios"
+    if product:
+        target_platform = getattr(product, "platform", "ios") or "ios"
+
     # Run compliance audit
     audit_res = audit_stage_compliance(
         stage_code=module.module_code,
         content=deliverable_text,
-        target_market=target_market
+        target_market=target_market,
+        platform=target_platform
     )
 
     now = datetime.now(timezone.utc)

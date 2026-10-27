@@ -160,3 +160,51 @@
 - **守门验证表现**：
   - 全部 59 项自动化测试 100% 绿灯通过；
   - 前端编译 `npm run build` 0 错误（8.72s 完成）。
+
+---
+
+## 七、Phase 5 落地执行记录 (Phase 5 Execution Log)
+
+- **完成日期**：2026-10-27
+- **分支**：`phase5-cmp-compliance-checkpoint` (已合并入 `main`)
+- **新增角色与检查点**：
+  1. `DEFAULT_AGENT_ROLES` 新增 **`role_cmp`（合规风控 Agent，Compliance Specialist）**：
+     - **职责**：覆盖工序 03（立项初筛）、05（PRD 数据安全与隐私）、09（商店政策与提审门禁）；
+     - **核心红线**：高风险直接升级 G5 关口；所有合规审计结论强制附带“非具有约束力法律意见”声明；
+  2. **合规检查引擎 (`backend/app/services/compliance_engine.py`)**：
+     - `audit_stage_compliance` 与 `run_stage_compliance_check`：自动化识别权限合规、区域税务合规、PRD 隐私与暗黑模式、商店政策；
+     - 高风险合规发现自动将对应关口升级为 🔴 RED（G5 关口）并创建 `ExecutiveRisk`；
+  3. **RESTful API 端点**：
+     - `POST /api/v1/modules/{module_id}/compliance-audit`：触发单工序合规审计。
+- **守门验证表现**：
+  - 全部 65 项自动化测试 100% 绿灯通过；
+  - 前端编译 `npm run build` 0 错误。
+
+---
+
+## 八、Phase 6 落地执行记录 (Phase 6 Execution Log)
+
+- **完成日期**：2026-10-27
+- **分支**：`phase6-project-profile`
+- **核心业务需求与参数化实现**：
+  1. **平台与规则集参数化 (`platform: "ios" | "android" | "cross_platform"`)**：
+     - **iOS**：启用 Apple HIG 规则集，通过 `check_hig` 审计 iPhone 灵动岛顶部安全区 (≥71pt，推荐 ≥74pt) 与触控热区 (≥44×44pt)；
+     - **Android**：启用 Google Material Design 3 规则集，通过 `check_material` 审计挖孔/状态栏避让留白 (≥24~48dp) 与触控热区 (≥48×48dp)；
+     - **绝对隔离红线验证**：Android 项目在工序 05、06、09 中**绝不触发 iOS 灵动岛 (71pt) 或 Apple 4.3 审核查重**；iOS 项目保持 100% 向后兼容；
+  2. **客户端零推理参数化 (`client_zero_inference: bool`)**：
+     - `client_zero_inference=True`（默认）：严格执行客户端实时 AI 调用数为 0，违规即阻断；
+     - `client_zero_inference=False`：项目 Profile 明确授权端侧/边缘 AI 本地模型推理，单活跃用户边际成本按端侧标准审计放行；
+  3. **动态工序工作区挂载与 MCP 适配 (`skill_mcp_mounter.py` & `role_mcp_server.py`)**：
+     - `mount_role_skills_and_mcp` 根据项目 Profile 动态选择挂载 `check_material.py` 或 `check_hig.py`；
+     - `role_mcp_server.py` 注入 `MODUFLOW_PLATFORM` 与 `MODUFLOW_ZERO_INFERENCE` 环境变量，支持专属工具 `audit_material_spec` 与参数化 `audit_client_zero_inference`；
+  4. **关口条件动态映射 (`agent_roles.py` & `gate_keeper.py`)**：
+     - `get_stage_gate_conditions` 根据单品 Profile 动态返回工序 06（HIG vs Material 3）与工序 07（零推理 vs 端侧推理）条件；
+  5. **API 与模型字段扩充**：
+     - `Product` ORM 实体增加 `platform`、`client_zero_inference`；
+     - `GET /api/v1/products/{product_id}/profile`：获取单品 Profile 与设计系统规范；
+     - `POST /api/v1/modules/{module_id}/design-audit`：动态设计规范审计；
+     - `POST /api/v1/modules/{module_id}/zero-inference-audit`：参数化客户端推理审计。
+- **自动化测试表现**：
+  - 新增 9 项 Phase 6 测试用例 (`backend/tests/test_project_profile.py`)；
+  - 全部 74 项测试用例 100% 绿灯通过；
+  - 前端编译 `npm run build` 0 错误（8.42s 完成）。

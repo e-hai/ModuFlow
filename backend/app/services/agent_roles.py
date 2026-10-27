@@ -454,6 +454,48 @@ STAGE_ROLE_CONFIGS: Dict[str, Dict[str, Any]] = {
     }
 }
 
+
+def get_stage_gate_conditions(stage_code: str, platform: str = "ios", client_zero_inference: bool = True) -> List[str]:
+    """
+    Returns profile-parameterized gate conditions for a stage.
+    Stage 06:
+      - iOS: HIG conditions (Dynamic Island >=71pt, touch >=44pt)
+      - Android: Material 3 conditions (status bar cutout >=24~48dp, touch >=48dp)
+    Stage 07:
+      - client_zero_inference=True: strict zero inference
+      - client_zero_inference=False: edge AI permitted per profile
+    """
+    stage_cfg = STAGE_ROLE_CONFIGS.get(stage_code, {})
+    gate_cfg = stage_cfg.get("gate", {})
+    conditions = list(gate_cfg.get("conditions", []))
+    norm_platform = (platform or "ios").lower()
+
+    if stage_code == "06":
+        if norm_platform == "android":
+            return [
+                "根据项目 profile 匹配规则 (Android Material 3)",
+                "状态栏/挖孔避让安全区 >= 24~48dp",
+                "触控热区 >= 48x48dp"
+            ]
+        else:
+            return [
+                "根据项目 profile 匹配规则 (iOS HIG)",
+                "iOS 灵动岛顶部安全区 >= 71pt",
+                "触控热区 >= 44x44pt"
+            ]
+    elif stage_code == "07":
+        if client_zero_inference:
+            return [
+                "核心逻辑单测覆盖率 >= 80%",
+                "零推理成本合规 (强制零推理 client_zero_inference=True)"
+            ]
+        else:
+            return [
+                "核心逻辑单测覆盖率 >= 80%",
+                "端侧推理合规 (按 profile 允许端侧本地模型 client_zero_inference=False)"
+            ]
+    return conditions
+
 async def seed_agent_roles_if_empty(db: AsyncSession):
     """Ensure all 8 core agent roles exist in database, updating or inserting them."""
     for role_data in DEFAULT_AGENT_ROLES:
@@ -553,11 +595,15 @@ async def migrate_db_for_roles(db: AsyncSession):
         except Exception:
             pass
 
-        # 5. Product shadow_mode column
+        # 5. Product shadow_mode & profile columns
         prod_cols = (await db.execute(text("PRAGMA table_info(products)"))).fetchall()
         existing_prod_col_names = [col[1] for col in prod_cols]
         if "shadow_mode" not in existing_prod_col_names:
             await db.execute(text("ALTER TABLE products ADD COLUMN shadow_mode BOOLEAN DEFAULT 1"))
+        if "platform" not in existing_prod_col_names:
+            await db.execute(text("ALTER TABLE products ADD COLUMN platform VARCHAR(30) DEFAULT 'ios'"))
+        if "client_zero_inference" not in existing_prod_col_names:
+            await db.execute(text("ALTER TABLE products ADD COLUMN client_zero_inference BOOLEAN DEFAULT 1"))
 
         # 6. GateApplication shadow tracking columns
         gate_cols = (await db.execute(text("PRAGMA table_info(gate_applications)"))).fetchall()
