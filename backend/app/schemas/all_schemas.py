@@ -73,6 +73,7 @@ class ProductOut(ProductBase):
     kpi_unit: Optional[str] = None
     key_risk: Optional[str] = None
     recommendation: Optional[str] = None
+    shadow_mode: Optional[bool] = True
     created_at: datetime
     updated_at: datetime
     active_runs_count: Optional[int] = 0

@@ -48,6 +48,9 @@ class GateApplicationOut(BaseModel):
     reviewed_at: Optional[datetime] = None
     review_comment: Optional[str] = None
     decision_action: Optional[str] = None
+    lead_recommendation: Optional[str] = None
+    lead_rationale: Optional[str] = None
+    is_consistent: Optional[bool] = None
     created_at: datetime
     updated_at: datetime
 

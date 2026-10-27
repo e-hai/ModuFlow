@@ -549,12 +549,13 @@ async def test_agent_roles_api():
     """Test listing agent roles and retrieving module-assigned roles."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        # 1. List all 8 core roles
+        # 1. List all roles (Lead + 8 Stage Specialists)
         res_roles = await ac.get("/api/v1/roles")
         assert res_roles.status_code == 200
         roles = res_roles.json()
-        assert len(roles) == 8
+        assert len(roles) >= 8
         role_codes = [r["role_code"] for r in roles]
+        assert "lead" in role_codes
         assert "mr" in role_codes
         assert "ba" in role_codes
         assert "pm" in role_codes

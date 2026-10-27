@@ -4,9 +4,45 @@ from sqlalchemy import select, text
 from backend.app.models.entities import AgentRoleDefinition, ModuleInstance
 
 # ==============================================================================
-# 8 Core Agent Roles for ModuFlow
+# Agent Roles for ModuFlow (Lead + 8 Stage Specialists)
 # ==============================================================================
 DEFAULT_AGENT_ROLES: List[Dict[str, Any]] = [
+    {
+        "id": "role_lead",
+        "role_code": "lead",
+        "name": "项目总控 Agent",
+        "title": "项目总负责人 (Project Lead)",
+        "avatar_icon": "ShieldCheck",
+        "color": "purple",
+        "responsibilities": (
+            "负责项目层整体统筹与调度：跨工序派活派单、阶段交接校验、工序关口申请单汇总整理、"
+            "低风险需求变更单 (CR) 仲裁与一页纸项目进度日报。在影子模式下全程记录建议与人类裁决一致率。"
+        ),
+        "system_persona": (
+            "你是一名严谨、讲求纪律与全局闭环的项目总控负责人 (Project Lead)。你的核心使命是统筹项目按计划推进，把关交付物质量与工序流转：\n"
+            "1. 【核心岗位职责】：跨工序派活派单、工序间交接校验、工序关口申请单汇总整理、低风险需求变更单 (CR) 仲裁、编制项目进度日报。\n"
+            "2. 【影子模式 (Shadow Mode) 履职准则】：\n"
+            "   - 在影子模式下，你只输出评估意见与放行建议 (lead_recommendation: approved / rejected / adjusted)，绝对不直接执行放行决议；\n"
+            "   - 系统全程记录你的建议与人类负责人的实际裁决的一致率，作为人类后续逐步向你放权的数据依据；\n"
+            "   - 影子模式开关只能由人类负责人账号修改，你无权自行开启或关闭。\n"
+            "3. 【严格能力边界与六大绝对红线 (Lead Redlines)】：\n"
+            "   - ❌ 严禁通过 G1/G2/G4/G5 等黄级与红级关口，关口审批权严格归属人类战略层；\n"
+            "   - ❌ 严禁修改自身权限、系统红线或项目预算上限；\n"
+            "   - ❌ 严禁批准任何涉及支付、隐私、敏感数据或法律合规的 CR；\n"
+            "   - ❌ 严禁触发未经人类授权的生产热修复；\n"
+            "   - ❌ 严禁批准预算增加；\n"
+            "   - ❌ 严禁提交应用商店提审。\n"
+            "4. 【所有决策留痕】：你的所有调度建议、CR 仲裁与关口评估，必须落盘记录至物理工作区 `decisions/` 目录。"
+        ),
+        "allowed_tools": [
+            "schedule_tracker",
+            "handover_validator",
+            "gate_application_compiler",
+            "cr_arbitrator",
+            "daily_digest_builder"
+        ],
+        "preferred_executor": "cli"
+    },
     {
         "id": "role_mr",
         "role_code": "mr",
@@ -484,6 +520,42 @@ async def migrate_db_for_roles(db: AsyncSession):
             await db.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_module_artifact_version ON artifacts(module_id, version)"))
         except Exception:
             pass
+
+        # 5. Product shadow_mode column
+        prod_cols = (await db.execute(text("PRAGMA table_info(products)"))).fetchall()
+        existing_prod_col_names = [col[1] for col in prod_cols]
+        if "shadow_mode" not in existing_prod_col_names:
+            await db.execute(text("ALTER TABLE products ADD COLUMN shadow_mode BOOLEAN DEFAULT 1"))
+
+        # 6. GateApplication shadow tracking columns
+        gate_cols = (await db.execute(text("PRAGMA table_info(gate_applications)"))).fetchall()
+        existing_gate_col_names = [col[1] for col in gate_cols]
+        if "lead_recommendation" not in existing_gate_col_names:
+            await db.execute(text("ALTER TABLE gate_applications ADD COLUMN lead_recommendation VARCHAR(20) DEFAULT NULL"))
+        if "lead_rationale" not in existing_gate_col_names:
+            await db.execute(text("ALTER TABLE gate_applications ADD COLUMN lead_rationale TEXT DEFAULT NULL"))
+        if "is_consistent" not in existing_gate_col_names:
+            await db.execute(text("ALTER TABLE gate_applications ADD COLUMN is_consistent BOOLEAN DEFAULT NULL"))
+
+        # 7. Create lead_shadow_decisions table if not exists
+        await db.execute(text("""
+            CREATE TABLE IF NOT EXISTS lead_shadow_decisions (
+                id VARCHAR PRIMARY KEY,
+                product_id VARCHAR NOT NULL REFERENCES products(id),
+                module_id VARCHAR REFERENCES module_instances(id),
+                gate_application_id VARCHAR REFERENCES gate_applications(id),
+                decision_type VARCHAR(30) NOT NULL DEFAULT 'gate_review',
+                stage_code VARCHAR(10),
+                lead_recommendation VARCHAR(20) NOT NULL,
+                lead_rationale TEXT,
+                human_decision VARCHAR(20),
+                human_feedback TEXT,
+                human_reviewer VARCHAR(50),
+                is_consistent BOOLEAN,
+                resolved_at DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
 
         await db.commit()
 
