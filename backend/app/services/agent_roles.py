@@ -635,6 +635,25 @@ async def migrate_db_for_roles(db: AsyncSession):
             )
         """))
 
+        # 8. Create hotfix_followup_tasks table if not exists (Phase 7)
+        await db.execute(text("""
+            CREATE TABLE IF NOT EXISTS hotfix_followup_tasks (
+                id VARCHAR PRIMARY KEY,
+                run_id VARCHAR NOT NULL REFERENCES workflow_runs(id),
+                product_id VARCHAR NOT NULL REFERENCES products(id),
+                task_type VARCHAR(30) NOT NULL,
+                title VARCHAR(200) NOT NULL,
+                description TEXT,
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                deadline DATETIME NOT NULL,
+                completed_at DATETIME,
+                completed_by VARCHAR(50),
+                notes TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+
         await db.commit()
 
         # 5. Update existing module instances to reflect their stage role configs & execution mode

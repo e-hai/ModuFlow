@@ -96,7 +96,7 @@ ROLE_EXCLUSIVE_ARSENAL: Dict[str, Dict[str, Any]] = {
             "            missing_chapters.append(code)\n\n"
             "    views_detected = sorted(list(set(re.findall(r'V-0[1-9]', content))))\n"
             "    modules_detected = sorted(list(set(re.findall(r'\\bM[1-9]\\b', content))))\n"
-            "    table_count = len(re.findall(r'\\|(?:\s*[-:]+\s*\\|)+', content))\n"
+            "    table_count = len(re.findall(r'\\|(?:\\s*[-:]+\\s*\\|)+', content))\n"
             "    mermaid_diagrams = len(re.findall(r'```mermaid', content))\n"
             "    has_banned_smoke_test = bool(re.search(r'工序\\s*04\\s*假门测试|Smoke\\s*Test\\s*待回填|Go/Pivot/Kill\\s*裁决', content))\n\n"
             "    has_sql_ddl = bool(re.search(r'^\\s*CREATE\\s+(?:TABLE|INDEX)\\b', content, re.IGNORECASE | re.MULTILINE))\n"
