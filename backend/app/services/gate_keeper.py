@@ -257,6 +257,8 @@ async def create_or_update_gate_application(
 
         prod_display = f"{product.name} ({product_code})" if product and product.name else product_code
 
+        clean_rec = recommendation.replace("申请 G4 提审发布审批！", "申请商店提审发布").replace("G4 提审门禁", "商店提审关口")
+
         risk = ExecutiveRisk(
             initiative_id=initiative_id,
             rule_code=f"GATE_RED_{mod.module_code}",
@@ -265,10 +267,10 @@ async def create_or_update_gate_application(
             description=(
                 f"产品「{prod_display}」在【工序 {mod.module_code}：{mod.name}】达到重大决策节点。"
                 f"{'检测到敏感项触发必须由您亲自签署的条件: ' + '; '.join(gate.escalation_reasons) if gate.is_escalated else '该工序涉及重大对外发布决策，按安全规则必须由人类负责人亲自确认。'}\n"
-                f"AI 主管研判建议: {recommendation[:120]}"
+                f"项目总控建议: {clean_rec[:120]}"
             ),
             product_code=product_code,
-            action_suggestion="请点击下方「查看详情并拍板」，确认合规材料与应急回滚预案后签署放行。",
+            action_suggestion="请核对合规审查材料与应急回滚预案后确认放行。",
             is_resolved=False
         )
         db.add(risk)
@@ -363,6 +365,8 @@ async def review_gate_application(
         r_res = await db.execute(r_stmt)
         for risk in r_res.scalars().all():
             risk.is_resolved = True
+            risk.title = risk.title.replace("🔴 待您亲自把关：", "✅ 已确认放行：")
+            risk.action_suggestion = f"已由负责人 ({actor}) 审核确认放行，流程已推进至下一阶段。"
 
     # Audit log in decisions/
     p_stmt = select(Product).where(Product.code == gate.product_code)

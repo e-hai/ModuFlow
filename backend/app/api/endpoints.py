@@ -495,6 +495,49 @@ async def act_on_decision(
         created_at=decision.created_at
     )
 
+
+@api_router.post("/initiatives/{initiative_id}/risks/{risk_id}/resolve", response_model=ExecutiveRiskItem)
+async def resolve_executive_risk(
+    initiative_id: str,
+    risk_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(ExecutiveRisk).where(
+        ExecutiveRisk.id == risk_id,
+        ExecutiveRisk.initiative_id == initiative_id
+    )
+    res = await db.execute(stmt)
+    risk = res.scalar_one_or_none()
+    if not risk:
+        raise HTTPException(status_code=404, detail="Risk alert not found")
+
+    risk.is_resolved = True
+    if "待您亲自把关" in risk.title:
+        risk.title = risk.title.replace("🔴 待您亲自把关：", "✅ 已确认放行：")
+    elif "越权拦截" in risk.title:
+        risk.title = risk.title.replace("🚨 越权拦截", "✅ 已核查拦截")
+    elif "🚨" in risk.title:
+        risk.title = f"✅ 已核查消除：{risk.title.replace('🚨', '').strip()}"
+    else:
+        risk.title = f"✅ 已处置：{risk.title}"
+
+    risk.action_suggestion = "已由负责人核查并解除预警。"
+    await db.commit()
+    await db.refresh(risk)
+
+    return ExecutiveRiskItem(
+        id=risk.id,
+        rule_code=risk.rule_code,
+        title=risk.title,
+        severity=risk.severity,
+        description=risk.description,
+        product_code=risk.product_code,
+        action_suggestion=risk.action_suggestion,
+        is_resolved=risk.is_resolved,
+        created_at=risk.created_at.isoformat() if risk.created_at else ""
+    )
+
+
 # --- Products ---
 @api_router.get("/products", response_model=List[ProductOut])
 async def list_products(initiative_id: Optional[str] = None, db: AsyncSession = Depends(get_db)):

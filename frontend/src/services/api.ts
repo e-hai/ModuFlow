@@ -10,6 +10,7 @@ import {
   Issue,
   ExecutiveCockpitResponse,
   ExecutiveDecisionItem,
+  ExecutiveRiskItem,
   AgentSettings,
   ChangeReview,
   GateConfig,
@@ -154,6 +155,10 @@ export const api = {
     fetchJSON<ExecutiveDecisionItem>(`/initiatives/${initiativeId}/decisions/${decisionId}/action`, {
       method: 'POST',
       body: JSON.stringify({ action, operator }),
+    }),
+  resolveRisk: (initiativeId: string, riskId: string) =>
+    fetchJSON<ExecutiveRiskItem>(`/initiatives/${initiativeId}/risks/${riskId}/resolve`, {
+      method: 'POST',
     }),
 
   // Workspace Sync

@@ -467,6 +467,14 @@ async def test_executive_cockpit_and_decision():
         assert updated_acc_sea["budget_allocated"] == 185000.0
         assert updated_qpay["budget_allocated"] == 315000.0
 
+        # 4. Test resolving an ExecutiveRisk
+        risk_id = cockpit["risks"][0]["id"]
+        res_resolve = await ac.post(f"/api/v1/initiatives/sea-2026/risks/{risk_id}/resolve")
+        assert res_resolve.status_code == 200
+        resolved_risk = res_resolve.json()
+        assert resolved_risk["is_resolved"] is True
+        assert "已" in resolved_risk["title"]
+
 @pytest.mark.asyncio
 async def test_single_active_iteration_lifecycle():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
