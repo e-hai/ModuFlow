@@ -2044,3 +2044,73 @@ async def audit_module_zero_inference(
     return audit_result
 
 
+# --- Phase 7: Hotfix Follow-up Tasks & Portfolio Weekly Report Endpoints ---
+
+@api_router.post("/runs/{run_id}/hotfix-release")
+async def trigger_hotfix_release(
+    run_id: str,
+    x_moduflow_actor: Optional[str] = Header(None, alias="X-ModuFlow-Actor"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Triggers completion of Hotfix release and automatically schedules the 3 mandatory
+    24h follow-up tasks: 补 CR + 故障复盘 + PRD 规格基线同步。
+    """
+    actor_id = x_moduflow_actor or "human:system"
+    from backend.app.services.portfolio_and_hotfix_service import create_hotfix_followup_tasks
+    result = await create_hotfix_followup_tasks(db, run_id, actor_id=actor_id)
+    return result
+
+
+@api_router.get("/runs/{run_id}/hotfix-tasks")
+async def get_hotfix_tasks_status(
+    run_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Checks the 24h SLA status of hotfix documentation tasks.
+    Raises critical ExecutiveRisk alert if 24h has passed with pending tasks.
+    """
+    from backend.app.services.portfolio_and_hotfix_service import check_hotfix_documentation_sla
+    result = await check_hotfix_documentation_sla(db, run_id)
+    return result
+
+
+@api_router.post("/hotfix-tasks/{task_id}/complete")
+async def complete_hotfix_task_endpoint(
+    task_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    x_moduflow_actor: Optional[str] = Header(None, alias="X-ModuFlow-Actor"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Marks a Hotfix follow-up task as completed."""
+    actor_id = x_moduflow_actor or "human:operator"
+    notes = (payload or {}).get("notes")
+    from backend.app.services.portfolio_and_hotfix_service import complete_hotfix_task
+    task = await complete_hotfix_task(db, task_id, actor_id=actor_id, notes=notes)
+    return {
+        "id": task.id,
+        "run_id": task.run_id,
+        "task_type": task.task_type,
+        "status": task.status,
+        "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+        "completed_by": task.completed_by
+    }
+
+
+@api_router.get("/portfolio/weekly-report")
+async def get_portfolio_weekly_report(
+    initiative_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Generates and returns the aggregated 1-page Executive Portfolio Weekly Report across products:
+    - Stage, budget/spent, KPIs, risks, recommendations
+    - Strict Redline: Outputs recommendations ONLY, NO autonomous budget/killing action!
+    """
+    from backend.app.services.portfolio_and_hotfix_service import generate_portfolio_weekly_report
+    report = await generate_portfolio_weekly_report(db, initiative_id=initiative_id)
+    return report
+
+
+

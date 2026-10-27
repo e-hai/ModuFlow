@@ -359,3 +359,30 @@ class LeadShadowDecision(Base):
     product = relationship("Product")
     gate_application = relationship("GateApplication")
 
+
+class HotfixFollowupTask(Base):
+    """
+    热修发布后 24h 闭环跟踪待办实体 (Phase 7)
+    涵盖三项硬性闭环：①补提交需求变更单 (CR)、②生产故障复盘 (Post-Mortem)、③工序 05 PRD 基线同步更新
+    """
+    __tablename__ = "hotfix_followup_tasks"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    run_id = Column(String, ForeignKey("workflow_runs.id"), nullable=False)
+    product_id = Column(String, ForeignKey("products.id"), nullable=False)
+    task_type = Column(String(30), nullable=False) # cr_patch, postmortem, prd_update
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String(20), nullable=False, default="pending") # pending, in_progress, completed
+    deadline = Column(DateTime, nullable=False) # 24h from hotfix release
+    completed_at = Column(DateTime, nullable=True)
+    completed_by = Column(String(50), nullable=True)
+    notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    run = relationship("WorkflowRun")
+    product = relationship("Product")
+
+

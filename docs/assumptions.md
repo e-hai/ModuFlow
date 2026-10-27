@@ -208,3 +208,32 @@
   - 新增 9 项 Phase 6 测试用例 (`backend/tests/test_project_profile.py`)；
   - 全部 74 项测试用例 100% 绿灯通过；
   - 前端编译 `npm run build` 0 错误（8.42s 完成）。
+
+---
+
+## 九、Phase 7 落地执行记录 (Phase 7 Execution Log)
+
+- **完成日期**：2026-10-27
+- **分支**：`phase7-hotfix-and-portfolio`
+- **核心业务需求与参数化实现**：
+  1. **热修发布 24 小时硬性补档 SLA 闭环**：
+     - 当执行 `hotfix` 模板运行发布上线（或调用 `POST /api/v1/runs/{run_id}/hotfix-release`）后，系统自动生成 3 项闭环任务：
+       - `[热修补档-01] 补提交需求变更单 (CR)`（task_type: `cr_patch`）；
+       - `[热修补档-02] 生产故障复盘与 RCA 根因分析`（task_type: `postmortem`）；
+       - `[热修补档-03] 同步修订工序 05 PRD 规格基线与 Gherkin 验收用例`（task_type: `prd_update`）；
+     - **超期确定性告警**：发布后超过 24 小时若仍有未完成补档任务，系统自动生成 🔴 `ExecutiveRisk (critical)` 系统级告警，并在物理目录 `decisions/{timestamp}_hotfix_overdue_alert.json` 留痕，防止线上热修代码与 PRD 脱节；
+  2. **投资组合层一页周报看板 (Portfolio Weekly Digest)**：
+     - 从全矩阵数据库汇总产品阶段、花费/预算消耗、核心 KPI 达成、风险与建议动作；
+     - **硬性红线铁律 (Strict Strategic Redline Guardrail)**：
+       组合层周报**仅出具跨产品协同与资源分配建议，严禁系统或 Agent 自动执行加码、砍项目或跨产品划转资金！** 确保人类战略决策人 (Human Sponsor) 对资本与项目生死的唯一决定权；
+     - 双层交付物标准化：输出顶层《负责人 30 秒拍板摘要卡 (Executive Gate)》与底层《完整执行细节 (Execution Reference)》，同步写入磁盘工作区 `data/workspaces/{initiative_id}/portfolio_weekly_report.md` 与审计决策文件 `decisions/`；
+  3. **数据模型与 RESTful API 扩充**：
+     - `HotfixFollowupTask` 实体持久化补档任务与 24h 截止时间；
+     - `POST /api/v1/runs/{run_id}/hotfix-release`：触发热修发布并排期补档待办；
+     - `GET /api/v1/runs/{run_id}/hotfix-tasks`：查询热修补档 SLA 状态与超期告警；
+     - `POST /api/v1/hotfix-tasks/{task_id}/complete`：标记补档任务完成；
+     - `GET /api/v1/portfolio/weekly-report`：生成全矩阵一页周报。
+- **自动化测试表现**：
+  - 新增 7 项 Phase 7 测试用例 (`backend/tests/test_hotfix_portfolio.py`)；
+  - 全部 81 项测试用例 100% 绿灯通过；
+  - 前端编译 `npm run build` 0 错误（8.46s 完成）。
