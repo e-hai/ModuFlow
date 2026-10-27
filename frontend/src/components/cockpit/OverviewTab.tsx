@@ -2,17 +2,14 @@ import React from 'react';
 import {
   TrendingUp,
   TrendingDown,
-  AlertTriangle,
-  ArrowRight,
   CheckCircle2,
   DollarSign,
   Users,
-  Target,
   ShieldAlert,
   HelpCircle,
   Briefcase
 } from 'lucide-react';
-import { ExecutiveCockpitResponse, FocusAlert } from '../../types';
+import { ExecutiveCockpitResponse } from '../../types';
 import { MetricTooltip } from './MetricTooltip';
 import { CockpitTabKey } from './CockpitHeader';
 
@@ -27,12 +24,12 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   onNavigateTab,
   onEnterProductWorkbench,
 }) => {
-  const { financials, focus_alerts, portfolio, marketing, operations } = cockpit;
+  const { financials, portfolio, marketing, operations } = cockpit;
 
   return (
     <div className="space-y-6">
       {/* 1. 经营核心指标带 (Top Ledger Ribbon) */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {/* 实际支出 */}
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
@@ -104,24 +101,6 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           </div>
         </div>
 
-        {/* 经营预警数 */}
-        <div
-          onClick={() => onNavigateTab('decisions')}
-          className="bg-white border border-slate-200 hover:border-amber-300 rounded-xl p-4 shadow-xs cursor-pointer transition group"
-        >
-          <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
-            <span>经营预警</span>
-            <AlertTriangle className="w-4 h-4 text-amber-500" />
-          </div>
-          <div className="text-xl font-bold text-amber-600 font-mono">
-            {cockpit.risks.length} 项
-          </div>
-          <div className="text-[11px] text-slate-400 group-hover:text-amber-700 mt-1 flex items-center justify-between transition">
-            <span>需关注的异常项</span>
-            <span>查看 &gt;</span>
-          </div>
-        </div>
-
         {/* 待批决策 */}
         <div
           onClick={() => onNavigateTab('decisions')}
@@ -141,75 +120,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         </div>
       </div>
 
-      {/* 2. 本期重点关注卡片 (Focus Cards) */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-            <Target className="w-4 h-4 text-emerald-600" />
-            本期重点关注事项
-          </h2>
-          <span className="text-xs text-slate-400">基于最新经营数据自动研判并触发</span>
-        </div>
-
-        {focus_alerts.length === 0 ? (
-          <div className="bg-white border border-slate-200 rounded-xl p-5 text-center text-slate-400 flex items-center justify-center gap-3">
-            <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
-            <span className="text-xs text-slate-600">当前运行平稳，无高危风险或预算超限</span>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {focus_alerts.map((alert) => {
-              const isWarning = alert.severity === 'warning';
-              const isCritical = alert.severity === 'critical';
-              return (
-                <div
-                  key={alert.id}
-                  className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-col justify-between space-y-3 hover:shadow-md transition"
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span
-                        className={`text-[10px] font-semibold px-2 py-0.5 rounded uppercase tracking-wider font-mono ${
-                          isCritical
-                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                            : isWarning
-                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                            : 'bg-blue-50 text-blue-700 border border-blue-200'
-                        }`}
-                      >
-                        {alert.type}
-                      </span>
-                      <span className="text-[11px] text-slate-400 font-mono">{alert.id}</span>
-                    </div>
-
-                    <h3 className="text-xs font-bold text-slate-900 leading-snug">{alert.title}</h3>
-                    <p className="text-[11px] text-slate-600 leading-relaxed">{alert.summary}</p>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                    <span className="text-[11px] text-slate-500 font-medium">
-                      {alert.action_hint || '建议进入模块评估'}
-                    </span>
-                    <button
-                      onClick={() => {
-                        if (alert.type === 'cac_spike') onNavigateTab('marketing');
-                        else if (alert.type === 'breakeven_delayed') onNavigateTab('finance');
-                        else onNavigateTab('decisions');
-                      }}
-                      className="text-xs text-emerald-700 hover:text-emerald-800 font-semibold flex items-center gap-1 group cursor-pointer"
-                    >
-                      处理
-                      <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* 3. 核心经营结果矩阵 (Core Business Results Matrix) */}
+      {/* 2. 核心经营结果矩阵 (Core Business Results Matrix) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 产品组合投资与 KPI */}
         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
