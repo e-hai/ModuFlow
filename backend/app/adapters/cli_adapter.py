@@ -5,6 +5,7 @@ from typing import AsyncIterator, Optional, Dict, Any, List
 from pathlib import Path
 from backend.app.adapters.base import BaseAgentAdapter, AgentStreamEvent, AgentEventType
 from backend.app.core.config import settings
+from backend.app.services.security_guard import sanitize_agent_environment
 
 def get_cli_search_path() -> str:
     """Construct a comprehensive PATH including common CLI install locations on macOS/Linux."""
@@ -142,8 +143,9 @@ class CliSubprocessAdapter(BaseAgentAdapter):
 
             args = build_cli_arguments(cmd_path, prompt_for_cli)
             search_path = get_cli_search_path()
+            sanitized_env = sanitize_agent_environment(dict(os.environ))
             env = {
-                **os.environ,
+                **sanitized_env,
                 "MODUFLOW_WORKSPACE": str(workspace_dir),
                 "PATH": search_path
             }
@@ -388,8 +390,9 @@ class CliSubprocessAdapter(BaseAgentAdapter):
 
         args = build_cli_arguments(cmd_path, prompt_for_cli)
         search_path = get_cli_search_path()
+        sanitized_env = sanitize_agent_environment(dict(os.environ))
         env = {
-            **os.environ,
+            **sanitized_env,
             "MODUFLOW_WORKSPACE": str(workspace_dir),
             "PATH": search_path
         }

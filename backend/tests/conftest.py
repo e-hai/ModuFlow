@@ -37,6 +37,15 @@ app.dependency_overrides[get_db] = override_get_db
 def ensure_test_product_authorization(initiative_id: str, product_code: str, budget: float = 5000.0) -> Path:
     auth_path = get_product_authorization_path(initiative_id, product_code)
     auth_path.parent.mkdir(parents=True, exist_ok=True)
+    if auth_path.exists():
+        try:
+            os.chmod(auth_path, 0o644)
+        except Exception:
+            pass
     data = generate_default_authorization_dict(product_code, product_code, budget)
     auth_path.write_text(yaml.dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    try:
+        os.chmod(auth_path, 0o444)
+    except Exception:
+        pass
     return auth_path
