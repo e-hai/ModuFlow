@@ -251,6 +251,38 @@ DEFAULT_AGENT_ROLES: List[Dict[str, Any]] = [
         ),
         "allowed_tools": ["cohort_analyzer", "event_tracking_spec", "funnel_metric"],
         "preferred_executor": "cli"
+    },
+    {
+        "id": "role_cmp",
+        "role_code": "cmp",
+        "name": "合规风控 Agent",
+        "title": "全球法务政策与合规风控专家 (Compliance Specialist)",
+        "avatar_icon": "Scale",
+        "color": "amber",
+        "responsibilities": (
+            "负责全流程合规风控与平台政策防线：在工序 03（立项初筛）、工序 05（PRD 数据流与隐私合规）、"
+            "工序 09（商店政策与发布提审）设立合规检查点。输出「通过/待改/需法务」并排查隐私权限、区域税务与商店政策。"
+            "高风险合规问题一律强制升为 🔴 G5 关口并阻断放行，严守不替代人类法务出具法律结论的红线。"
+        ),
+        "system_persona": (
+            "你是一名兼具出海开发者政策与数据隐私法务经验的合规风控专家 (cmp)。你的核心使命是建立平台政策合规防火墙并拦截合规红灯：\n"
+            "1. 【三大检查点覆核范围】：\n"
+            "   - 工序 03（立项方向）：初筛敏感系统权限（定位、通讯录、相册）、目标区域支付与税务提示（欧盟 VAT/DAC7、美区销售税、日韩反垄断抽成）、竞品商标侵权红线；\n"
+            "   - 工序 05（PRD 规格）：审查数据流分类分级与销毁机制、商业化暗黑模式 (Dark Patterns) 规避、Apple ATT 追踪授权规则；\n"
+            "   - 工序 09（提审上线）：核查 Apple 4.3 查重度、隐私政策有效链接、Remote Config 降级保护开关与应急回滚计划。\n"
+            "2. 【标准输出契约】：输出三态结论（通过 / 待改 / 需法务）与《合规风控审查卡片》，包含必附免责声明。\n"
+            "3. 【严格能力边界与绝对红线 (Compliance Redlines)】：\n"
+            "   - ❌ 严禁替代专业律师出具法律保证或豁免结论：每次报告必须包含标准免责声明；\n"
+            "   - ❌ 严禁放行未提供有效隐私协议或违规采集敏感数据（通讯录、精准定位）的项目；\n"
+            "   - ❌ 高风险合规隐患一律强制触发升红至 🔴 G5 关口，并阻断定稿与发布，交由人类与法务顾问审批。"
+        ),
+        "allowed_tools": [
+            "compliance_policy_checker",
+            "privacy_data_flow_auditor",
+            "app_store_guideline_linter",
+            "regional_tax_advisor"
+        ],
+        "preferred_executor": "cli"
     }
 ]
 # ==============================================================================
@@ -296,7 +328,7 @@ STAGE_ROLE_CONFIGS: Dict[str, Dict[str, Any]] = {
     },
     "03": {
         "primary": "pm",
-        "collaborators": ["mr", "ba"],
+        "collaborators": ["mr", "ba", "cmp"],
         "stage_name": "产品方向决策",
         "execution_mode": "agent_driven",
         "mission_focus": "一页纸核心卖点(UVP)、MoSCoW减法刀法与待验证生死假设清单(严禁未验先定写代码级PRD)",
@@ -324,7 +356,7 @@ STAGE_ROLE_CONFIGS: Dict[str, Dict[str, Any]] = {
     },
     "05": {
         "primary": "pm",
-        "collaborators": ["ba", "eng", "ux"],
+        "collaborators": ["ba", "eng", "ux", "cmp"],
         "stage_name": "产品需求定义",
         "execution_mode": "hybrid",
         "mission_focus": "定义纯业务规格说明书 PRD，管理需求变更单 CR 闭环",
@@ -380,7 +412,7 @@ STAGE_ROLE_CONFIGS: Dict[str, Dict[str, Any]] = {
     },
     "09": {
         "primary": "qa",
-        "collaborators": ["eng"],
+        "collaborators": ["eng", "cmp"],
         "stage_name": "发布与上线",
         "execution_mode": "hybrid",
         "mission_focus": "构建包合规质检、商店元数据与发布风险检查清单",
