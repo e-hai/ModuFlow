@@ -349,3 +349,151 @@ export interface AgentSettings {
   timeout: number;
   available_presets: AgentPresetItem[];
 }
+
+// --- Three-Tier Architecture, Gate Classification & Profile Types ---
+
+export type GateLevel = 'green' | 'yellow' | 'red';
+
+export interface GateConfig {
+  name: string;
+  level: GateLevel;
+  approver: 'lead' | 'human' | 'qa';
+  conditions: string[];
+  auto_escalate_triggers: string[];
+}
+
+export interface GateApplication {
+  id: string;
+  module_id: string;
+  run_id: string;
+  product_code: string;
+  module_code: string;
+  gate_name: string;
+  base_level: GateLevel;
+  effective_level: GateLevel;
+  is_escalated: boolean;
+  escalation_reasons: string[];
+  status: 'pending' | 'approved' | 'rejected' | 'adjusted' | string;
+  recommendation: string;
+  evidence: any;
+  risk_assessment: string;
+  decision_options: string[];
+  submitted_by: string;
+  submitted_at: string;
+  reviewed_by?: string;
+  reviewer_role?: string;
+  reviewed_at?: string;
+  review_comment?: string;
+  decision_action?: string;
+  lead_recommendation?: string;
+  lead_rationale?: string;
+  is_consistent?: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductProfile {
+  product_id: string;
+  product_code: string;
+  platform: 'ios' | 'android' | string;
+  client_zero_inference: boolean;
+  ruleset: string;
+}
+
+export interface ShadowStats {
+  product_id: string;
+  product_code?: string;
+  shadow_mode_enabled: boolean;
+  total_evaluated: number;
+  consistent_count: number;
+  divergent_count: number;
+  consistency_rate: number;
+  recent_decisions: Array<{
+    gate_id: string;
+    gate_name?: string;
+    lead_recommendation: string;
+    human_action?: string;
+    is_consistent: boolean;
+    evaluated_at?: string;
+  }>;
+}
+
+export interface HotfixFollowupTask {
+  id: string;
+  run_id: string;
+  task_type: 'cr_patch' | 'postmortem' | 'prd_update';
+  title: string;
+  status: 'pending' | 'completed';
+  sla_deadline: string;
+  is_breached: boolean;
+  created_at: string;
+  completed_at?: string;
+  completed_by?: string;
+  notes?: string;
+}
+
+export interface HotfixTasksStatus {
+  run_id: string;
+  sla_deadline: string;
+  is_breached: boolean;
+  hours_remaining: number;
+  all_completed: boolean;
+  tasks: HotfixFollowupTask[];
+}
+
+export interface PortfolioWeeklyProductSummary {
+  product_code: string;
+  name: string;
+  stage: string;
+  spent: number;
+  budget: number;
+  burn_percent: number;
+  status_color: 'green' | 'amber' | 'red';
+  recommendation: string;
+  kill_criteria_hit: boolean;
+}
+
+export interface PortfolioWeeklyReport {
+  generated_at: string;
+  total_products: number;
+  healthy_count: number;
+  risky_count: number;
+  total_budget_usd: number;
+  total_spent_usd: number;
+  budget_utilization_rate: number;
+  products_summary: PortfolioWeeklyProductSummary[];
+  strategic_recommendations: string[];
+  redline_notice: string;
+}
+
+export interface ProjectDailyDigest {
+  product_code: string;
+  date: string;
+  author: string;
+  active_run_id?: string;
+  active_run_name?: string;
+  template_id?: string;
+  stage_progress: {
+    baselined_modules: number;
+    total_modules: number;
+    completion_rate_percent: number;
+  };
+  budget_status: {
+    spent: number;
+    budget: number;
+    burn_percent: number;
+  };
+  today_events: Array<{
+    time: string;
+    module_code: string;
+    event_type: string;
+    summary: string;
+  }>;
+  pending_items: Array<{
+    item_type: string;
+    title: string;
+    urgency: string;
+  }>;
+  lead_assessment: string;
+}
+

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Layers,
   Plus,
@@ -9,10 +9,12 @@ import {
   CheckCircle2,
   Sliders,
   ShieldAlert,
-  HelpCircle
+  HelpCircle,
+  FileText
 } from 'lucide-react';
 import { PortfolioProductItem, Product } from '../../types';
 import { MetricTooltip } from './MetricTooltip';
+import { PortfolioWeeklyReportModal } from '../portfolio/PortfolioWeeklyReportModal';
 
 interface PortfolioTabProps {
   portfolio: PortfolioProductItem[];
@@ -27,6 +29,7 @@ export const PortfolioTab: React.FC<PortfolioTabProps> = ({
   onOpenNewProductModal,
   onEnterProductWorkbench,
 }) => {
+  const [showWeeklyReportModal, setShowWeeklyReportModal] = useState(false);
   const getStrategicRoleBadge = (role: string) => {
     switch (role) {
       case 'acquisition':
@@ -88,6 +91,15 @@ export const PortfolioTab: React.FC<PortfolioTabProps> = ({
                 <span className="text-emerald-700">¥{(totalRevenue / 1000).toFixed(0)}k</span>
               </span>
             </div>
+
+            <button
+              onClick={() => setShowWeeklyReportModal(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition shadow-2xs cursor-pointer"
+              title="查看投资组合一页纸决策周报"
+            >
+              <FileText className="w-3.5 h-3.5 text-emerald-600" />
+              <span>CEO 投资周报</span>
+            </button>
 
             <button
               onClick={onOpenNewProductModal}
@@ -246,6 +258,12 @@ export const PortfolioTab: React.FC<PortfolioTabProps> = ({
           })}
         </div>
       )}
+
+      {/* CEO 一页纸投资周报弹窗 */}
+      <PortfolioWeeklyReportModal
+        isOpen={showWeeklyReportModal}
+        onClose={() => setShowWeeklyReportModal(false)}
+      />
     </div>
   );
 };

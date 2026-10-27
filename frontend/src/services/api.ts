@@ -11,7 +11,15 @@ import {
   ExecutiveCockpitResponse,
   ExecutiveDecisionItem,
   AgentSettings,
-  ChangeReview
+  ChangeReview,
+  GateConfig,
+  GateApplication,
+  ProductProfile,
+  ShadowStats,
+  HotfixTasksStatus,
+  HotfixFollowupTask,
+  PortfolioWeeklyReport,
+  ProjectDailyDigest
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -171,5 +179,80 @@ export const api = {
   getModuleRoles: (moduleId: string) =>
     fetchJSON<{ primary: import('../types').AgentRoleDefinition | null; collaborators: import('../types').AgentRoleDefinition[] }>(
       `/modules/${moduleId}/roles`
+    ),
+
+  // --- Human Gate System (Phases 2 & 4) ---
+  getModuleGateConfig: (moduleId: string) =>
+    fetchJSON<GateConfig>(`/modules/${moduleId}/gate-config`),
+  getModuleGateApplication: (moduleId: string) =>
+    fetchJSON<GateApplication>(`/modules/${moduleId}/gate-application`),
+  submitGateApplication: (
+    moduleId: string,
+    data: {
+      recommendation: string;
+      evidence: any[];
+      risk_assessment: string;
+      decision_options?: string[];
+      context?: Record<string, any>;
+    }
+  ) =>
+    fetchJSON<GateApplication>(`/modules/${moduleId}/gate-application`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  reviewGateApplication: (
+    gateId: string,
+    data: { action: 'approve' | 'reject' | 'adjust'; comment?: string; reviewer_name?: string }
+  ) =>
+    fetchJSON<GateApplication>(`/gates/${gateId}/review`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  listPendingGatesForBatch: (params?: { level?: string; product_code?: string }) => {
+    const query = new URLSearchParams(params as any).toString();
+    return fetchJSON<GateApplication[]>(`/gates/pending-batch${query ? `?${query}` : ''}`);
+  },
+  evaluateGateByLead: (moduleId: string) =>
+    fetchJSON<GateApplication>(`/modules/${moduleId}/lead/evaluate-gate`, {
+      method: 'POST',
+    }),
+
+  // --- Lead Agent & Shadow Mode (Phase 4) ---
+  getProductShadowStats: (productId: string) =>
+    fetchJSON<ShadowStats>(`/products/${productId}/lead/shadow-stats`),
+  toggleProductShadowMode: (productId: string, enabled: boolean) =>
+    fetchJSON<{ ok: boolean; product_id: string; product_code: string; shadow_mode: boolean; message: string }>(
+      `/products/${productId}/lead/shadow-mode`,
+      {
+        method: 'POST',
+        headers: {
+          'X-ModuFlow-Actor': 'human:sponsor',
+        },
+        body: JSON.stringify({ enabled }),
+      }
+    ),
+  getProjectDailyDigest: (productId: string) =>
+    fetchJSON<ProjectDailyDigest>(`/products/${productId}/lead/daily-digest`),
+
+  // --- Project Profile & Guardrails (Phase 6) ---
+  getProductProfile: (productId: string) =>
+    fetchJSON<ProductProfile>(`/products/${productId}/profile`),
+
+  // --- Hotfix 24h SLA & Portfolio Weekly Report (Phase 7) ---
+  triggerHotfixRelease: (runId: string) =>
+    fetchJSON<{ ok: boolean; run_id: string; tasks_created: number; sla_deadline: string }>(
+      `/runs/${runId}/hotfix-release`,
+      { method: 'POST' }
+    ),
+  getHotfixTasks: (runId: string) =>
+    fetchJSON<HotfixTasksStatus>(`/runs/${runId}/hotfix-tasks`),
+  completeHotfixTask: (taskId: string, notes?: string) =>
+    fetchJSON<HotfixFollowupTask>(`/hotfix-tasks/${taskId}/complete`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    }),
+  getPortfolioWeeklyReport: (initiativeId?: string) =>
+    fetchJSON<PortfolioWeeklyReport>(
+      initiativeId ? `/portfolio/weekly-report?initiative_id=${initiativeId}` : '/portfolio/weekly-report'
     ),
 };

@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../services/api';
-import { Product, WorkflowRun, ModuleInstance, WorkflowTemplate } from '../types';
+import { Product, WorkflowRun, ModuleInstance, WorkflowTemplate, ProductProfile, ShadowStats, GateConfig } from '../types';
 import { PhaseBadge } from '../components/StatusBadge';
+import { GateBadge } from '../components/gate/GateBadge';
+import { LeadDailyDigestModal } from '../components/lead/LeadDailyDigestModal';
+import { HotfixSlaCard } from '../components/hotfix/HotfixSlaCard';
 import {
   Lock,
   MessageSquare,
@@ -22,7 +25,11 @@ import {
   Ban,
   ArrowLeft,
   Edit3,
-  AlertCircle
+  AlertCircle,
+  Bot,
+  Smartphone,
+  Cpu,
+  ShieldCheck
 } from 'lucide-react';
 
 interface WorkflowViewProps {
@@ -57,6 +64,12 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
   const [renameValue, setRenameValue] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
 
+  // Three-Tier Architecture, Profile & Lead Shadow Mode state
+  const [productProfile, setProductProfile] = useState<ProductProfile | null>(null);
+  const [shadowStats, setShadowStats] = useState<ShadowStats | null>(null);
+  const [showDigestModal, setShowDigestModal] = useState(false);
+  const [gateConfigs, setGateConfigs] = useState<Record<string, GateConfig>>({});
+
   const activeProduct = currentProduct || allProducts[0];
 
   const activeRun = productRuns.find(r => r.status === 'in_progress');
@@ -72,21 +85,41 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
   const loadProductRuns = async (prodId: string, runIdToPick?: string) => {
     try {
       setLoading(true);
-      const [runsList, tplList] = await Promise.all([
+      const [runsList, tplList, prof, shadow] = await Promise.allSettled([
         api.getRuns(prodId),
-        api.getTemplates()
+        api.getTemplates(),
+        api.getProductProfile(prodId),
+        api.getProductShadowStats(prodId)
       ]);
-      setProductRuns(runsList);
-      setTemplates(tplList);
 
-      if (runsList.length > 0) {
-        const inProgress = runsList.find(r => r.status === 'in_progress');
+      if (runsList.status === 'fulfilled') setProductRuns(runsList.value);
+      if (tplList.status === 'fulfilled') setTemplates(tplList.value);
+      if (prof.status === 'fulfilled') setProductProfile(prof.value);
+      if (shadow.status === 'fulfilled') setShadowStats(shadow.value);
+
+      const resolvedRuns = runsList.status === 'fulfilled' ? runsList.value : [];
+      if (resolvedRuns.length > 0) {
+        const inProgress = resolvedRuns.find(r => r.status === 'in_progress');
         const targetRun = runIdToPick
-          ? runsList.find(r => r.id === runIdToPick) || inProgress || runsList[0]
-          : inProgress || runsList[0];
+          ? resolvedRuns.find(r => r.id === runIdToPick) || inProgress || resolvedRuns[0]
+          : inProgress || resolvedRuns[0];
         
         const detailedRun = await api.getRun(targetRun.id);
         setSelectedRun(detailedRun);
+
+        // Load gate configs for this run's modules
+        if (detailedRun && detailedRun.modules) {
+          const configs: Record<string, GateConfig> = {};
+          await Promise.all(
+            detailedRun.modules.map(async (m) => {
+              try {
+                const gc = await api.getModuleGateConfig(m.id);
+                configs[m.id] = gc;
+              } catch (_) {}
+            })
+          );
+          setGateConfigs(configs);
+        }
       } else {
         setSelectedRun(null);
       }
@@ -94,6 +127,21 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
       console.error(e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleToggleShadowMode = async () => {
+    if (!activeProduct || !shadowStats) return;
+    try {
+      setActionLoading(true);
+      const res = await api.toggleProductShadowMode(activeProduct.id, !shadowStats.shadow_mode_enabled);
+      alert(res.message);
+      const updatedStats = await api.getProductShadowStats(activeProduct.id);
+      setShadowStats(updatedStats);
+    } catch (err: any) {
+      alert(`切换影子模式失败: ${err.message}`);
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -220,7 +268,7 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
           </div>
 
           <div>
-            <div className="flex items-center gap-2 mb-0.5">
+            <div className="flex items-center gap-2 mb-0.5 flex-wrap">
               <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
                 {activeProduct.code}
               </span>
@@ -230,6 +278,26 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
               <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-medium hidden sm:inline">
                 产研协同工作台
               </span>
+
+              {/* Profile 平台与零推理规则集标签 */}
+              {productProfile && (
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-blue-50 text-blue-800 border border-blue-200"
+                    title={`项目规则集：${productProfile.ruleset}`}
+                  >
+                    <Smartphone className="w-3 h-3 text-blue-600" />
+                    {productProfile.platform === 'android' ? 'Android (Material 3)' : 'iOS (HIG)'}
+                  </span>
+                  <span
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-teal-50 text-teal-800 border border-teal-200"
+                    title={productProfile.client_zero_inference ? '严格执行客户端零推理成本门禁' : '允许端侧边缘模型离线推理'}
+                  >
+                    <Cpu className="w-3 h-3 text-teal-600" />
+                    {productProfile.client_zero_inference ? '零推理成本' : '边缘端 AI'}
+                  </span>
+                </div>
+              )}
             </div>
 
             <p className="text-xs text-slate-500 line-clamp-1">
@@ -238,16 +306,51 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
           </div>
         </div>
 
-        {/* 右侧：如果没有进行中的活跃迭代，提供显眼的开启新一期迭代按钮 */}
-        {!activeRun && (
+        {/* 右侧：Lead 影子模式监控、每日简报入口与开启迭代 */}
+        <div className="flex items-center gap-2.5 flex-wrap self-start md:self-center">
+          {/* Lead Agent 影子模式状态胶囊 */}
+          {shadowStats && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 text-xs shadow-2xs">
+              <Bot className="w-3.5 h-3.5 text-purple-600" />
+              <span className="font-semibold">
+                Lead {shadowStats.shadow_mode_enabled ? '影子模式' : '自主模式'}
+              </span>
+              {shadowStats.total_evaluated > 0 && (
+                <span className="font-mono text-[11px] text-purple-700">
+                  (一致率 {shadowStats.consistency_rate}%)
+                </span>
+              )}
+              <button
+                onClick={handleToggleShadowMode}
+                disabled={actionLoading}
+                className="ml-1 text-[11px] text-purple-700 hover:text-purple-900 underline font-bold cursor-pointer disabled:opacity-50"
+                title="人类战略层开关：切换 Lead 影子模式"
+              >
+                {shadowStats.shadow_mode_enabled ? '放权' : '收回'}
+              </button>
+            </div>
+          )}
+
+          {/* Lead 每日简报查看入口 */}
           <button
-            onClick={() => setShowNewRunModal(true)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xs self-start md:self-center cursor-pointer"
+            onClick={() => setShowDigestModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 transition shadow-2xs cursor-pointer"
+            title="查看项目总控 (lead) 生成的每日简报"
           >
-            <Plus className="w-4 h-4" />
-            开启新一期迭代
+            <FileText className="w-3.5 h-3.5 text-purple-600" />
+            <span>项目简报</span>
           </button>
-        )}
+
+          {!activeRun && (
+            <button
+              onClick={() => setShowNewRunModal(true)}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xs cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              开启新一期迭代
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 迭代周期主控条：单一活跃迭代 + 生命周期操作 + 历史归档回溯 */}
@@ -401,6 +504,14 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
         </div>
       )}
 
+      {/* 紧急热修 24h SLA 追溯归档卡片 */}
+      {selectedRun && selectedRun.template_id === 'hotfix' && (
+        <HotfixSlaCard
+          runId={selectedRun.id}
+          onTaskCompleted={() => loadProductRuns(activeProduct.id, selectedRun.id)}
+        />
+      )}
+
       {/* 工序流程看板 (11 模块 Pipeline) */}
       {selectedRun ? (
         <div className="space-y-3">
@@ -450,7 +561,16 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
                           </span>
                         )}
                       </div>
-                      <PhaseBadge phase={mod.phase} />
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {gateConfigs[mod.id] && (
+                          <GateBadge
+                            level={gateConfigs[mod.id].level}
+                            gateName={gateConfigs[mod.id].name}
+                            size="sm"
+                          />
+                        )}
+                        <PhaseBadge phase={mod.phase} />
+                      </div>
                     </div>
 
                     {mod.is_upstream_stale && (
@@ -636,6 +756,14 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* 项目每日简报弹窗 (Lead Daily Digest) */}
+      <LeadDailyDigestModal
+        productId={activeProduct.id}
+        productCode={activeProduct.code}
+        isOpen={showDigestModal}
+        onClose={() => setShowDigestModal(false)}
+      />
     </div>
   );
 };

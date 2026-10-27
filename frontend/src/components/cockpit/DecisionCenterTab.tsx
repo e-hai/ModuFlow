@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShieldAlert,
   AlertTriangle,
@@ -12,10 +12,13 @@ import {
   Lock,
   UserCheck,
   Clock,
-  Sparkles
+  Sparkles,
+  Bot
 } from 'lucide-react';
-import { ExecutiveDecisionItem, ExecutiveRiskItem } from '../../types';
+import { ExecutiveDecisionItem, ExecutiveRiskItem, GateApplication } from '../../types';
 import { api } from '../../services/api';
+import { GateBadge } from '../gate/GateBadge';
+import { GateApplicationModal } from '../gate/GateApplicationModal';
 
 interface DecisionCenterTabProps {
   initiativeId: string;
@@ -32,6 +35,21 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
 }) => {
   const [actingId, setActingId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [pendingGates, setPendingGates] = useState<GateApplication[]>([]);
+  const [selectedGateForReview, setSelectedGateForReview] = useState<GateApplication | null>(null);
+
+  useEffect(() => {
+    loadPendingGates();
+  }, [initiativeId]);
+
+  const loadPendingGates = async () => {
+    try {
+      const gates = await api.listPendingGatesForBatch();
+      setPendingGates(gates);
+    } catch (e) {
+      console.error('Failed to load pending gates:', e);
+    }
+  };
 
   const handleAction = async (decisionId: string, action: 'approve' | 'reject') => {
     try {
@@ -320,6 +338,108 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
           </div>
         )}
       </div>
+
+      {/* 3. 三层架构人类战略关口待审批池 */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div className="space-y-0.5">
+            <h3 className="text-xs font-bold text-slate-900 flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-rose-600" />
+              <span>三、人类战略关口审批待办池 (Human Gate Queue: 🟡 黄级 & 🔴 红级)</span>
+            </h3>
+            <p className="text-[11px] text-slate-500">
+              严格硬红线：G1/G2/G4/G5 及涉及支付、隐私、超预算等红级关口系统物理阻断，必须经由人类战略层签署一页纸审批单方可放行。
+            </p>
+          </div>
+          <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+            待审批: {pendingGates.length} 个关口
+          </span>
+        </div>
+
+        {pendingGates.length === 0 ? (
+          <div className="py-8 text-center text-slate-400 text-xs">
+            <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-500" />
+            当前无待审批的黄级或红级关口，所有矩阵产品流水线健康流转中。
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {pendingGates.map((gate) => (
+              <div
+                key={gate.id}
+                className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition shadow-2xs ${
+                  gate.effective_level === 'red'
+                    ? 'bg-rose-50/60 border-rose-300'
+                    : 'bg-amber-50/60 border-amber-300'
+                }`}
+              >
+                <div className="space-y-1.5 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-white text-slate-800 border border-slate-200">
+                      {gate.product_code}
+                    </span>
+                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-white text-slate-700 border border-slate-200">
+                      工序 {gate.module_code}
+                    </span>
+                    <h4 className="font-bold text-slate-900 text-xs">{gate.gate_name}</h4>
+                    <GateBadge
+                      level={gate.effective_level}
+                      isEscalated={gate.is_escalated}
+                      size="sm"
+                    />
+                  </div>
+
+                  <p className="text-xs text-slate-700 leading-relaxed font-medium">
+                    {gate.recommendation}
+                  </p>
+
+                  {gate.lead_recommendation && (
+                    <div className="text-[11px] text-purple-900 flex items-center gap-1.5 pt-0.5">
+                      <Bot className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                      <span>
+                        Lead 影子建议：<strong>{gate.lead_recommendation}</strong>
+                        {gate.lead_rationale && ` (${gate.lead_rationale})`}
+                      </span>
+                    </div>
+                  )}
+
+                  {gate.is_escalated && gate.escalation_reasons?.length > 0 && (
+                    <div className="text-[11px] text-rose-700 flex items-center gap-1 pt-0.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                      <span>升红原因：{gate.escalation_reasons.join('；')}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                  <button
+                    onClick={() => setSelectedGateForReview(gate)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <FileCheck2 className="w-3.5 h-3.5" />
+                    <span>查看一页纸审批单</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 关口一页纸审批弹窗 */}
+      {selectedGateForReview && (
+        <GateApplicationModal
+          isOpen={Boolean(selectedGateForReview)}
+          moduleId={selectedGateForReview.module_id}
+          moduleCode={selectedGateForReview.module_code}
+          moduleName={selectedGateForReview.gate_name}
+          onClose={() => setSelectedGateForReview(null)}
+          onApproved={() => {
+            loadPendingGates();
+            onDecisionUpdated();
+            setSelectedGateForReview(null);
+          }}
+        />
+      )}
     </div>
   );
 };

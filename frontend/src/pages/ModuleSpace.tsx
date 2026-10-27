@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { api } from '../services/api';
-import { ModuleInstance, CollaborationSession, SessionMessage, Artifact, Issue, ChangeReview, StaleDetail } from '../types';
+import { ModuleInstance, CollaborationSession, SessionMessage, Artifact, Issue, ChangeReview, StaleDetail, GateConfig, GateApplication } from '../types';
 import { PhaseBadge, SeverityBadge } from '../components/StatusBadge';
 import { NewIssueModal } from '../components/NewIssueModal';
 import { MarkdownViewer } from '../components/MarkdownViewer';
+import { GateBadge } from '../components/gate/GateBadge';
+import { GateApplicationModal } from '../components/gate/GateApplicationModal';
 import {
   Send,
   Bot,
@@ -86,6 +88,11 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isStaleDiffModalOpen, setIsStaleDiffModalOpen] = useState(false);
   const [selectedStaleDetail, setSelectedStaleDetail] = useState<StaleDetail | null>(null);
+
+  // Three-Tier Gate System state
+  const [isGateModalOpen, setIsGateModalOpen] = useState(false);
+  const [moduleGateConfig, setModuleGateConfig] = useState<GateConfig | null>(null);
+  const [moduleGateApp, setModuleGateApp] = useState<GateApplication | null>(null);
   const [prototypeViewport, setPrototypeViewport] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [artifactViewMode, setArtifactViewMode] = useState<'preview' | 'content'>('preview');
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -196,6 +203,17 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
       setModuleState(modData);
       setModuleIssues(issues);
       setChangeReviews(reviews);
+
+      // Load Gate System data
+      try {
+        const [gc, ga] = await Promise.allSettled([
+          api.getModuleGateConfig(module.id),
+          api.getModuleGateApplication(module.id)
+        ]);
+        if (gc.status === 'fulfilled') setModuleGateConfig(gc.value);
+        if (ga.status === 'fulfilled') setModuleGateApp(ga.value);
+        else setModuleGateApp(null);
+      } catch (_) {}
 
       if (arts.length > 0) {
         setSelectedArtifact(arts[0]);
@@ -396,14 +414,24 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
   };
 
   const handleBaseline = async () => {
+    // 关口审批硬拦截：若关口为黄级或红级且尚未获批，弹出关口一页纸申请单供人类签字
+    const effectiveLevel = moduleGateApp?.effective_level || moduleGateConfig?.level || 'green';
+    if ((effectiveLevel === 'yellow' || effectiveLevel === 'red') && moduleGateApp?.status !== 'approved') {
+      alert(`【${moduleGateConfig?.name || '当前工序关口'}】为 ${effectiveLevel === 'red' ? '🔴 红级关口 (人类即时必批)' : '🟡 黄级关口 (人类批量审批)'}。\n系统已强制阻断自动放行，请在打开的一页纸申请单中由人类战略层签署审批意见。`);
+      setIsGateModalOpen(true);
+      return;
+    }
+
     if (!confirm('确认将当前工序成果定稿为正式基准 (Baseline) 吗？')) return;
     try {
       const updated = await api.updateModulePhase(module.id, 'baselined');
       setModuleState(updated);
       alert('已成功定稿！');
       onModuleUpdated();
+      await loadSessionAndArtifacts();
     } catch (e: any) {
-      alert(`定稿检查未通过: ${e.message}`);
+      alert(`定稿检查未通过: ${e.message}\n请检查关口申请单与准入条件。`);
+      setIsGateModalOpen(true);
     }
   };
 
@@ -440,10 +468,39 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
             </span>
             <h1 className="text-lg font-bold text-slate-900">{moduleState.name}</h1>
             <PhaseBadge phase={moduleState.phase} />
+            {moduleGateApp ? (
+              <GateBadge
+                level={moduleGateApp.effective_level}
+                gateName={moduleGateApp.gate_name}
+                isEscalated={moduleGateApp.is_escalated}
+                size="sm"
+              />
+            ) : moduleGateConfig ? (
+              <GateBadge
+                level={moduleGateConfig.level}
+                gateName={moduleGateConfig.name}
+                size="sm"
+              />
+            ) : null}
           </div>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {/* 一页纸关口申请单查看/签署入口 */}
+          <button
+            onClick={() => setIsGateModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition cursor-pointer shadow-2xs"
+            title="查看或提报工序一页纸关口申请单"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+            <span>关口申请单</span>
+            {moduleGateApp?.status === 'pending' && (
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+            )}
+            {moduleGateApp?.status === 'approved' && (
+              <span className="text-[10px] text-emerald-700 font-bold">✓ 已放行</span>
+            )}
+          </button>
           {changeReviews.filter(r => r.status === 'pending_approval').length > 0 && (
             <button
               onClick={() => setSelectedReview(changeReviews.find(r => r.status === 'pending_approval') || null)}
@@ -1781,6 +1838,19 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
         allModules={allModules}
         onClose={() => setIsIssueModalOpen(false)}
         onSubmit={handleCreateIssue}
+      />
+
+      {/* 一页纸关口申请单与审批弹窗 */}
+      <GateApplicationModal
+        isOpen={isGateModalOpen}
+        moduleId={moduleState.id}
+        moduleCode={moduleState.module_code}
+        moduleName={moduleState.name}
+        onClose={() => setIsGateModalOpen(false)}
+        onApproved={() => {
+          loadSessionAndArtifacts();
+          onModuleUpdated();
+        }}
       />
     </div>
   );
