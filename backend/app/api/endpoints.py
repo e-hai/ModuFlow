@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
@@ -26,7 +27,7 @@ from backend.app.models.entities import (
 )
 from backend.app.schemas.all_schemas import (
     StrategicInitiativeOut, StrategicInitiativeCreate, StrategicInitiativeUpdate,
-    ProductOut, ProductCreate,
+    ProductOut, ProductCreate, ProductUpdate,
     WorkflowTemplateOut,
     WorkflowRunOut, WorkflowRunCreate, WorkflowRunUpdate,
     ModuleInstanceOut, ModulePhaseUpdate,
@@ -47,6 +48,14 @@ from backend.app.services.workflow_engine import (
 )
 from backend.app.services.agent_runner import execute_agent_for_session
 from backend.app.services.bundle_storage import process_and_save_bundle_artifact
+from backend.app.services.authorization_engine import (
+    load_product_authorization,
+    validate_authorization_dict,
+    get_product_authorization_path,
+    check_budget_limits,
+    check_kill_criteria,
+    execute_circuit_breaker
+)
 
 api_router = APIRouter()
 
@@ -490,16 +499,39 @@ async def list_products(initiative_id: Optional[str] = None, db: AsyncSession = 
         runs_count = r_res.scalar_one() or 0
         dto = ProductOut.model_validate(p)
         dto.active_runs_count = runs_count
+        if p.initiative_id:
+            auth_status, _, errors = load_product_authorization(p.initiative_id, p.code)
+            dto.authorization_status = "paused" if p.stage == "paused" else auth_status
+            dto.authorization_errors = errors
         out.append(dto)
     return out
 
 @api_router.post("/products", response_model=ProductOut)
 async def create_product(data: ProductCreate, db: AsyncSession = Depends(get_db)):
+    auth_pkg = data.authorization_package
+    if not auth_pkg and data.auto_authorize:
+        from scripts.migrate_legacy_project_auth import generate_default_authorization_dict
+        auth_pkg = generate_default_authorization_dict(
+            product_code=data.code,
+            product_name=data.name,
+            budget_allocated=data.budget_allocated or 5000.0
+        )
+
+    if auth_pkg:
+        is_valid, errors = validate_authorization_dict(auth_pkg)
+        if not is_valid:
+            raise HTTPException(
+                status_code=422,
+                detail={"message": "非法授权包被拒", "errors": errors}
+            )
+
     prod = Product(
         name=data.name,
         code=data.code,
         description=data.description,
-        initiative_id=data.initiative_id
+        initiative_id=data.initiative_id,
+        budget_allocated=data.budget_allocated or 0.0,
+        stage="validating" if auth_pkg else "needs_authorization"
     )
     if data.id:
         prod.id = data.id
@@ -515,9 +547,189 @@ async def create_product(data: ProductCreate, db: AsyncSession = Depends(get_db)
         except Exception as e:
             logger.warning(f"Failed to sync workspace for {prod.initiative_id}: {e}")
 
+        if auth_pkg:
+            import yaml
+            auth_path = get_product_authorization_path(prod.initiative_id, prod.code)
+            auth_path.parent.mkdir(parents=True, exist_ok=True)
+            auth_path.write_text(yaml.dump(auth_pkg, sort_keys=False, allow_unicode=True), encoding="utf-8")
+
     dto = ProductOut.model_validate(prod)
     dto.active_runs_count = 0
+    if auth_pkg:
+        dto.authorization_status = "authorized"
+        dto.authorization_errors = []
+    else:
+        dto.authorization_status = "needs_authorization"
+        dto.authorization_errors = ["缺少 authorization.yaml"]
     return dto
+
+@api_router.patch("/products/{product_id}", response_model=ProductOut)
+async def update_product(
+    product_id: str,
+    data: ProductUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(Product).where(Product.id == product_id)
+    res = await db.execute(stmt)
+    prod = res.scalar_one_or_none()
+    if not prod:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    if data.name is not None:
+        prod.name = data.name
+    if data.description is not None:
+        prod.description = data.description
+    if data.stage is not None:
+        prod.stage = data.stage
+    if data.budget_allocated is not None:
+        prod.budget_allocated = data.budget_allocated
+    if data.actual_spent is not None:
+        prod.actual_spent = data.actual_spent
+    if data.revenue_contribution is not None:
+        prod.revenue_contribution = data.revenue_contribution
+    if data.kpi_name is not None:
+        prod.kpi_name = data.kpi_name
+    if data.kpi_target is not None:
+        prod.kpi_target = data.kpi_target
+    if data.kpi_actual is not None:
+        prod.kpi_actual = data.kpi_actual
+    if data.kpi_unit is not None:
+        prod.kpi_unit = data.kpi_unit
+    if data.key_risk is not None:
+        prod.key_risk = data.key_risk
+    if data.recommendation is not None:
+        prod.recommendation = data.recommendation
+
+    # 确定性止损与超预算熔断检查 (Zero LLM)
+    if prod.initiative_id:
+        auth_status, auth_data, _ = load_product_authorization(prod.initiative_id, prod.code)
+        if auth_status == "authorized" and auth_data:
+            # 1. Budget check
+            is_breached, reason, _ = check_budget_limits(auth_data, float(prod.actual_spent or 0.0))
+            if is_breached:
+                await execute_circuit_breaker(
+                    prod.initiative_id,
+                    prod.code,
+                    "budget_exceeded",
+                    {"reason": reason, "actual_spent": prod.actual_spent},
+                    db
+                )
+
+            # 2. Stop-loss check
+            metrics = {
+                "actual_spent": float(prod.actual_spent or 0.0),
+                "revenue_contribution": float(prod.revenue_contribution or 0.0),
+            }
+            if prod.kpi_name and prod.kpi_actual is not None:
+                metrics[prod.kpi_name.lower()] = float(prod.kpi_actual)
+            triggered = check_kill_criteria(auth_data, metrics)
+            if triggered:
+                desc = triggered[0].get("description") or f"Metric {triggered[0]['metric']} hit threshold"
+                await execute_circuit_breaker(
+                    prod.initiative_id,
+                    prod.code,
+                    "kill_criterion_hit",
+                    {"reason": desc, "triggered": triggered},
+                    db
+                )
+
+    await db.commit()
+    await db.refresh(prod)
+
+    r_stmt = select(func.count(WorkflowRun.id)).where(WorkflowRun.product_id == prod.id)
+    r_res = await db.execute(r_stmt)
+    runs_count = r_res.scalar_one() or 0
+
+    dto = ProductOut.model_validate(prod)
+    dto.active_runs_count = runs_count
+    if prod.initiative_id:
+        auth_status, _, errors = load_product_authorization(prod.initiative_id, prod.code)
+        dto.authorization_status = "paused" if prod.stage == "paused" else auth_status
+        dto.authorization_errors = errors
+    return dto
+
+# --- Product Authorization Package Endpoints ---
+@api_router.get("/initiatives/{initiative_id}/products/{product_code}/authorization")
+async def get_product_authorization_endpoint(
+    initiative_id: str,
+    product_code: str,
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(Product).where(Product.code == product_code)
+    res = await db.execute(stmt)
+    prod = res.scalar_one_or_none()
+    if not prod:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    status_str, data, errors = load_product_authorization(initiative_id, product_code)
+    auth_path = get_product_authorization_path(initiative_id, product_code)
+
+    return {
+        "initiative_id": initiative_id,
+        "product_code": product_code,
+        "product_stage": prod.stage,
+        "authorization_status": "paused" if prod.stage == "paused" else status_str,
+        "path": str(auth_path),
+        "exists": auth_path.exists(),
+        "authorization_package": data,
+        "errors": errors
+    }
+
+@api_router.put("/initiatives/{initiative_id}/products/{product_code}/authorization")
+async def update_product_authorization_endpoint(
+    initiative_id: str,
+    product_code: str,
+    auth_package: dict,
+    db: AsyncSession = Depends(get_db)
+):
+    import yaml
+    stmt = select(Product).where(Product.code == product_code)
+    res = await db.execute(stmt)
+    prod = res.scalar_one_or_none()
+    if not prod:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    is_valid, errors = validate_authorization_dict(auth_package)
+    if not is_valid:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "授权包格式或红线校验失败", "errors": errors}
+        )
+
+    auth_path = get_product_authorization_path(initiative_id, product_code)
+    auth_path.parent.mkdir(parents=True, exist_ok=True)
+    auth_path.write_text(yaml.dump(auth_package, sort_keys=False, allow_unicode=True), encoding="utf-8")
+
+    # Update product budget & stage if was paused/needs_authorization
+    new_budget = auth_package.get("financial_budget", {}).get("total_budget_limit", prod.budget_allocated)
+    prod.budget_allocated = float(new_budget)
+    if prod.stage in ["needs_authorization", "paused"]:
+        prod.stage = "validating"
+        prod.key_risk = None
+        prod.recommendation = "授权包已更新生效，恢复正常迭代"
+
+    # Record decision audit
+    decisions_dir = auth_path.parent / "decisions"
+    decisions_dir.mkdir(parents=True, exist_ok=True)
+    now_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    log_file = decisions_dir / f"{now_str}_authorization_updated.json"
+    log_file.write_text(json.dumps({
+        "timestamp": datetime.utcnow().isoformat(),
+        "event": "authorization_updated",
+        "actor": auth_package.get("owner", {}).get("name", "human_sponsor"),
+        "total_budget": new_budget,
+        "hard_stop": auth_package.get("financial_budget", {}).get("hard_stop_limit")
+    }, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    await db.commit()
+    await db.refresh(prod)
+
+    return {
+        "ok": True,
+        "message": f"项目 {product_code} 授权包已更新并生效",
+        "authorization_status": "authorized",
+        "authorization_package": auth_package
+    }
 
 # --- Workflow Templates ---
 @api_router.get("/templates", response_model=List[WorkflowTemplateOut])

@@ -58,6 +58,82 @@ async def execute_agent_for_session(
         if not module:
             return None
 
+        # 0. Deterministic Authorization & Guardrail Checks (Zero LLM)
+        from backend.app.models.entities import WorkflowRun, Product
+        from backend.app.services.authorization_engine import (
+            load_product_authorization,
+            check_time_limits,
+            execute_circuit_breaker
+        )
+
+        run_stmt = select(WorkflowRun).where(WorkflowRun.id == module.run_id)
+        run_res = await db.execute(run_stmt)
+        run_obj = run_res.scalar_one_or_none()
+
+        if run_obj and run_obj.product_id:
+            p_stmt = select(Product).where(Product.id == run_obj.product_id)
+            p_res = await db.execute(p_stmt)
+            product = p_res.scalar_one_or_none()
+            if product:
+                # A. Block if product is paused
+                if product.stage == "paused":
+                    pause_msg = SessionMessage(
+                        session_id=session.id,
+                        sender="确定性熔断守门人",
+                        sender_role="system",
+                        role_code="system",
+                        message_type="error",
+                        content=f"🔴 项目当前处于确定性熔断暂停状态 (paused): {product.key_risk or '触发安全熔断'}。\n系统已强制阻断所有 Agent 派活。请人类负责人在控制台或 decisions/ 审计核准后再恢复运行。"
+                    )
+                    db.add(pause_msg)
+                    await db.commit()
+                    await db.refresh(pause_msg)
+                    return pause_msg
+
+                # B. Stage 01 hard requirement for valid authorization package
+                if module.module_code == "01" and product.initiative_id:
+                    auth_status, auth_data, auth_errors = load_product_authorization(product.initiative_id, product.code)
+                    if auth_status != "authorized":
+                        err_detail = f"错误: {', '.join(auth_errors)}" if auth_errors else "缺少 authorization.yaml"
+                        auth_err_msg = SessionMessage(
+                            session_id=session.id,
+                            sender="授权门禁检查器",
+                            sender_role="system",
+                            role_code="system",
+                            message_type="error",
+                            content=f"❌ 项目「{product.name}」尚未配置合规授权包 (authorization.yaml)，禁止进入工序 01 开工。\n{err_detail}\n请人类负责人在项目配置中上传合规授权包 (或执行 scripts/migrate_legacy_project_auth.py)。"
+                        )
+                        db.add(auth_err_msg)
+                        await db.commit()
+                        await db.refresh(auth_err_msg)
+                        return auth_err_msg
+
+                # C. Check time budget deadline
+                if product.initiative_id:
+                    auth_status, auth_data, _ = load_product_authorization(product.initiative_id, product.code)
+                    if auth_status == "authorized" and auth_data:
+                        is_expired, time_reason = check_time_limits(auth_data)
+                        if is_expired:
+                            await execute_circuit_breaker(
+                                product.initiative_id,
+                                product.code,
+                                "time_expired",
+                                {"reason": time_reason},
+                                db
+                            )
+                            time_err_msg = SessionMessage(
+                                session_id=session.id,
+                                sender="确定性时限守门人",
+                                sender_role="system",
+                                role_code="system",
+                                message_type="error",
+                                content=f"🔴 项目时限超期熔断: {time_reason}。\n项目已自动置为 paused，已阻断派活。需人类负责人调整项目授权包期限。"
+                            )
+                            db.add(time_err_msg)
+                            await db.commit()
+                            await db.refresh(time_err_msg)
+                            return time_err_msg
+
         msg_type = user_message.message_type
         content = user_message.content
 

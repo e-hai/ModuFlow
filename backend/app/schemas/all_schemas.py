@@ -43,12 +43,41 @@ class ProductBase(BaseModel):
 
 class ProductCreate(ProductBase):
     id: Optional[str] = None
+    budget_allocated: Optional[float] = 0.0
+    auto_authorize: Optional[bool] = False
+    authorization_package: Optional[Dict[str, Any]] = None
+
+class ProductUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    stage: Optional[str] = None
+    budget_allocated: Optional[float] = None
+    actual_spent: Optional[float] = None
+    revenue_contribution: Optional[float] = None
+    kpi_name: Optional[str] = None
+    kpi_target: Optional[float] = None
+    kpi_actual: Optional[float] = None
+    kpi_unit: Optional[str] = None
+    key_risk: Optional[str] = None
+    recommendation: Optional[str] = None
 
 class ProductOut(ProductBase):
     id: str
+    stage: Optional[str] = "growth"
+    budget_allocated: Optional[float] = 0.0
+    actual_spent: Optional[float] = 0.0
+    revenue_contribution: Optional[float] = 0.0
+    kpi_name: Optional[str] = None
+    kpi_target: Optional[float] = None
+    kpi_actual: Optional[float] = None
+    kpi_unit: Optional[str] = None
+    key_risk: Optional[str] = None
+    recommendation: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     active_runs_count: Optional[int] = 0
+    authorization_status: Optional[str] = "needs_authorization"
+    authorization_errors: Optional[List[str]] = []
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -98,7 +98,8 @@ async def test_module_01_session_and_artifact_generation():
         prod_res = await client.post("/api/v1/products", json={
             "name": f"WnPager-{uid}",
             "code": f"WN-{uid}",
-            "initiative_id": init_id
+            "initiative_id": init_id,
+            "auto_authorize": True
         })
         assert prod_res.status_code == 200
         prod_id = prod_res.json()["id"]

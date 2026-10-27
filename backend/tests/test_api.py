@@ -2,7 +2,11 @@ import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 from backend.app.main import app
-from backend.tests.conftest import test_engine as engine, TestingSessionLocal as AsyncSessionLocal
+from backend.tests.conftest import (
+    test_engine as engine,
+    TestingSessionLocal as AsyncSessionLocal,
+    ensure_test_product_authorization
+)
 from backend.app.core.database import Base
 from backend.app.services.workflow_engine import seed_templates_if_empty, create_workflow_run_from_template
 from backend.app.services.agent_roles import seed_agent_roles_if_empty
@@ -176,6 +180,8 @@ async def init_test_db():
             )
             db.add_all([prod_a, prod_b])
             await db.commit()
+            ensure_test_product_authorization("sea-2026", "ACC-SEA", budget=prod_a.budget_allocated or 5000.0)
+            ensure_test_product_authorization("sea-2026", "QPAY", budget=prod_b.budget_allocated or 5000.0)
             await create_workflow_run_from_template(
                 db=db,
                 product_id=prod_a.id,

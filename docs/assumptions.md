@@ -58,8 +58,23 @@
 
 ## 二、需人类确认的事项清单 (Items for Human Confirmation)
 
-在进入 Phase 1 实施前，请人类业务负责人就以下要点进行确认或指示：
+1. **授权包粒度**：已确认 `authorization.yaml` 存放在 `data/workspaces/{initiative_id}/products/{product_code}/authorization.yaml`（项目层级），并在迭代周期中共享。
+2. **Actor 标识方式**：在 Phase 2~3 中，以客户端 Header / 会话参数 `X-ModuFlow-Actor: human:<id>` 作为人机鉴权和只读拦截的基础契约。
+3. **旧项目迁移体验**：已确认采取“友好阻断并提示一键生成授权包”的策略，已实现 `scripts/migrate_legacy_project_auth.py`。
 
-1. **授权包粒度**：是否确认 `authorization.yaml` 存放在 `data/workspaces/{initiative_id}/products/{product_code}/authorization.yaml`（项目层级），并在迭代周期中共享？
-2. **Actor 标识方式**：在无外部 OAuth 登录的前提下，是否同意以客户端 Header / 会话参数 `X-ModuFlow-Actor: human:<id>` 作为人机鉴权和只读拦截的基础契约？
-3. **旧项目迁移体验**：针对已有历史单品，是否同意采取“友好阻断并提示一键生成授权包”的策略？
+---
+
+## 三、Phase 1 落地执行记录 (Phase 1 Execution Log)
+
+- **完成日期**：2026-10-27
+- **分支**：`phase1-authorization-package`
+- **新增规范与工具**：
+  1. `schemas/authorization-package.schema.json` (JSON Schema 2020-12 规范)
+  2. `docs/examples/authorization.example.yaml` (标准授权包参考范本)
+  3. `scripts/validate_authorization.py` (纯 Python 独立校验脚本，拦截缺少 8 项强制 lead_forbidden 的非法配置)
+  4. `scripts/migrate_legacy_project_auth.py` (历史项目平滑迁移脚本，支持 `--dry-run`)
+  5. `backend/app/services/authorization_engine.py` (确定性预算、时限、止损检查与熔断引擎，零 LLM 依赖)
+- **门禁守门表现**：
+  - 未配置授权包项目，工序 01 派活与基线定稿被确定性阻断并返回清晰提示；
+  - 预算超限、时限超期、止损命中 (如 LTV/CAC < 3.0 或 CAC > 2.5) 自动将单品置为 `paused`，写入 `decisions/` 留痕，并生成 🔴 级系统告警；
+  - 现有 23 项测试与新增 12 项授权包测试（共 35 项测试）全部 100% 绿灯通过，前端构建 0 错误。

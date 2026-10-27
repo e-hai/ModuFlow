@@ -1,0 +1,80 @@
+schema_version: "1.0"
+project_id: "WN-PAGER"
+project_name: "WhiteNoise Pager"
+owner:
+  name: "Alex Vance"
+  role: "human_sponsor"
+  email: "sponsor@moduflow.ai"
+authorized_at: "2026-10-27T00:00:00Z"
+
+time_budget:
+  start_date: "2026-10-27"
+  deadline: "2026-12-31"
+  max_duration_days: 65
+
+financial_budget:
+  currency: "USD"
+  total_budget_limit: 5000.0
+  hard_stop_limit: 5500.0
+  per_stage_limits:
+    "01": 200.0
+    "02": 150.0
+    "03": 100.0
+    "04": 350.0
+    "05": 300.0
+    "06": 800.0
+    "07": 1500.0
+    "08": 400.0
+    "09": 200.0
+    "10": 800.0
+    "11": 200.0
+
+kill_criteria:
+  - id: "KC-01"
+    metric: "ltv_cac_ratio"
+    operator: "<"
+    threshold: 3.0
+    action: "pause_and_escalate"
+    description: "LTV/CAC ratio below 3.0 fails commercial viability requirement"
+  - id: "KC-02"
+    metric: "cac"
+    operator: ">"
+    threshold: 2.5
+    action: "pause_and_escalate"
+    description: "Blended CAC exceeding 2.5 USD breaches acquisition cost ceiling"
+  - id: "KC-03"
+    metric: "d1_retention"
+    operator: "<"
+    threshold: 0.25
+    action: "pause_and_escalate"
+    description: "Day-1 retention below 25% fails minimum stickiness threshold"
+  - id: "KC-04"
+    metric: "actual_spent"
+    operator: ">="
+    threshold: 5500.0
+    action: "terminate_project"
+    description: "Total spend reaching hard stop ceiling triggers immediate termination"
+
+lead_forbidden:
+  - "approve_g1_g2_g4_g5"
+  - "modify_permissions"
+  - "modify_redlines"
+  - "modify_budget"
+  - "approve_payment_or_privacy_cr"
+  - "trigger_unauthorized_hotfix"
+  - "approve_budget_increase"
+  - "submit_store_review"
+
+credential_scopes:
+  allowed_agent_credentials:
+    - "market_intelligence_api_token"
+    - "sandbox_payment_test_key"
+  forbidden_agent_credentials:
+    - "apple_developer_account"
+    - "google_play_console_service_account"
+    - "stripe_live_secret_key"
+    - "production_database_credentials"
+
+profile:
+  platform: "ios"
+  client_zero_inference: true

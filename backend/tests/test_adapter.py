@@ -7,7 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from backend.app.main import app
-from backend.tests.conftest import test_engine as engine, TestingSessionLocal as AsyncSessionLocal
+from backend.tests.conftest import (
+    test_engine as engine,
+    TestingSessionLocal as AsyncSessionLocal,
+    ensure_test_product_authorization
+)
 from backend.app.core.database import Base
 from backend.app.models.entities import (
     StrategicInitiative,
@@ -56,6 +60,7 @@ async def setup_test_data():
         )
         db.add(prod)
         await db.commit()
+        ensure_test_product_authorization("test-init", "T-ACC")
 
         await create_workflow_run_from_template(
             db=db,

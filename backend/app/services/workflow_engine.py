@@ -5,6 +5,7 @@ from sqlalchemy import select, update
 from backend.app.models.entities import (
     WorkflowTemplate,
     WorkflowRun,
+    Product,
     ModuleInstance,
     Artifact,
     Issue,
@@ -172,6 +173,81 @@ async def create_workflow_run_from_template(
 
 async def can_baseline_module(db: AsyncSession, module_id: str) -> Tuple[bool, str]:
     """Check if a module can transition to 'baselined'."""
+    # 0. Check product-level deterministic authorization & stop-loss guardrails
+    from backend.app.services.authorization_engine import (
+        load_product_authorization,
+        check_budget_limits,
+        check_time_limits,
+        check_kill_criteria,
+        execute_circuit_breaker
+    )
+
+    m_stmt = select(ModuleInstance).where(ModuleInstance.id == module_id)
+    m_res = await db.execute(m_stmt)
+    mod = m_res.scalar_one_or_none()
+    if mod:
+        run_stmt = select(WorkflowRun).where(WorkflowRun.id == mod.run_id)
+        run_res = await db.execute(run_stmt)
+        run_obj = run_res.scalar_one_or_none()
+        if run_obj and run_obj.product_id:
+            p_stmt = select(Product).where(Product.id == run_obj.product_id)
+            p_res = await db.execute(p_stmt)
+            product = p_res.scalar_one_or_none()
+            if product:
+                # Check paused status
+                if product.stage == "paused":
+                    return False, f"项目处于熔断暂停状态: {product.key_risk or '触发安全熔断'}，严禁定稿基线"
+
+                if product.initiative_id:
+                    auth_status, auth_data, auth_errors = load_product_authorization(product.initiative_id, product.code)
+                    if auth_status == "needs_authorization":
+                        return False, "项目尚未配置合规授权包 (authorization.yaml)，禁止定稿基线"
+                    elif auth_status == "invalid_authorization":
+                        return False, f"项目授权包不合规: {', '.join(auth_errors)}"
+                    elif auth_status == "authorized" and auth_data:
+                        # 1. Budget limit check
+                        is_breached, reason, is_hard = check_budget_limits(auth_data, float(product.actual_spent or 0.0))
+                        if is_breached:
+                            await execute_circuit_breaker(
+                                product.initiative_id,
+                                product.code,
+                                "budget_exceeded",
+                                {"reason": reason, "actual_spent": product.actual_spent},
+                                db
+                            )
+                            return False, f"触发确定性预算熔断: {reason}"
+
+                        # 2. Time limit check
+                        is_expired, time_reason = check_time_limits(auth_data)
+                        if is_expired:
+                            await execute_circuit_breaker(
+                                product.initiative_id,
+                                product.code,
+                                "time_expired",
+                                {"reason": time_reason},
+                                db
+                            )
+                            return False, f"触发确定性时限熔断: {time_reason}"
+
+                        # 3. Kill criteria check
+                        metrics = {
+                            "actual_spent": float(product.actual_spent or 0.0),
+                            "revenue_contribution": float(product.revenue_contribution or 0.0),
+                        }
+                        if product.kpi_name and product.kpi_actual is not None:
+                            metrics[product.kpi_name.lower()] = float(product.kpi_actual)
+                        triggered = check_kill_criteria(auth_data, metrics)
+                        if triggered:
+                            desc = triggered[0].get("description") or f"Metric {triggered[0]['metric']} hit threshold"
+                            await execute_circuit_breaker(
+                                product.initiative_id,
+                                product.code,
+                                "kill_criterion_hit",
+                                {"reason": desc, "triggered": triggered},
+                                db
+                            )
+                            return False, f"触发确定性止损熔断: {desc}"
+
     # Check open critical/major issues targeting this module
     stmt = select(Issue).where(
         Issue.target_module_id == module_id,

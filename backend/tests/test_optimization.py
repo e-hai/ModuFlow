@@ -40,7 +40,8 @@ async def test_bundle_upload_and_preview_flow():
         prod_res = await client.post("/api/v1/products", json={
             "name": "TestApp",
             "code": "TEST-APP",
-            "initiative_id": init_id
+            "initiative_id": init_id,
+            "auto_authorize": True
         })
         assert prod_res.status_code == 200
         prod_id = prod_res.json()["id"]
@@ -123,7 +124,7 @@ async def test_upstream_stale_detection_and_ack_flow():
         # Create initiative & product
         init_res = await client.post("/api/v1/initiatives", json={"name": "Stale Flow Test", "owner": "PM"})
         init_id = init_res.json()["id"]
-        prod_res = await client.post("/api/v1/products", json={"name": "App2", "code": "APP-2", "initiative_id": init_id})
+        prod_res = await client.post("/api/v1/products", json={"name": "App2", "code": "APP-2", "initiative_id": init_id, "auto_authorize": True})
         prod_id = prod_res.json()["id"]
 
         run_res = await client.post("/api/v1/runs", json={
@@ -232,7 +233,7 @@ async def test_requirement_cr_feedback_loop_and_prd_revision():
         # 1. Create initiative & product with fast-iteration template
         init_res = await client.post("/api/v1/initiatives", json={"name": "CR Loop Test", "owner": "PO"})
         init_id = init_res.json()["id"]
-        prod_res = await client.post("/api/v1/products", json={"name": "WnPager", "code": "WN-PG", "initiative_id": init_id})
+        prod_res = await client.post("/api/v1/products", json={"name": "WnPager", "code": "WN-PG", "initiative_id": init_id, "auto_authorize": True})
         prod_id = prod_res.json()["id"]
 
         run_res = await client.post("/api/v1/runs", json={
