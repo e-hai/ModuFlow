@@ -55,6 +55,7 @@ export interface StaleDetail {
   latest_upstream_version: number;
   artifact_id?: string;
   artifact_type?: string;
+  upstream_change_summary?: string;
   message: string;
 }
 
@@ -156,7 +157,7 @@ export interface Issue {
   target_module_id: string;
   reporter: string;
   reporter_role: string;
-  category: 'bug' | 'question' | 'improvement' | 'task';
+  category: 'bug' | 'question' | 'improvement' | 'task' | 'requirement_cr';
   severity: 'critical' | 'major' | 'minor' | 'trivial';
   priority: 'P0' | 'P1' | 'P2' | 'P3';
   status: 'open' | 'investigating' | 'fixing' | 'verifying' | 'closed';
@@ -167,6 +168,11 @@ export interface Issue {
     expected?: string;
     actual?: string;
     environment?: Record<string, string>;
+    unreasonable_point?: string;
+    constraint?: string;
+    suggested_change?: string;
+    affected_modules?: string[];
+    [key: string]: any;
   };
   related_artifact_id?: string;
   source_module_name?: string;

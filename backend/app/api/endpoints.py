@@ -1098,6 +1098,22 @@ async def list_issues(
         out.append(dto)
     return out
 
+@api_router.get("/issues/{issue_id}", response_model=IssueOut)
+async def get_issue(issue_id: str, db: AsyncSession = Depends(get_db)):
+    stmt = (
+        select(Issue)
+        .options(selectinload(Issue.source_module), selectinload(Issue.target_module))
+        .where(Issue.id == issue_id)
+    )
+    res = await db.execute(stmt)
+    item = res.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    dto = IssueOut.model_validate(item)
+    dto.source_module_name = item.source_module.name if item.source_module else None
+    dto.target_module_name = item.target_module.name if item.target_module else None
+    return dto
+
 @api_router.post("/issues", response_model=IssueOut)
 async def create_issue(data: IssueCreate, db: AsyncSession = Depends(get_db)):
     # Generate issue identifier e.g. ISSUE-###
@@ -1128,7 +1144,7 @@ async def create_issue(data: IssueCreate, db: AsyncSession = Depends(get_db)):
     target_mod = target_res.scalar_one_or_none()
     if target_mod and target_mod.phase == "baselined" and data.severity in ["critical", "major"]:
         target_mod.phase = "discussing"
-        target_mod.baseline_artifact_id = None
+        # Keep target_mod.baseline_artifact_id intact so downstream modules retain diff context
         db.add(target_mod)
 
     await db.commit()

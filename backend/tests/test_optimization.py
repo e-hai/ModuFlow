@@ -1,6 +1,7 @@
 import io
 import zipfile
 import pytest
+import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 from backend.app.main import app
 from backend.tests.conftest import test_engine as engine, TestingSessionLocal as AsyncSessionLocal
@@ -10,6 +11,16 @@ from backend.app.services.agent_roles import seed_agent_roles_if_empty
 from backend.app.models.entities import StrategicInitiative, Product, ModuleInstance, Artifact, ChangeReview, AgentSettingsModel
 from backend.app.core.config import settings
 from sqlalchemy import select
+
+@pytest_asyncio.fixture(autouse=True)
+async def init_test_db():
+    settings.AGENT_ADAPTER_TYPE = "simulator"
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+    async with AsyncSessionLocal() as db:
+        await seed_templates_if_empty(db)
+        await seed_agent_roles_if_empty(db)
 
 @pytest.mark.asyncio
 async def test_bundle_upload_and_preview_flow():
@@ -212,3 +223,121 @@ async def test_agent_settings_persistence():
             assert row.adapter_type == "cli"
             assert row.cli_command == "agy"
             assert row.timeout == 180
+
+@pytest.mark.asyncio
+async def test_requirement_cr_feedback_loop_and_prd_revision():
+    """Test end-to-end CR feedback loop: Downstream raises CR, Stage 05 retains baseline, revises PRD to v2, closes CR, and alerts downstream."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Create initiative & product with fast-iteration template
+        init_res = await client.post("/api/v1/initiatives", json={"name": "CR Loop Test", "owner": "PO"})
+        init_id = init_res.json()["id"]
+        prod_res = await client.post("/api/v1/products", json={"name": "WnPager", "code": "WN-PG", "initiative_id": init_id})
+        prod_id = prod_res.json()["id"]
+
+        run_res = await client.post("/api/v1/runs", json={
+            "product_id": prod_id,
+            "template_id": "fast-iteration",
+            "name": "Sprint-CR-Loop"
+        })
+        run_data = run_res.json()
+        m05 = next(m for m in run_data["modules"] if m["module_code"] == "05")
+        m06 = next(m for m in run_data["modules"] if m["module_code"] == "06")
+
+        # 2. Stage 05 uploads & baselines PRD v1
+        prd_v1 = "# PRD v1\n- Feature: Double-column paginated view with fixed page sizes"
+        up_v1_res = await client.post(
+            f"/api/v1/modules/{m05['id']}/artifacts/upload",
+            files={"file": ("prd_v1.md", prd_v1.encode("utf-8"), "text/markdown")},
+            data={"change_summary": "Initial PRD v1 baseline"}
+        )
+        assert up_v1_res.status_code == 200
+        rev1_id = up_v1_res.json()["change_review"]["id"]
+        art1_id = up_v1_res.json()["artifact"]["id"]
+
+        # Approve PRD v1
+        await client.post(f"/api/v1/change-reviews/{rev1_id}/approve", json={"approver": "CPO"})
+
+        # Check m05 is baselined
+        m05_data = (await client.get(f"/api/v1/modules/{m05['id']}")).json()
+        assert m05_data["phase"] == "baselined"
+        assert m05_data["baseline_artifact_id"] == art1_id
+
+        # 3. Stage 06 syncs with PRD v1
+        async with AsyncSessionLocal() as db:
+            m06_db = (await db.execute(select(ModuleInstance).where(ModuleInstance.id == m06["id"]))).scalar_one()
+            m06_db.synced_upstream_versions = {"05": 1}
+            await db.commit()
+
+        # 4. Stage 06 finds pagination conflicting with mobile layout, raises a requirement_cr issue targeting 05
+        issue_res = await client.post("/api/v1/issues", json={
+            "title": "建议将双列分页调整为下拉瀑布流，规避单手触控拥挤",
+            "source_module_id": m06["id"],
+            "target_module_id": m05["id"],
+            "reporter": "UI/UX 设计师",
+            "reporter_role": "ux",
+            "category": "requirement_cr",
+            "severity": "major",
+            "priority": "P1",
+            "description": {
+                "summary": "双列翻页按钮挤占底部安全区",
+                "unreasonable_point": "双列排版导致翻页按钮在灵动岛机型上触控热区不足 44pt",
+                "constraint": "iOS HIG 规范与单手拇指热区",
+                "suggested_change": "采用下拉无限滚动与触底预加载",
+                "affected_modules": ["05", "06", "07"]
+            }
+        })
+        assert issue_res.status_code == 200
+        issue_id = issue_res.json()["id"]
+
+        # Verify Stage 05 phase enters discussing, BUT baseline_artifact_id is NOT wiped
+        m05_after_issue = (await client.get(f"/api/v1/modules/{m05['id']}")).json()
+        assert m05_after_issue["phase"] == "discussing"
+        assert m05_after_issue["baseline_artifact_id"] == art1_id # Preserved!
+
+        # 5. Stage 05 adopts CR and runs Agent revision with issue_ref_id
+        sess_res = await client.get(f"/api/v1/modules/{m05['id']}/session")
+        session_id = sess_res.json()["id"]
+
+        # Ensure settings use simulator for fast test execution
+        await client.patch("/api/v1/settings/agent", json={"adapter_type": "simulator"})
+
+        send_res = await client.post(
+            f"/api/v1/sessions/{session_id}/messages?trigger_agent=true",
+            json={
+                "sender": "CPO",
+                "sender_role": "human",
+                "message_type": "feedback",
+                "content": f"采纳来自工序 06 的需求变更单 [{issue_id}]，将双列分页调整为无限瀑布流。",
+                "issue_ref_id": issue_id
+            }
+        )
+        assert send_res.status_code == 200
+
+        # Verify issue is now auto-closed
+        issue_check = (await client.get(f"/api/v1/issues/{issue_id}")).json()
+        assert issue_check["status"] == "closed"
+        assert "完成修订" in issue_check["resolution"]
+
+        # 6. Stage 05 now has artifact v2
+        arts = (await client.get(f"/api/v1/modules/{m05['id']}/artifacts")).json()
+        assert len(arts) >= 2
+        art_v2 = next(a for a in arts if a["version"] == 2)
+        assert f"[{issue_id}]" in (art_v2["change_summary"] or "")
+
+        # 7. Baseline v2
+        baseline_v2_res = await client.patch(
+            f"/api/v1/modules/{m05['id']}/phase",
+            json={"phase": "baselined", "artifact_id": art_v2["id"]}
+        )
+        assert baseline_v2_res.status_code == 200
+
+        # 8. Check downstream module 06 -> Detected as stale with upstream_change_summary!
+        m06_stale = (await client.get(f"/api/v1/modules/{m06['id']}")).json()
+        assert m06_stale["is_upstream_stale"] is True
+        assert len(m06_stale["stale_details"]) > 0
+        detail = m06_stale["stale_details"][0]
+        assert detail["upstream_code"] == "05"
+        assert detail["current_synced_version"] == 1
+        assert detail["latest_upstream_version"] == 2
+        assert f"[{issue_id}]" in detail["upstream_change_summary"]

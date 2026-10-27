@@ -15,13 +15,13 @@ DEFAULT_TEMPLATES = [
     {
         "id": "full-product-launch",
         "name": "完整产品研发 (11 模块)",
-        "description": "从全球市场摸底、精益假门验证、产品立项与需求定义，到设计开发、上线获客与运营迭代的完整闭环。",
+        "description": "从全球市场摸底、精益假门验证与立项裁决、产品需求定义，到设计开发、上线获客与运营迭代的完整闭环。",
         "modules_config": [
             {"code": "01", "name": "市场研究", "required": True},
             {"code": "02", "name": "商业模式分析", "required": True},
             {"code": "03", "name": "产品方向决策", "required": True},
             {"code": "04", "name": "低成本市场验证", "required": True},
-            {"code": "05", "name": "产品立项与需求定义", "required": True},
+            {"code": "05", "name": "产品需求定义", "required": True},
             {"code": "06", "name": "设计实现", "required": True},
             {"code": "07", "name": "开发实现", "required": True},
             {"code": "08", "name": "测试与 QA", "required": True},
@@ -46,9 +46,9 @@ DEFAULT_TEMPLATES = [
     {
         "id": "fast-iteration",
         "name": "快速功能迭代 (6 模块)",
-        "description": "适合已有产品的大版本与重要功能迭代，直接从产品立项与需求定义进入设计、开发、测试、发布与运营复盘。",
+        "description": "适合已有产品的大版本与重要功能迭代，直接承接运营复盘 Backlog 从产品需求定义进入设计、开发、测试、发布与运营闭环。",
         "modules_config": [
-            {"code": "05", "name": "产品立项与需求定义", "required": True},
+            {"code": "05", "name": "产品需求定义", "required": True},
             {"code": "06", "name": "设计实现", "required": True},
             {"code": "07", "name": "开发实现", "required": True},
             {"code": "08", "name": "测试与 QA", "required": True},

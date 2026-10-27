@@ -88,6 +88,7 @@ async def calculate_module_stale_status(
                 "latest_upstream_version": latest_version,
                 "artifact_id": baseline_art.id,
                 "artifact_type": baseline_art.artifact_type,
+                "upstream_change_summary": baseline_art.change_summary or "",
                 "message": f"上游【{up_mod.name}】已演进至基线 v{latest_version}（当前工序依据 v{synced_version}），存在待对齐的最新改动"
             })
 

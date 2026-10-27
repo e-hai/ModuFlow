@@ -46,7 +46,9 @@ import {
   FileText,
   Maximize2,
   Minimize2,
-  Columns2
+  Columns2,
+  GitPullRequest,
+  ArrowLeftRight
 } from 'lucide-react';
 
 interface ModuleSpaceProps {
@@ -271,13 +273,12 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
     }
   };
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputText.trim() || !session || sending) return;
-
-    const content = inputText.trim();
-    const currentMsgType = messageType;
-    setInputText('');
+  const executeSendMessage = async (
+    content: string,
+    currentMsgType: SessionMessage['message_type'],
+    issueRefId?: string
+  ) => {
+    if (!content.trim() || !session || sending) return;
 
     // 1. Optimistic UI: Immediately show the user's question or instruction in the chat history
     const tempId = `temp-${Date.now()}`;
@@ -288,6 +289,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
       sender_role: 'human',
       message_type: currentMsgType,
       content,
+      issue_ref_id: issueRefId,
       created_at: new Date().toISOString()
     };
 
@@ -315,7 +317,8 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
           sender: '我 (业务负责人)',
           sender_role: 'human',
           message_type: currentMsgType,
-          content
+          content,
+          issue_ref_id: issueRefId
         },
         true // trigger Agent response
       );
@@ -332,16 +335,8 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
         return [...filtered, ...newMsgs];
       });
 
-      // Reload artifacts and module state
-      const [arts, modData] = await Promise.all([
-        api.getModuleArtifacts(module.id),
-        api.getModule(module.id)
-      ]);
-      setArtifacts(arts);
-      if (arts.length > 0) {
-        setSelectedArtifact(arts[0]);
-      }
-      setModuleState(modData);
+      // Reload artifacts, session, and module state
+      await loadSessionAndArtifacts();
       onModuleUpdated();
     } catch (e: any) {
       if (timerRef.current) {
@@ -362,6 +357,41 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
       setMessages(prev => [...prev, errorMsg]);
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputText.trim() || !session || sending) return;
+
+    const content = inputText.trim();
+    const currentMsgType = messageType;
+    setInputText('');
+    await executeSendMessage(content, currentMsgType);
+  };
+
+  const handleAcceptCR = async (cr: Issue) => {
+    const promptText = `采纳来自协同工序【${cr.reporter || cr.reporter_role || '设计/开发团队'}】的需求变更单 [${cr.id}]: ${cr.title}。\n` +
+      `【需求矛盾说明】：${cr.description?.unreasonable_point || cr.description?.summary || ''}\n` +
+      `【约束条件】：${cr.description?.constraint || '保证端到端一致性与工程可行性'}\n` +
+      `【建议方案】：${cr.description?.suggested_change || cr.description?.expected || ''}\n` +
+      `请结合当前交付物与工作区战略底稿，全面评估对整体架构与商业模型的影响，修订 PRD 相关章节（含信息架构、功能规格、数据契约及验收标准），生成新版 PRD 交付物。`;
+
+    await executeSendMessage(promptText, 'feedback', cr.id);
+  };
+
+  const handleAutoReviseFromUpstream = async (staleDetail: StaleDetail) => {
+    const promptText = `上游【${staleDetail.upstream_name}】已演进并定稿至基线 v${staleDetail.latest_upstream_version}。\n` +
+      `【主要变更说明】：${staleDetail.upstream_change_summary || '上游基线规格已更新'}\n` +
+      `请根据上游最新定稿成果及前后版本差异，增量修订本工序（${moduleState.name}）的交付物规范与对应设计/工程资产，确保与上游 PRD 契约严格对齐。`;
+
+    await executeSendMessage(promptText, 'feedback');
+    try {
+      await api.ackUpstreamModule(module.id, staleDetail.upstream_code);
+      const updated = await api.getModule(module.id);
+      setModuleState(updated);
+    } catch (e) {
+      // ignore
     }
   };
 
@@ -388,6 +418,9 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
     i => (i.severity === 'critical' || i.severity === 'major') && i.status !== 'closed'
   );
   const openIssues = moduleIssues.filter(i => i.status !== 'closed');
+  const incomingCRs = moduleIssues.filter(
+    i => i.category === 'requirement_cr' && i.status !== 'closed'
+  );
 
   return (
     <div className="w-full max-w-[2160px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
@@ -491,13 +524,89 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
               对比版本修改
             </button>
             <button
+              onClick={() => handleAutoReviseFromUpstream(moduleState.stale_details![0])}
+              disabled={sending}
+              className="px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-xs transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              title="基于上游 PRD 最新变更说明，让 Agent 自动增量调整本工序成果并对齐基线"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              基于上游变更自动增量修订本工序
+            </button>
+            <button
               onClick={() => handleAckUpstream()}
               disabled={ackingUpstream}
-              className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-xs transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              className="px-3 py-2 rounded-xl text-xs font-semibold bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
             >
               <CheckCheck className="w-4 h-4" />
-              {ackingUpstream ? '同步中...' : '确认已同步跟进'}
+              {ackingUpstream ? '同步中...' : '仅标记已对齐'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 📥 收到来自下游工序的需求变更单 (CR) 专有看板 */}
+      {incomingCRs.length > 0 && (
+        <div className="bg-gradient-to-r from-indigo-50/90 via-purple-50/80 to-white border border-indigo-200 rounded-2xl p-4 text-xs text-indigo-950 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-indigo-100 text-indigo-700">
+                <GitPullRequest className="w-4 h-4" />
+              </div>
+              <span className="font-bold text-sm text-indigo-900">
+                收到来自协同工序的 {incomingCRs.length} 个需求变更请求 (CR)
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-semibold font-mono">
+                待响应修订
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {incomingCRs.map(cr => (
+              <div key={cr.id} className="bg-white/95 border border-indigo-100 rounded-xl p-3 shadow-2xs space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                      {cr.id}
+                    </span>
+                    <span>{cr.title}</span>
+                  </div>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+                    cr.severity === 'critical' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'
+                  }`}>
+                    {cr.severity.toUpperCase()}
+                  </span>
+                </div>
+
+                {cr.description?.unreasonable_point && (
+                  <div className="text-[11px] text-slate-600 bg-slate-50 rounded-lg p-2">
+                    <span className="font-semibold text-slate-700">矛盾说明：</span>
+                    {cr.description.unreasonable_point}
+                  </div>
+                )}
+
+                {cr.description?.suggested_change && (
+                  <div className="text-[11px] text-indigo-900 bg-indigo-50/60 rounded-lg p-2">
+                    <span className="font-semibold text-indigo-800">建议方案：</span>
+                    {cr.description.suggested_change}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-[10px] text-slate-400">
+                    提出方: {cr.reporter || cr.reporter_role}
+                  </span>
+                  <button
+                    onClick={() => handleAcceptCR(cr)}
+                    disabled={sending}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-2xs transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <ArrowLeftRight className="w-3.5 h-3.5" />
+                    采纳此 CR 并修订 PRD
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -915,13 +1024,13 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
 
             {moduleState.module_code === '04' && (
               <div className="flex flex-wrap items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-700">
-                <span>真原型实测：直接生成「可交互 H5 假门落地页 index.html + 3条测试脚本」。</span>
+                <span>真原型实测与立项门禁：生成「移动端 H5 假门原型 index.html + 3条实测脚本 + Go/Pivot/Kill 门禁」。</span>
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
                     onClick={() => {
                       setMessageType('question');
-                      setInputText('如果不花钱投广告，怎么在 Reddit / TikTok 用零成本自然流在 3 天内测出真实用户意愿？');
+                      setInputText('如果不花钱投广告，怎么在 Reddit / TikTok 用零成本自然流在 3 天内测出真实用户意愿与放行标准？');
                     }}
                     className="px-2 py-0.5 rounded bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition cursor-pointer"
                   >
@@ -931,39 +1040,49 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                     type="button"
                     onClick={() => {
                       setMessageType('instruction');
-                      setInputText('围绕工序03移交的H1~H4假设，在工作区直接生成可交互的移动端H5假门着陆页原型(index.html)，并输出精炼的3条买量/社区测试脚本与止损红线方案。');
+                      setInputText('围绕工序03移交的H1~H4生死假设，在工作区直接生成可交互的移动端H5假门着陆页原型(index.html)，输出精炼的3条实测脚本与获客红线，并在文末设立客观严密的 Go/Pivot/Kill 立项决策门禁。');
                     }}
                     className="px-2 py-0.5 rounded bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium transition cursor-pointer"
                   >
-                    填入生成假门网页指令
+                    生成假门原型+立项门禁
                   </button>
                 </div>
               </div>
             )}
 
             {moduleState.module_code === '05' && (
-              <div className="flex flex-wrap items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-50/70 border border-amber-200 text-[11px] text-amber-900">
-                <span>产品立项 + 需求定义：严禁 AI 捏造假数据，基于实测复盘并一次性冻结施工级 PRD。</span>
+              <div className="flex flex-wrap items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-50/70 border border-indigo-200 text-[11px] text-indigo-950">
+                <span>产品需求定义：承接工序04立项决议输出工程级施工契约，或承接工序11输出版本迭代 PRD，并响应下游 CR 演进。</span>
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
                     onClick={() => {
                       setMessageType('instruction');
-                      setInputText('【录入工序04外部实测数据】：测试周期 3 天，总花费 $___，外层广告/帖子点击率 CTR = ___%，假门落地页互动率 = ___%，主下载按钮点击率 = ___%，付费选项点击率 = ___%，收集早鸟邮箱 ___ 个，用户主要评论反馈为：“___”。请严格基于以上真实数据复盘 H1~H4 假设并给出 Go/Pivot/Kill 立项决议；若通过立项，请在同一份报告中直接输出字段级 PRD 需求规范与技术可行性边界评审。');
+                      setInputText('承接工序 04 市场验证与立项决议，输出全量 7 大章节工程级 PRD 施工契约（包含：①版本定位与MVP范围封版；②全局信息架构与Mermaid状态机；③逐模块M1~M6功能规格与交互边界；④完整数据字典与接口契约；⑤计费与权限状态机；⑥全链路数据埋点字典；⑦非功能性需求与全量Gherkin验收标准），供设计与研发直接施工。');
                     }}
-                    className="px-2 py-0.5 rounded bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium transition cursor-pointer"
+                    className="px-2 py-0.5 rounded bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 font-medium transition cursor-pointer"
                   >
-                    填入实测数据与需求定义指令
+                    首版 7 大章节 PRD 封版
                   </button>
                   <button
                     type="button"
                     onClick={() => {
                       setMessageType('instruction');
-                      setInputText('当前尚未执行外部实盘买量投放，请严格以「未录入外部实测数据 · 待回填立项评估框架 + 产品需求定义 (PRD) 施工基线」口径输出报告（严禁捏造虚假实盘花费或早鸟人数），上方列出待回填指标表，下方完整输出字段级 PRD 规范、数据 Schema 与 Gherkin 验收标准。');
+                      setInputText('承接工序 11 运营数据复盘建议书与 Backlog 需求池，输出版本演进目标、[新增]/[修改]/[废弃] 变更点对照表及增量 PRD 规格说明。');
                     }}
-                    className="px-2 py-0.5 rounded bg-white hover:bg-amber-100 text-amber-800 border border-amber-300 transition cursor-pointer"
+                    className="px-2 py-0.5 rounded bg-white hover:bg-purple-50 text-purple-700 border border-purple-200 font-medium transition cursor-pointer"
                   >
-                    生成待回填立项框架+需求规范
+                    版本迭代增量 PRD
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMessageType('feedback');
+                      setInputText('收到来自下游工序的需求变更请求 (CR)：【变更模块】：___；【矛盾说明】：___；【建议调整】：___。请全面评估对整体架构与契约的影响，靶向修订 PRD 相关章节并形成新基线版本。');
+                    }}
+                    className="px-2 py-0.5 rounded bg-white hover:bg-amber-50 text-amber-800 border border-amber-300 font-medium transition cursor-pointer"
+                  >
+                    下游 CR 修订 PRD
                   </button>
                 </div>
               </div>
@@ -1236,11 +1355,11 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
           <div className="flex-1 overflow-y-auto bg-white flex flex-col">
             {selectedArtifact ? (
               selectedArtifact.artifact_type === 'html_bundle' && artifactViewMode === 'preview' ? (
-                <div className="flex-1 bg-slate-100/80 p-3 flex items-center justify-center overflow-auto min-h-[460px]">
+                <div className="flex-1 bg-slate-100/80 p-2.5 flex items-center justify-center overflow-auto min-h-[720px]">
                   <div
-                    className={`h-[580px] bg-white rounded-xl shadow-md border border-slate-300 overflow-hidden transition-all duration-300 flex flex-col ${
+                    className={`h-[calc(100vh-210px)] min-h-[700px] bg-white rounded-xl shadow-md border border-slate-300 overflow-hidden transition-all duration-300 flex flex-col ${
                       prototypeViewport === 'mobile'
-                        ? 'w-[375px]'
+                        ? 'w-[393px]'
                         : prototypeViewport === 'tablet'
                         ? 'w-[768px]'
                         : 'w-full'

@@ -8,7 +8,8 @@ from backend.app.models.entities import (
     CollaborationSession,
     SessionMessage,
     ModuleInstance,
-    Artifact
+    Artifact,
+    Issue
 )
 from backend.app.services.context_assembler import assemble_module_context
 from backend.app.adapters.factory import get_agent_adapter
@@ -177,6 +178,17 @@ async def execute_agent_for_session(
                 except Exception:
                     storage_rel_path = None
 
+            change_summary = None
+            if user_message.issue_ref_id:
+                issue_stmt = select(Issue).where(Issue.id == user_message.issue_ref_id)
+                issue_res = await db.execute(issue_stmt)
+                referenced_issue = issue_res.scalar_one_or_none()
+                if referenced_issue:
+                    change_summary = f"采纳并解决问题单 [{referenced_issue.id}]: {referenced_issue.title}"
+                    referenced_issue.status = "closed"
+                    referenced_issue.resolution = f"已采纳并在 {module.name} 交付物 (V{next_version}) 中完成修订"
+                    db.add(referenced_issue)
+
             new_artifact = Artifact(
                 module_id=module.id,
                 version=next_version,
@@ -186,13 +198,14 @@ async def execute_agent_for_session(
                 artifact_type=artifact_type,
                 storage_rel_path=storage_rel_path,
                 entry_file=entry_file,
+                change_summary=change_summary,
                 is_baseline=False
             )
             db.add(new_artifact)
             await db.flush()
 
             module.baseline_artifact_id = new_artifact.id
-            if module.phase == "draft":
+            if module.phase in ("draft", "baselined"):
                 module.phase = "discussing"
             db.add(module)
 
