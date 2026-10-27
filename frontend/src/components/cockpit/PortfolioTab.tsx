@@ -95,10 +95,10 @@ export const PortfolioTab: React.FC<PortfolioTabProps> = ({
             <button
               onClick={() => setShowWeeklyReportModal(true)}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition shadow-2xs cursor-pointer"
-              title="查看投资组合一页纸决策周报"
+              title="自下而上汇总矩阵所有产品的研发进度、花销与经营调整建议"
             >
               <FileText className="w-3.5 h-3.5 text-emerald-600" />
-              <span>CEO 投资周报</span>
+              <span>产品经营周报</span>
             </button>
 
             <button

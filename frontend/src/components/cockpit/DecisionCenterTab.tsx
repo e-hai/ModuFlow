@@ -345,21 +345,21 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
           <div className="space-y-0.5">
             <h3 className="text-xs font-bold text-slate-900 flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 text-rose-600" />
-              <span>三、人类战略关口审批待办池 (Human Gate Queue: 🟡 黄级 & 🔴 红级)</span>
+              <span>三、待您亲自把关确认的阶段成果 (审批待办池)</span>
             </h3>
             <p className="text-[11px] text-slate-500">
-              严格硬红线：G1/G2/G4/G5 及涉及支付、隐私、超预算等红级关口系统物理阻断，必须经由人类战略层签署一页纸审批单方可放行。
+              为防止走偏或误操作，重大决策节点（如立项方向、假门外测决议、提审上架、价格与真实货币结算）必须由您亲自签署确认放行。
             </p>
           </div>
           <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-            待审批: {pendingGates.length} 个关口
+            待您确认: {pendingGates.length} 个阶段
           </span>
         </div>
 
         {pendingGates.length === 0 ? (
           <div className="py-8 text-center text-slate-400 text-xs">
             <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-500" />
-            当前无待审批的黄级或红级关口，所有矩阵产品流水线健康流转中。
+            当前无待确认的重大阶段，所有矩阵产品流水线均在正常流转中。
           </div>
         ) : (
           <div className="space-y-3">
@@ -396,7 +396,7 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                     <div className="text-[11px] text-purple-900 flex items-center gap-1.5 pt-0.5">
                       <Bot className="w-3.5 h-3.5 text-purple-600 shrink-0" />
                       <span>
-                        Lead 影子建议：<strong>{gate.lead_recommendation}</strong>
+                        AI主管预审建议：<strong>{gate.lead_recommendation}</strong>
                         {gate.lead_rationale && ` (${gate.lead_rationale})`}
                       </span>
                     </div>
@@ -405,7 +405,7 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                   {gate.is_escalated && gate.escalation_reasons?.length > 0 && (
                     <div className="text-[11px] text-rose-700 flex items-center gap-1 pt-0.5">
                       <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                      <span>升红原因：{gate.escalation_reasons.join('；')}</span>
+                      <span>重大变更原因：{gate.escalation_reasons.join('；')}</span>
                     </div>
                   )}
                 </div>
@@ -416,7 +416,7 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                     className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white transition shadow-xs flex items-center gap-1.5 cursor-pointer"
                   >
                     <FileCheck2 className="w-3.5 h-3.5" />
-                    <span>查看一页纸审批单</span>
+                    <span>查看详情并拍板</span>
                   </button>
                 </div>
               </div>

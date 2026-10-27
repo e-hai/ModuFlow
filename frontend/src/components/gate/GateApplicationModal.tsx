@@ -15,7 +15,6 @@ import {
   UserCheck,
   FileText,
   Loader2,
-  CornerDownRight,
   Send
 } from 'lucide-react';
 
@@ -42,7 +41,7 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
   const [submitting, setSubmitting] = useState(false);
   const [reviewAction, setReviewAction] = useState<'approve' | 'reject' | 'adjust'>('approve');
   const [reviewComment, setReviewComment] = useState('');
-  const [reviewerName, setReviewerName] = useState('CEO / 人类战略层');
+  const [reviewerName, setReviewerName] = useState('业务负责人 / CEO');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Form fields for creating a new gate application if none exists
@@ -71,13 +70,12 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
         setGateApp(app.value);
       } else {
         setGateApp(null);
-        // Pre-fill default recommendation
-        setNewRecommendation(`本工序 [${moduleCode} ${moduleName}] 成果已完成闭环校验，符合放行准则。`);
-        setNewRiskAssessment('经合规与技术排查，无阻断性风险，建议按既定标准准予放行。');
+        setNewRecommendation(`本阶段【${moduleCode} ${moduleName}】成果已交付，各项检查已就绪，建议准予通过进入下个环节。`);
+        setNewRiskAssessment('经合规与功能自检，未发现阻塞性缺陷与违规项，风险可控。');
       }
     } catch (err: any) {
       console.error('Failed to load gate data:', err);
-      setErrorMsg(err.message || '加载关口数据失败');
+      setErrorMsg(err.message || '加载把关确认单失败');
     } finally {
       setLoading(false);
     }
@@ -93,9 +91,9 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
       const created = await api.submitGateApplication(moduleId, {
         recommendation: newRecommendation.trim(),
         evidence: [
-          `工序交付物已就绪`,
-          `前置依赖项与门禁校验通过`,
-          `提交时间: ${new Date().toLocaleString()}`,
+          `本阶段交付物规范已封版`,
+          `前置阶段依赖与质量要求检查通过`,
+          `提报时间: ${new Date().toLocaleString()}`,
         ],
         risk_assessment: newRiskAssessment.trim(),
         decision_options: ['approve', 'reject', 'adjust'],
@@ -103,7 +101,7 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
       });
       setGateApp(created);
     } catch (err: any) {
-      setErrorMsg(err.message || '提报关口申请单失败');
+      setErrorMsg(err.message || '提交确认单失败');
     } finally {
       setSubmitting(false);
     }
@@ -116,7 +114,7 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
       const evaluated = await api.evaluateGateByLead(moduleId);
       setGateApp(evaluated);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Lead 评估关口失败');
+      setErrorMsg(err.message || 'AI主管评估整理失败');
     } finally {
       setSubmitting(false);
     }
@@ -130,15 +128,15 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
       setErrorMsg(null);
       const reviewed = await api.reviewGateApplication(gateApp.id, {
         action: reviewAction,
-        comment: reviewComment.trim() || (reviewAction === 'approve' ? '同意放行' : '请根据意见调整'),
-        reviewer_name: reviewerName.trim() || '人类战略层',
+        comment: reviewComment.trim() || (reviewAction === 'approve' ? '同意通过' : '已批注修改要求'),
+        reviewer_name: reviewerName.trim() || '业务负责人',
       });
       setGateApp(reviewed);
       if (reviewAction === 'approve' && onApproved) {
         onApproved();
       }
     } catch (err: any) {
-      setErrorMsg(err.message || '审批操作失败');
+      setErrorMsg(err.message || '决策提交失败');
     } finally {
       setSubmitting(false);
     }
@@ -150,18 +148,18 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
     <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white border border-slate-200 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden my-8 max-h-[90vh] flex flex-col">
         {/* 顶部标题栏 */}
-        <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
+        <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-emerald-50/40">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold">
-                  {moduleCode}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-mono text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-bold">
+                  工序 {moduleCode}
                 </span>
                 <h3 className="font-bold text-slate-900 text-base">
-                  {gateConfig?.name || `工序 ${moduleCode} 关口`} 一页纸申请单
+                  {gateConfig?.name ? `${gateConfig.name} · 阶段把关拍板卡` : `阶段把关拍板卡`}
                 </h3>
                 {gateApp ? (
                   <GateBadge
@@ -174,8 +172,8 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                   <GateBadge level={gateConfig.level} gateName={gateConfig.name} size="sm" />
                 ) : null}
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                所属模块：{moduleName} · {gateConfig?.approver === 'human' ? '需人类战略层审批' : '由项目总控层/人类协同'}
+              <p className="text-xs text-slate-600 mt-0.5">
+                所属环节：<strong>{moduleName}</strong> · 汇总交付成果、真实数据与风险对策，供您 30 秒轻松拍板
               </p>
             </div>
           </div>
@@ -206,83 +204,89 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
           {loading ? (
             <div className="py-16 text-center text-slate-400 space-y-2">
               <Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-600" />
-              <p>加载关口审批契约中...</p>
+              <p>正在读取本阶段交付把关信息...</p>
             </div>
           ) : gateApp ? (
             <>
-              {/* 自动升红警示 */}
+              {/* 重大变更提醒 */}
               {gateApp.is_escalated && (
-                <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 space-y-1.5 animate-pulse">
+                <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-950 space-y-1.5">
                   <div className="flex items-center gap-2 font-bold text-rose-800 text-xs">
-                    <AlertTriangle className="w-4 h-4 text-rose-600" />
-                    <span>⚠️ 自动升级为 🔴 红级关口（人类即时必批）</span>
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>⚠️ 检测到重大或高危变更（系统已自动暂停，需您亲自确认）</span>
                   </div>
-                  <p className="text-[11px] text-rose-700">
-                    触发条件：{gateApp.escalation_reasons?.join('；') || '检测到敏感变更，系统已强制阻断'}
+                  <p className="text-[11px] text-rose-700 leading-relaxed">
+                    触发原因：{gateApp.escalation_reasons?.join('；') || '涉及真实货币结算、隐私政策或核心数据调整，AI 无权擅自放行'}
                   </p>
                 </div>
               )}
 
-              {/* 关口状态卡片 */}
+              {/* 状态卡片 */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
                 <div>
-                  <span className="text-slate-400 block text-[11px]">审批状态</span>
-                  <span className="font-bold text-slate-900 capitalize">
+                  <span className="text-slate-400 block text-[11px]">当前审核状态</span>
+                  <span className="font-bold text-slate-900 mt-0.5 block">
                     {gateApp.status === 'approved' ? (
                       <span className="text-emerald-700 flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> 已批准放行
+                        <CheckCircle2 className="w-3.5 h-3.5" /> 已批准通过
                       </span>
                     ) : gateApp.status === 'rejected' ? (
                       <span className="text-rose-700 flex items-center gap-1">
-                        <XCircle className="w-3.5 h-3.5" /> 已打回整改
+                        <XCircle className="w-3.5 h-3.5" /> 已驳回重做
                       </span>
                     ) : gateApp.status === 'adjusted' ? (
                       <span className="text-amber-700 flex items-center gap-1">
-                        <AlertTriangle className="w-3.5 h-3.5" /> 调整要求
+                        <AlertTriangle className="w-3.5 h-3.5" /> 待修改调整
                       </span>
                     ) : (
                       <span className="text-indigo-700 flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5" /> 待审批 (Pending)
+                        <Clock className="w-3.5 h-3.5" /> 待您确认
                       </span>
                     )}
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">有效关口级别</span>
-                  <span className="font-mono font-bold text-slate-900 uppercase">
-                    {gateApp.effective_level}
+                  <span className="text-slate-400 block text-[11px]">把关规则要求</span>
+                  <span className="font-bold text-slate-900 mt-0.5 block">
+                    {gateApp.effective_level === 'red'
+                      ? '必须负责人签字'
+                      : gateApp.effective_level === 'yellow'
+                      ? '负责人把关确认'
+                      : '系统自动核验'}
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">提报主体</span>
-                  <span className="font-mono text-slate-700">{gateApp.submitted_by}</span>
+                  <span className="text-slate-400 block text-[11px]">提报人 / 角色</span>
+                  <span className="font-mono text-slate-700 mt-0.5 block truncate">
+                    {gateApp.submitted_by.replace('agent:', 'AI智能体:').replace('human:', '人工:')}
+                  </span>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[11px]">提报时间</span>
-                  <span className="text-slate-600">{new Date(gateApp.submitted_at).toLocaleTimeString()}</span>
+                  <span className="text-slate-600 mt-0.5 block">{new Date(gateApp.submitted_at).toLocaleTimeString()}</span>
                 </div>
               </div>
 
-              {/* 一页纸主体：1. 结论建议 */}
-              <div className="space-y-1.5 bg-white border border-slate-200 p-4 rounded-xl">
+              {/* 1. 结论建议 */}
+              <div className="space-y-1.5 bg-white border border-slate-200 p-4 rounded-xl shadow-2xs">
                 <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
                   <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-800 text-[10px] flex items-center justify-center font-bold">
                     1
                   </span>
-                  结论建议 (Executive Recommendation)
+                  阶段交付结论与建议
                 </h4>
                 <div className="p-3 bg-slate-50 rounded-lg text-slate-800 leading-relaxed font-medium">
                   {gateApp.recommendation}
                 </div>
               </div>
 
-              {/* 一页纸主体：2. 依据事实清单 */}
-              <div className="space-y-1.5 bg-white border border-slate-200 p-4 rounded-xl">
+              {/* 2. 事实依据清单 */}
+              <div className="space-y-1.5 bg-white border border-slate-200 p-4 rounded-xl shadow-2xs">
                 <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
                   <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-800 text-[10px] flex items-center justify-center font-bold">
                     2
                   </span>
-                  事实依据清单 (Verifiable Evidence)
+                  核验依据清单（数据、测试与规范）
                 </h4>
                 <ul className="space-y-1 pl-1">
                   {Array.isArray(gateApp.evidence) ? (
@@ -298,42 +302,42 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                 </ul>
               </div>
 
-              {/* 一页纸主体：3. 风险排查与对策 */}
-              <div className="space-y-1.5 bg-white border border-slate-200 p-4 rounded-xl">
+              {/* 3. 风险排查与对策 */}
+              <div className="space-y-1.5 bg-white border border-slate-200 p-4 rounded-xl shadow-2xs">
                 <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
                   <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-800 text-[10px] flex items-center justify-center font-bold">
                     3
                   </span>
-                  风险排查与规避对策 (Risk & Mitigation)
+                  潜在风险排查与应对方案
                 </h4>
-                <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-lg text-amber-950 leading-relaxed">
+                <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-lg text-amber-950 leading-relaxed">
                   {gateApp.risk_assessment}
                 </div>
               </div>
 
-              {/* Lead 影子建议 (Shadow Mode Insight) */}
+              {/* AI 项目主管预审建议 */}
               {gateApp.lead_recommendation && (
                 <div className="space-y-1.5 p-3.5 rounded-xl bg-purple-50/80 border border-purple-200">
                   <div className="flex items-center justify-between">
-                    <h5 className="font-bold text-purple-900 text-xs flex items-center gap-1.5">
+                    <h5 className="font-bold text-purple-950 text-xs flex items-center gap-1.5">
                       <Bot className="w-4 h-4 text-purple-600" />
-                      项目总控 (Lead Agent) 影子建议
+                      AI 项目主管 (Lead) 预审研判
                     </h5>
                     {gateApp.is_consistent !== null && gateApp.is_consistent !== undefined && (
                       <span
                         className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                           gateApp.is_consistent
                             ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-rose-100 text-rose-800'
+                            : 'bg-amber-100 text-amber-800'
                         }`}
                       >
-                        {gateApp.is_consistent ? '✓ 建议与人类一致' : '✕ 存在分歧 (已记录)'}
+                        {gateApp.is_consistent ? '✓ 与您的决策偏好吻合' : '⚠️ 存在差异（供参考）'}
                       </span>
                     )}
                   </div>
                   <p className="text-purple-950 font-medium">建议动作：{gateApp.lead_recommendation}</p>
                   {gateApp.lead_rationale && (
-                    <p className="text-[11px] text-purple-700">{gateApp.lead_rationale}</p>
+                    <p className="text-[11px] text-purple-800">{gateApp.lead_rationale}</p>
                   )}
                 </div>
               )}
@@ -344,10 +348,10 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                   <div className="flex items-center justify-between">
                     <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
                       <UserCheck className="w-4 h-4 text-emerald-600" />
-                      关口拍板裁决 (Human Review Sign-off)
+                      请给出您的拍板决定
                     </h4>
                     <span className="text-[11px] text-slate-500">
-                      硬约束：黄/红级关口仅限人类账号审批
+                      所有放行与修改要求均完整记录在审计日志中
                     </span>
                   </div>
 
@@ -362,7 +366,7 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                       }`}
                     >
                       <CheckCircle2 className="w-4 h-4" />
-                      通过放行 (Approve)
+                      同意通过，进入下一阶段
                     </button>
                     <button
                       type="button"
@@ -374,7 +378,7 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                       }`}
                     >
                       <AlertTriangle className="w-4 h-4" />
-                      调整要求 (Adjust)
+                      需要调整，退回修改
                     </button>
                     <button
                       type="button"
@@ -386,33 +390,33 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                       }`}
                     >
                       <XCircle className="w-4 h-4" />
-                      打回整改 (Reject)
+                      不通过，驳回重做
                     </button>
                   </div>
 
                   <div>
                     <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                      审批人身份 / 签名
+                      签字确认人 / 职务
                     </label>
                     <input
                       type="text"
                       value={reviewerName}
                       onChange={(e) => setReviewerName(e.target.value)}
                       className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                      placeholder="如：CEO / 业务负责人"
+                      placeholder="例如：业务负责人 / CEO"
                     />
                   </div>
 
                   <div>
                     <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                      审批意见或调整批注
+                      批注说明或具体修改要求（选填）
                     </label>
                     <textarea
                       rows={2}
                       value={reviewComment}
                       onChange={(e) => setReviewComment(e.target.value)}
                       className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                      placeholder="输入放行意见或针对性调整要求..."
+                      placeholder="输入您的放行意见，或指明需要下游团队重点注意的事项..."
                     />
                   </div>
 
@@ -423,57 +427,57 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                       className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                     >
                       {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                      确认提交拍板裁决
+                      确认提交决定
                     </button>
                   </div>
                 </div>
               ) : (
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-900 text-xs">已完成审批留痕</span>
+                    <span className="font-bold text-slate-900 text-xs">已完成把关确认</span>
                     <span className="text-[11px] text-slate-400">
                       {gateApp.reviewed_at ? new Date(gateApp.reviewed_at).toLocaleString() : ''}
                     </span>
                   </div>
                   <div className="text-slate-700 text-xs">
-                    审批人：<strong>{gateApp.reviewed_by}</strong> ({gateApp.reviewer_role})
+                    签字确认人：<strong>{gateApp.reviewed_by}</strong> ({gateApp.reviewer_role})
                   </div>
                   {gateApp.review_comment && (
                     <div className="p-2.5 bg-white border border-slate-200 rounded-lg text-slate-800 text-[11px]">
-                      {gateApp.review_comment}
+                      意见批注：{gateApp.review_comment}
                     </div>
                   )}
                 </div>
               )}
             </>
           ) : (
-            /* 尚无关口申请单：提供一键生成或手动提报 */
+            /* 尚无关口申请单 */
             <div className="space-y-4">
-              <div className="p-4 bg-emerald-50/60 border border-emerald-200 rounded-xl space-y-2">
-                <div className="flex items-center gap-2 font-bold text-emerald-900 text-xs">
+              <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-2">
+                <div className="flex items-center gap-2 font-bold text-emerald-950 text-xs">
                   <Sparkles className="w-4 h-4 text-emerald-600" />
-                  <span>当前工序尚未生成一页纸关口申请单</span>
+                  <span>当前环节尚未生成阶段把关确认单</span>
                 </div>
-                <p className="text-[11px] text-emerald-800 leading-relaxed">
-                  在进行工序定稿 (Baseline) 或关口裁决前，需整理并提交标准的一页纸关口申请单（涵盖结论建议、依据事实、风险对策）。可点击下方按钮由项目总控 (Lead) 一键生成，或手动填写提报。
+                <p className="text-[11px] text-emerald-900 leading-relaxed">
+                  在将本环节成果定稿推进至下一阶段前，需要一份结构清晰的拍板确认单（涵盖交付结论、依据事实、风险排查）。您可以让 AI 项目主管为您一键整理提报，也可以手动输入内容。
                 </p>
                 <div className="pt-2">
                   <button
                     onClick={handleLeadEvaluate}
                     disabled={submitting}
-                    className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-xs"
                   >
-                    {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bot className="w-3.5 h-3.5" />}
-                    项目总控 (Lead) 自动评估并提报
+                    {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    让 AI 项目主管 (Lead) 帮我一键整理提报
                   </button>
                 </div>
               </div>
 
               <form onSubmit={handleCreateApplication} className="space-y-3 bg-white border border-slate-200 p-4 rounded-xl">
-                <h4 className="font-bold text-slate-900 text-xs">手动提报关口申请单</h4>
+                <h4 className="font-bold text-slate-900 text-xs">手动填写提报内容</h4>
                 <div>
                   <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                    结论建议 (Executive Recommendation) *
+                    交付结论与推进建议 *
                   </label>
                   <textarea
                     rows={2}
@@ -481,12 +485,12 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                     value={newRecommendation}
                     onChange={(e) => setNewRecommendation(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                    placeholder="输入本工序交付物质量与建议动作..."
+                    placeholder="输入本阶段成果的核心价值与放行建议..."
                   />
                 </div>
                 <div>
                   <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                    风险排查与规避对策 *
+                    潜在风险排查与应对方案 *
                   </label>
                   <textarea
                     rows={2}
@@ -494,7 +498,7 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                     value={newRiskAssessment}
                     onChange={(e) => setNewRiskAssessment(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                    placeholder="针对潜在平台审核、技术或商业风险的对策..."
+                    placeholder="输入潜在平台规则、商业或技术风险及防范举措..."
                   />
                 </div>
 
@@ -505,7 +509,7 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                     className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
                     {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                    提交申请单
+                    保存并提交确认单
                   </button>
                 </div>
               </form>

@@ -486,36 +486,37 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* 一页纸关口申请单查看/签署入口 */}
+          {/* 一页纸阶段把关拍板卡 */}
           <button
             onClick={() => setIsGateModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition cursor-pointer shadow-2xs"
-            title="查看或提报工序一页纸关口申请单"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition cursor-pointer shadow-2xs"
+            title="查看或提报本工序阶段把关确认单"
           >
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span>关口申请单</span>
+            <span>阶段把关拍板卡</span>
             {moduleGateApp?.status === 'pending' && (
               <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
             )}
             {moduleGateApp?.status === 'approved' && (
-              <span className="text-[10px] text-emerald-700 font-bold">✓ 已放行</span>
+              <span className="text-[10px] text-emerald-700 font-bold">✓ 已批准</span>
             )}
           </button>
+
           {changeReviews.filter(r => r.status === 'pending_approval').length > 0 && (
             <button
               onClick={() => setSelectedReview(changeReviews.find(r => r.status === 'pending_approval') || null)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-xs transition cursor-pointer animate-pulse"
-              title="有待审批的交付物变更"
+              title="有待审批的交付物版本变更"
             >
               <FileDiff className="w-3.5 h-3.5" />
-              统一审批 ({changeReviews.filter(r => r.status === 'pending_approval').length})
+              交付物变更审批 ({changeReviews.filter(r => r.status === 'pending_approval').length})
             </button>
           )}
 
           <button
             onClick={() => setIsIssueModalOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition cursor-pointer"
-            title="向相关环节反馈协同问题或修改诉求"
+            title="向相关责任环节反馈协同问题或修改诉求"
           >
             <Bug className="w-3.5 h-3.5" />
             反馈协同问题
@@ -527,16 +528,16 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
               className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs transition cursor-pointer"
             >
               <FileCheck2 className="w-4 h-4" />
-              定稿发布基准 (Baseline)
+              定稿并推进下一阶段
             </button>
           ) : selectedArtifact && !selectedArtifact.is_baseline ? (
             <button
               onClick={handleBaseline}
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs transition cursor-pointer"
-              title="将当前最新版本设为工序定稿基准"
+              title="将当前最新交付物版本设为工序定稿基准"
             >
               <FileCheck2 className="w-4 h-4" />
-              更新定稿基准
+              更新阶段定稿基准
             </button>
           ) : null}
         </div>

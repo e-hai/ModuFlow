@@ -46,7 +46,7 @@ export const LeadDailyDigestModal: React.FC<LeadDailyDigestModalProps> = ({
       setDigest(data);
     } catch (err: any) {
       console.error('Failed to load project daily digest:', err);
-      setErrorMsg(err.message || '加载项目简报失败');
+      setErrorMsg(err.message || '加载项目速报失败');
     } finally {
       setLoading(false);
     }
@@ -58,20 +58,20 @@ export const LeadDailyDigestModal: React.FC<LeadDailyDigestModalProps> = ({
     <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white border border-slate-200 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden my-8 max-h-[90vh] flex flex-col">
         {/* 顶部标题栏 */}
-        <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-purple-50/60">
+        <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-purple-50/70">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-purple-100 border border-purple-200 flex items-center justify-center text-purple-700 shrink-0">
               <Bot className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-mono text-xs px-2 py-0.5 rounded bg-purple-100 text-purple-900 font-bold">
+                <span className="font-mono text-xs px-2 py-0.5 rounded bg-purple-200 text-purple-900 font-bold">
                   {productCode}
                 </span>
-                <h3 className="font-bold text-slate-900 text-base">项目每日简报 (Lead Daily Digest)</h3>
+                <h3 className="font-bold text-slate-900 text-base">项目今日速报</h3>
               </div>
-              <p className="text-xs text-purple-800 mt-0.5">
-                由项目总控 Agent (lead) 自动汇总编排推进状况与风险预警
+              <p className="text-xs text-purple-900 mt-0.5">
+                由 AI 项目主管汇总当日研发进度、预算开销与待办事项，方便您 1 分钟快速掌握
               </p>
             </div>
           </div>
@@ -102,32 +102,40 @@ export const LeadDailyDigestModal: React.FC<LeadDailyDigestModalProps> = ({
           {loading ? (
             <div className="py-16 text-center text-slate-400 space-y-2">
               <Loader2 className="w-6 h-6 animate-spin mx-auto text-purple-600" />
-              <p>项目总控 (Lead) 正在整理今日进展...</p>
+              <p>AI 项目主管正在帮您整理今日简报...</p>
             </div>
           ) : digest ? (
             <>
               {/* 元数据卡片 */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
                 <div>
-                  <span className="text-slate-400 block text-[11px]">简报日期</span>
-                  <span className="font-bold text-slate-900 flex items-center gap-1">
+                  <span className="text-slate-400 block text-[11px]">统计日期</span>
+                  <span className="font-bold text-slate-900 flex items-center gap-1 mt-0.5">
                     <Calendar className="w-3.5 h-3.5 text-slate-500" />
                     {digest.date}
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">编写主体</span>
-                  <span className="font-mono font-bold text-purple-800">{digest.author}</span>
+                  <span className="text-slate-400 block text-[11px]">整理主管</span>
+                  <span className="font-bold text-purple-900 mt-0.5 block">AI 项目主管 (Lead)</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">活跃迭代</span>
-                  <span className="font-bold text-slate-900 truncate block">
-                    {digest.active_run_name || '无活跃迭代'}
+                  <span className="text-slate-400 block text-[11px]">当前版本/迭代</span>
+                  <span className="font-bold text-slate-900 truncate block mt-0.5">
+                    {digest.active_run_name || '暂无进行中迭代'}
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">模板工序</span>
-                  <span className="font-mono text-slate-600">{digest.template_id || '标准工序'}</span>
+                  <span className="text-slate-400 block text-[11px]">研发模式</span>
+                  <span className="font-mono text-slate-700 mt-0.5 block">
+                    {digest.template_id === 'full-product-launch'
+                      ? '从0到1完整研发'
+                      : digest.template_id === 'fast-iteration'
+                      ? '快速功能迭代'
+                      : digest.template_id === 'hotfix'
+                      ? '紧急线上修复'
+                      : digest.template_id || '标准工序'}
+                  </span>
                 </div>
               </div>
 
@@ -137,9 +145,9 @@ export const LeadDailyDigestModal: React.FC<LeadDailyDigestModalProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
                       <Layers className="w-4 h-4 text-emerald-600" />
-                      工序推进达成率
+                      研发工序完成度
                     </span>
-                    <span className="font-mono font-bold text-emerald-800">
+                    <span className="font-mono font-bold text-emerald-800 text-sm">
                       {digest.stage_progress.completion_rate_percent}%
                     </span>
                   </div>
@@ -150,8 +158,8 @@ export const LeadDailyDigestModal: React.FC<LeadDailyDigestModalProps> = ({
                     />
                   </div>
                   <div className="text-[11px] text-slate-500 flex justify-between">
-                    <span>已定稿基线: {digest.stage_progress.baselined_modules} 环节</span>
-                    <span>全部工序: {digest.stage_progress.total_modules} 环节</span>
+                    <span>已完成定稿: {digest.stage_progress.baselined_modules} 步</span>
+                    <span>全部工序: {digest.stage_progress.total_modules} 步</span>
                   </div>
                 </div>
 
@@ -159,9 +167,9 @@ export const LeadDailyDigestModal: React.FC<LeadDailyDigestModalProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
                       <DollarSign className="w-4 h-4 text-amber-600" />
-                      预算额度消耗
+                      预算使用进度
                     </span>
-                    <span className="font-mono font-bold text-amber-800">
+                    <span className="font-mono font-bold text-amber-800 text-sm">
                       {digest.budget_status.burn_percent}%
                     </span>
                   </div>
@@ -172,17 +180,17 @@ export const LeadDailyDigestModal: React.FC<LeadDailyDigestModalProps> = ({
                     />
                   </div>
                   <div className="text-[11px] text-slate-500 flex justify-between">
-                    <span>已耗花费: ${digest.budget_status.spent.toLocaleString()}</span>
+                    <span>已花费: ${digest.budget_status.spent.toLocaleString()}</span>
                     <span>授权总预算: ${digest.budget_status.budget.toLocaleString()}</span>
                   </div>
                 </div>
               </div>
 
               {/* Lead 综合评估 */}
-              <div className="p-4 bg-purple-50/70 border border-purple-200 rounded-xl space-y-1.5">
+              <div className="p-4 bg-purple-50/70 border border-purple-200 rounded-xl space-y-1.5 shadow-2xs">
                 <h4 className="font-bold text-purple-950 text-xs flex items-center gap-1.5">
                   <Sparkles className="w-4 h-4 text-purple-700" />
-                  项目总控 (Lead) 今日核心研判
+                  AI 项目主管今日核心研判
                 </h4>
                 <p className="text-purple-900 leading-relaxed font-medium">
                   {digest.lead_assessment}
@@ -206,7 +214,7 @@ export const LeadDailyDigestModal: React.FC<LeadDailyDigestModalProps> = ({
                           {evt.time}
                         </span>
                         <span className="font-mono text-[11px] px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded font-semibold shrink-0">
-                          {evt.module_code}
+                          工序 {evt.module_code}
                         </span>
                         <div className="flex-1">
                           <span className="font-semibold text-slate-900 block">{evt.summary}</span>
@@ -241,7 +249,7 @@ export const LeadDailyDigestModal: React.FC<LeadDailyDigestModalProps> = ({
                           <span className="font-medium text-xs">{item.title}</span>
                         </div>
                         <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white text-amber-800 border border-amber-300">
-                          {item.urgency}
+                          {item.urgency === 'high' ? '紧急' : item.urgency === 'medium' ? '中度' : '常规'}
                         </span>
                       </div>
                     ))}

@@ -43,7 +43,7 @@ export const PortfolioWeeklyReportModal: React.FC<PortfolioWeeklyReportModalProp
       setReport(data);
     } catch (err: any) {
       console.error('Failed to load portfolio weekly report:', err);
-      setErrorMsg(err.message || '加载投资周报失败');
+      setErrorMsg(err.message || '加载经营周报失败');
     } finally {
       setLoading(false);
     }
@@ -63,14 +63,14 @@ export const PortfolioWeeklyReportModal: React.FC<PortfolioWeeklyReportModalProp
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs px-2 py-0.5 rounded bg-emerald-200 text-emerald-900 font-bold">
-                  Portfolio Weekly
+                  Weekly Digest
                 </span>
                 <h3 className="font-bold text-slate-900 text-base">
-                  CEO 一页纸投资组合周报 (Executive Portfolio Digest)
+                  产品投资与经营周报
                 </h3>
               </div>
               <p className="text-xs text-emerald-800 mt-0.5">
-                自下而上聚合各产品花费、生命周期阶段、生死假设与经营建议
+                自下而上汇总矩阵所有产品的研发进度、花销状况、关键指标与经营调整建议
               </p>
             </div>
           </div>
@@ -101,56 +101,55 @@ export const PortfolioWeeklyReportModal: React.FC<PortfolioWeeklyReportModalProp
           {loading ? (
             <div className="py-20 text-center text-slate-400 space-y-2">
               <Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-600" />
-              <p>正在自下而上聚合矩阵产品投资数据...</p>
+              <p>正在为您汇总全线产品经营与花费数据...</p>
             </div>
           ) : report ? (
             <>
-              {/* ⚠️ 绝对红线告知栏 */}
+              {/* 提示条 */}
               <div className="p-3.5 rounded-xl bg-slate-900 text-white flex items-center gap-3">
                 <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0" />
                 <div className="text-[11px] leading-relaxed">
-                  <span className="font-bold text-amber-400">人类战略层硬红线保护：</span>{' '}
-                  {report.redline_notice ||
-                    '投资组合分析器仅具备建议权，严格禁止自主调拨项目资金或自主执行项目关闭！所有注资与关停决策严格归属人类战略层。'}
+                  <span className="font-bold text-amber-400">决策权保障：</span>{' '}
+                  本周报仅提供数据分析与经营建议，系统绝不会自动加减预算或自主关停产品，所有资金调配与立项决策必须由您亲自拍板确认。
                 </div>
               </div>
 
               {/* 顶层宏观大盘 */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
                 <div>
-                  <span className="text-slate-400 block text-[11px]">矩阵产品总数</span>
+                  <span className="text-slate-400 block text-[11px]">管理产品总数</span>
                   <span className="font-bold text-slate-900 text-base">{report.total_products} 款</span>
-                  <span className="text-[10px] text-slate-500 block">
-                    健康: <strong className="text-emerald-700">{report.healthy_count}</strong> · 预警: <strong className="text-amber-700">{report.risky_count}</strong>
+                  <span className="text-[10px] text-slate-500 block mt-0.5">
+                    健康推进: <strong className="text-emerald-700">{report.healthy_count}</strong> · 需关注: <strong className="text-amber-700">{report.risky_count}</strong>
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">投资组合总预算</span>
+                  <span className="text-slate-400 block text-[11px]">授权总预算池</span>
                   <span className="font-mono font-bold text-slate-900 text-base">
                     ${report.total_budget_usd?.toLocaleString()}
                   </span>
-                  <span className="text-[10px] text-slate-500 block">各产品授权包注资总和</span>
+                  <span className="text-[10px] text-slate-500 block mt-0.5">各产品授权包注资总计</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">累计实际已支出</span>
+                  <span className="text-slate-400 block text-[11px]">实际已花费</span>
                   <span className="font-mono font-bold text-amber-900 text-base">
                     ${report.total_spent_usd?.toLocaleString()}
                   </span>
-                  <span className="text-[10px] text-slate-500 block">包含研发/买量/基础设施</span>
+                  <span className="text-[10px] text-slate-500 block mt-0.5">包含研发/买量/基础服务</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">总体资金消耗率</span>
+                  <span className="text-slate-400 block text-[11px]">预算使用率</span>
                   <span className="font-mono font-bold text-emerald-800 text-base">
                     {report.budget_utilization_rate}%
                   </span>
-                  <span className="text-[10px] text-slate-500 block">总花费 / 总预算</span>
+                  <span className="text-[10px] text-slate-500 block mt-0.5">实际花费 / 授权总预算</span>
                 </div>
               </div>
 
               {/* 矩阵产品横向对比表 */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-slate-900 text-xs">矩阵产品健康度与建议矩阵</h4>
+                  <h4 className="font-bold text-slate-900 text-xs">各产品健康度与建议一览</h4>
                   <span className="text-[11px] text-slate-400">
                     生成时间: {new Date(report.generated_at).toLocaleString()}
                   </span>
@@ -162,11 +161,11 @@ export const PortfolioWeeklyReportModal: React.FC<PortfolioWeeklyReportModalProp
                       <tr className="bg-slate-100/75 border-b border-slate-200 text-[11px] text-slate-600 font-semibold">
                         <th className="py-2.5 px-3">产品代号</th>
                         <th className="py-2.5 px-3">产品名称</th>
-                        <th className="py-2.5 px-3">阶段</th>
+                        <th className="py-2.5 px-3">当前阶段</th>
                         <th className="py-2.5 px-3 text-right">已耗 / 预算</th>
-                        <th className="py-2.5 px-3 text-right">消耗率</th>
-                        <th className="py-2.5 px-3">止损触发</th>
-                        <th className="py-2.5 px-3">决策建议</th>
+                        <th className="py-2.5 px-3 text-right">花销比例</th>
+                        <th className="py-2.5 px-3">触碰止损线</th>
+                        <th className="py-2.5 px-3">建议动作</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-[11px]">
@@ -203,7 +202,7 @@ export const PortfolioWeeklyReportModal: React.FC<PortfolioWeeklyReportModalProp
                                 命中退出条件
                               </span>
                             ) : (
-                              <span className="text-slate-400 text-[10px]">正常</span>
+                              <span className="text-slate-400 text-[10px]">正常推进</span>
                             )}
                           </td>
                           <td className="py-2.5 px-3 font-medium text-slate-900">
@@ -216,12 +215,12 @@ export const PortfolioWeeklyReportModal: React.FC<PortfolioWeeklyReportModalProp
                 </div>
               </div>
 
-              {/* CEO 战略建议清单 */}
+              {/* 战略建议清单 */}
               {report.strategic_recommendations && report.strategic_recommendations.length > 0 && (
                 <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 space-y-2">
                   <h4 className="font-bold text-emerald-950 text-xs flex items-center gap-1.5">
                     <TrendingUp className="w-4 h-4 text-emerald-700" />
-                    CEO 战略推进与投资组合建议
+                    产品经营与投资调整建议
                   </h4>
                   <ul className="space-y-1 pl-1">
                     {report.strategic_recommendations.map((rec, idx) => (

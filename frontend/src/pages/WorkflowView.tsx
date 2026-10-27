@@ -281,20 +281,20 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
 
               {/* Profile 平台与零推理规则集标签 */}
               {productProfile && (
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <span
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-blue-50 text-blue-800 border border-blue-200"
-                    title={`项目规则集：${productProfile.ruleset}`}
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-800 border border-blue-200"
+                    title={`当前项目适配规则：${productProfile.ruleset}`}
                   >
                     <Smartphone className="w-3 h-3 text-blue-600" />
-                    {productProfile.platform === 'android' ? 'Android (Material 3)' : 'iOS (HIG)'}
+                    {productProfile.platform === 'android' ? '安卓端 · M3 规范' : '苹果端 · HIG 规范'}
                   </span>
                   <span
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-teal-50 text-teal-800 border border-teal-200"
-                    title={productProfile.client_zero_inference ? '严格执行客户端零推理成本门禁' : '允许端侧边缘模型离线推理'}
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-teal-50 text-teal-800 border border-teal-200"
+                    title={productProfile.client_zero_inference ? '严格死守零客户端推理成本红线' : '允许端侧轻量 AI 模型离线推理'}
                   >
                     <Cpu className="w-3 h-3 text-teal-600" />
-                    {productProfile.client_zero_inference ? '零推理成本' : '边缘端 AI'}
+                    {productProfile.client_zero_inference ? '纯客户端 (零 AI 成本)' : '端侧轻量 AI'}
                   </span>
                 </div>
               )}
@@ -313,7 +313,7 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 text-xs shadow-2xs">
               <Bot className="w-3.5 h-3.5 text-purple-600" />
               <span className="font-semibold">
-                Lead {shadowStats.shadow_mode_enabled ? '影子模式' : '自主模式'}
+                {shadowStats.shadow_mode_enabled ? 'AI主管影子模式 (学习中)' : 'AI主管自主模式 (已放权)'}
               </span>
               {shadowStats.total_evaluated > 0 && (
                 <span className="font-mono text-[11px] text-purple-700">
@@ -324,9 +324,9 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
                 onClick={handleToggleShadowMode}
                 disabled={actionLoading}
                 className="ml-1 text-[11px] text-purple-700 hover:text-purple-900 underline font-bold cursor-pointer disabled:opacity-50"
-                title="人类战略层开关：切换 Lead 影子模式"
+                title="人类专属开关：切换 AI 项目主管是仅提供建议，还是允许自批放行绿级关口"
               >
-                {shadowStats.shadow_mode_enabled ? '放权' : '收回'}
+                {shadowStats.shadow_mode_enabled ? '放权给 AI' : '收回为影子'}
               </button>
             </div>
           )}
@@ -334,11 +334,11 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
           {/* Lead 每日简报查看入口 */}
           <button
             onClick={() => setShowDigestModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 transition shadow-2xs cursor-pointer"
-            title="查看项目总控 (lead) 生成的每日简报"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 transition shadow-2xs cursor-pointer"
+            title="查看由 AI 项目主管整理的每日研发与预算速报"
           >
             <FileText className="w-3.5 h-3.5 text-purple-600" />
-            <span>项目简报</span>
+            <span>今日进度速报</span>
           </button>
 
           {!activeRun && (
@@ -548,16 +548,16 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
                           工序 {mod.module_code}
                         </span>
                         {mod.execution_mode === 'human_driven' ? (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200" title="由人工专家使用专业工具作业，交付完整成果">
-                            专家主导
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200" title="由人工专家或专业设计师/架构师独立作业并交付完整成果">
+                            人工专家作业
                           </span>
                         ) : mod.execution_mode === 'hybrid' ? (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-teal-50 text-teal-700 border border-teal-200" title="人机协同联合执行">
-                            人机协同
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-teal-50 text-teal-700 border border-teal-200" title="由人类专家与专业 AI 智能体协同推演与打磨">
+                            人机协同协作
                           </span>
                         ) : (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-200" title="由专业 AI 智能体协同推演并生成成果">
-                            AI 智能体主导
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-200" title="由专业 AI 智能体自主根据上游契约推演生成">
+                            AI 自动推演
                           </span>
                         )}
                       </div>
@@ -576,7 +576,7 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
                     {mod.is_upstream_stale && (
                       <div className="px-2 py-1 rounded-md bg-amber-50 border border-amber-300 text-amber-800 text-[11px] font-medium flex items-center gap-1.5">
                         <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                        <span className="truncate">上游规范已更新 · 待同步</span>
+                        <span className="truncate">上游成果已更新 · 待同步跟进</span>
                       </div>
                     )}
 
@@ -597,12 +597,12 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
                       {hasBlockingIssues ? (
                         <span className="flex items-center gap-1 text-rose-600 font-semibold font-mono text-[11px]">
                           <ShieldAlert className="w-3.5 h-3.5" />
-                          {mod.blocking_issues_count} 阻断
+                          {mod.blocking_issues_count} 项阻断卡点
                         </span>
                       ) : hasOpenIssues ? (
                         <span className="flex items-center gap-1 text-amber-600 font-mono text-[11px]">
                           <AlertTriangle className="w-3.5 h-3.5" />
-                          {mod.open_issues_count}
+                          {mod.open_issues_count} 项协同问题
                         </span>
                       ) : (
                         <span className="text-slate-400 text-[11px]">无阻断卡点</span>
@@ -611,7 +611,7 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
 
                     {!isLocked && (
                       <span className="text-emerald-700 hover:text-emerald-800 text-[11px] font-semibold flex items-center gap-0.5">
-                        {isActiveRunSelected ? '进入协同' : '查看工序'}
+                        {isActiveRunSelected ? '进入工序协同' : '查阅成果细节'}
                         <ArrowRight className="w-3 h-3" />
                       </span>
                     )}
