@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Header
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Header, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
@@ -562,9 +562,11 @@ async def create_product(data: ProductCreate, db: AsyncSession = Depends(get_db)
 
         if auth_pkg:
             import yaml
+            from backend.app.services.security_guard import apply_readonly_file_protection
             auth_path = get_product_authorization_path(prod.initiative_id, prod.code)
             auth_path.parent.mkdir(parents=True, exist_ok=True)
             auth_path.write_text(yaml.dump(auth_pkg, sort_keys=False, allow_unicode=True), encoding="utf-8")
+            apply_readonly_file_protection(auth_path)
 
     dto = ProductOut.model_validate(prod)
     dto.active_runs_count = 0
@@ -580,13 +582,31 @@ async def create_product(data: ProductCreate, db: AsyncSession = Depends(get_db)
 async def update_product(
     product_id: str,
     data: ProductUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
+    from backend.app.services.security_guard import parse_actor_identity, validate_pricing_authority
+    actor_type, role_code, actor = parse_actor_identity(request.headers.get("X-ModuFlow-Actor"))
+
     stmt = select(Product).where(Product.id == product_id)
     res = await db.execute(stmt)
     prod = res.scalar_one_or_none()
     if not prod:
         raise HTTPException(status_code=404, detail="Product not found")
+
+    # Hard constraints:
+    # 1. Lead / execution agent cannot modify budget limit
+    if actor_type != "human" and data.budget_allocated is not None and data.budget_allocated != prod.budget_allocated:
+        raise HTTPException(
+            status_code=403,
+            detail=f"❌ 权限拒绝: Agent '{actor}' (角色: {role_code}) 严禁修改项目预算上限。预算增减必须由人类战略层批准并更新授权包。"
+        )
+
+    # 2. ba is sole source of pricing / revenue truth
+    if data.revenue_contribution is not None and data.revenue_contribution != prod.revenue_contribution:
+        is_allowed, err_msg = validate_pricing_authority(role_code, action_description="修改营收预测与财务指标")
+        if not is_allowed:
+            raise HTTPException(status_code=403, detail=err_msg)
 
     if data.name is not None:
         prod.name = data.name
@@ -693,9 +713,36 @@ async def update_product_authorization_endpoint(
     initiative_id: str,
     product_code: str,
     auth_package: dict,
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     import yaml
+    from backend.app.services.security_guard import (
+        parse_actor_identity,
+        intercept_agent_write_attempt,
+        apply_write_file_permission,
+        apply_readonly_file_protection
+    )
+
+    actor_type, role_code, actor = parse_actor_identity(request.headers.get("X-ModuFlow-Actor"))
+
+    auth_path = get_product_authorization_path(initiative_id, product_code)
+
+    # Hard constraint: Check if agent is attempting to modify authorization package
+    is_blocked, err_msg = await intercept_agent_write_attempt(
+        file_path=auth_path,
+        actor=actor,
+        actor_role=actor_type,
+        db=db,
+        initiative_id=initiative_id,
+        product_code=product_code
+    )
+    if is_blocked:
+        raise HTTPException(
+            status_code=403,
+            detail=err_msg
+        )
+
     stmt = select(Product).where(Product.code == product_code)
     res = await db.execute(stmt)
     prod = res.scalar_one_or_none()
@@ -709,9 +756,10 @@ async def update_product_authorization_endpoint(
             detail={"message": "授权包格式或红线校验失败", "errors": errors}
         )
 
-    auth_path = get_product_authorization_path(initiative_id, product_code)
     auth_path.parent.mkdir(parents=True, exist_ok=True)
+    apply_write_file_permission(auth_path)
     auth_path.write_text(yaml.dump(auth_package, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    apply_readonly_file_protection(auth_path)
 
     # Update product budget & stage if was paused/needs_authorization
     new_budget = auth_package.get("financial_budget", {}).get("total_budget_limit", prod.budget_allocated)
@@ -729,7 +777,8 @@ async def update_product_authorization_endpoint(
     log_file.write_text(json.dumps({
         "timestamp": datetime.utcnow().isoformat(),
         "event": "authorization_updated",
-        "actor": auth_package.get("owner", {}).get("name", "human_sponsor"),
+        "actor": actor,
+        "actor_role": actor_type,
         "total_budget": new_budget,
         "hard_stop": auth_package.get("financial_budget", {}).get("hard_stop_limit")
     }, indent=2, ensure_ascii=False), encoding="utf-8")

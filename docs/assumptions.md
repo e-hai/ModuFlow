@@ -96,3 +96,29 @@
   - **工序 09 强制人批**：工序 09（发布上线）无人类签署确认记录时，`can_baseline_module` 强制阻断定稿与发布；
   - **批量与即时分层**：黄级关口聚合进入 `GET /api/v1/gates/pending-batch` 等待批量审批，红级关口触发即时 `ExecutiveRisk (critical)` 告警；
   - 全部 43 项自动化测试（23 基础 + 12 授权包 + 8 关口模型）100% 绿灯通过，前端构建 0 错误。
+
+---
+
+## 五、Phase 3 落地执行记录 (Phase 3 Execution Log)
+
+- **完成日期**：2026-10-27
+- **分支**：`phase3-permissions-and-protection`
+- **新增模块与安全守门服务**：
+  1. `backend/app/services/security_guard.py`：
+     - **物理 OS 级只读保护**：`apply_readonly_file_protection` 设置 `stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH` (`0o444`)；`apply_write_file_permission` 在人类特权操作时受控放行 (`0o644`)；
+     - **受保护路径判定 (`is_protected_path`)**：覆盖 `authorization.yaml`、`AGENTS.md`、`agent_roles.py`、`/platform/` 规范区、`/decisions/` 留痕区、`/.agents/skills/`；
+     - **应用层篡改拦截器 (`intercept_agent_write_attempt`)**：非人类主体尝试写入受保护文件立即阻断，自动向物理目录 `decisions/{timestamp}_security_violation_unauthorized_write.json` 留痕，并生成 🔴 critical 级 `ExecutiveRisk`；
+     - **环境变量凭证剥离 (`sanitize_agent_environment`)**：在 Agent CLI 子进程启动前，彻底清洗 `APPLE_ID`、`STRIPE_SECRET_KEY`、`APP_STORE_CONNECT_API_KEY`、`FASTLANE_PASSWORD`、`DATABASE_URL`、`PROD_DB_PASSWORD` 等高危生产凭证，确保凭证不进入任何 Agent 工作区；
+     - **商业定价唯一真理源守门 (`validate_pricing_authority`)**：硬约束商业分析师 (`ba`) 为单品商业定价与财务预测的唯一修改主体，严格拦截 PM、MKT 及其他角色直接魔改定价（必须通过 CR 闭环）；
+     - **统一主体鉴权解析器 (`parse_actor_identity`)**：统一解析 `X-ModuFlow-Actor` Header（区分 `human` 与 `agent:role_code`）。
+  2. `backend/app/adapters/cli_adapter.py`：
+     - 无论是问答推演 (Case A) 还是工序交付物生成 (Case B)，在拉起底层 Agent CLI (如 `agy` / `claude`) 进程前，统一执行 `sanitize_agent_environment`。
+  3. `backend/app/api/endpoints.py`：
+     - `POST /api/v1/products`：落盘 `authorization.yaml` 时自动应用 OS 级只读保护 (`0o444`)；
+     - `PUT /api/v1/initiatives/{id}/products/{code}/authorization`：拦截任何 Agent 角色修改授权包 (403 Forbidden)，仅允许人类主体更新，并在 `decisions/` 写入决策审计留痕；
+     - `PATCH /api/v1/products/{id}`：拦截 Agent 修改预算上限 (`budget_allocated`)；对修改营收预测指标强制校验 `ba` 定价权限。
+  4. `backend/tests/test_readonly_security.py`：
+     - 包含 8 项深度安全与权限反例测试，全面覆盖只读属性、敏感路径拦截、凭证剥离、定价权限、API 403 拦截。
+- **守门验证表现**：
+  - 全部 51 项测试（23 基础 + 12 授权包 + 8 关口模型 + 8 权限安全测试）100% 通过；
+  - 前端构建编译 `npm run build` 0 错误（8.32s 打包完成）。
