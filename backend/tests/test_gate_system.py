@@ -144,7 +144,7 @@ async def test_one_page_gate_application_creation_and_red_notification():
         risks = r_res.scalars().all()
         assert len(risks) >= 1
         assert risks[0].severity == "critical"
-        assert "红级关口待批" in risks[0].title
+        assert "待您亲自把关" in risks[0].title
 
         # Check physical file in decisions/
         dec_file = Path(settings.WORKSPACE_DIR) / "gate-init-1" / "products" / "G-PROD" / "decisions"

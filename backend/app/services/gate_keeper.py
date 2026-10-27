@@ -238,18 +238,37 @@ async def create_or_update_gate_application(
 
     # If Red level: emit instant 🔴 notification (ExecutiveRisk)
     if gate.effective_level == "red" and initiative_id:
+        # Format human-friendly intuitive gate action title
+        gate_display_name = gate.gate_name
+        if "G4" in gate_display_name or "提审" in gate_display_name:
+            gate_human_action = "应用商店提审发布"
+        elif "G1" in gate_display_name or "立项" in gate_display_name:
+            gate_human_action = "立项方向决策"
+        elif "G2" in gate_display_name or "外测" in gate_display_name:
+            gate_human_action = "假门市场外测决议"
+        elif "05" in mod.module_code or "prd" in gate_display_name.lower():
+            gate_human_action = "产品需求规格审核"
+            if gate.is_escalated and any(k in gate.escalation_reasons for k in ["payment", "user_data", "privacy"]):
+                gate_human_action += " (涉及内购支付与隐私)"
+        elif "P0" in gate_display_name or "热修" in gate_display_name:
+            gate_human_action = "紧急热修上线审批 (P0)"
+        else:
+            gate_human_action = gate_display_name
+
+        prod_display = f"{product.name} ({product_code})" if product and product.name else product_code
+
         risk = ExecutiveRisk(
             initiative_id=initiative_id,
             rule_code=f"GATE_RED_{mod.module_code}",
-            title=f"🔴 红级关口待批: [{gate.gate_name}] ({product_code})",
+            title=f"🔴 待您亲自把关：{gate_human_action} · {prod_display}",
             severity="critical",
             description=(
-                f"单品「{product_code}」在工序 {mod.module_code} 提交关口申请单，触发红级关口要求。"
-                f"{' 升级原因: ' + '; '.join(gate.escalation_reasons) if gate.is_escalated else ''}\n"
-                f"建议结论: {recommendation[:100]}"
+                f"产品「{prod_display}」在【工序 {mod.module_code}：{mod.name}】达到重大决策节点。"
+                f"{'检测到敏感项触发必须由您亲自签署的条件: ' + '; '.join(gate.escalation_reasons) if gate.is_escalated else '该工序涉及重大对外发布决策，按安全规则必须由人类负责人亲自确认。'}\n"
+                f"AI 主管研判建议: {recommendation[:120]}"
             ),
             product_code=product_code,
-            action_suggestion="请人类负责人即时前往关口审批中心进行审查拍板 (通过/打回/调整)。",
+            action_suggestion="请点击下方「查看详情并拍板」，确认合规材料与应急回滚预案后签署放行。",
             is_resolved=False
         )
         db.add(risk)

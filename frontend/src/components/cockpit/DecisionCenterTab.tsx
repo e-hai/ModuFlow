@@ -38,6 +38,13 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
   const [pendingGates, setPendingGates] = useState<GateApplication[]>([]);
   const [selectedGateForReview, setSelectedGateForReview] = useState<GateApplication | null>(null);
 
+  const formatRiskTitle = (title: string): string => {
+    return title
+      .replace(/🔴\s*红级关口待批:\s*\[G4 提审门禁\]/g, '🔴 待您亲自把关：应用商店提审发布')
+      .replace(/🔴\s*红级关口待批:\s*\[prd_linter 规格门禁\]/g, '🔴 待您亲自把关：产品需求规格审核 (PRD)')
+      .replace(/🔴\s*红级关口待批:\s*\[([^\]]+)\]/g, '🔴 待您亲自把关：$1');
+  };
+
   useEffect(() => {
     loadPendingGates();
   }, [initiativeId]);
@@ -130,12 +137,18 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                   <div className="flex items-center gap-2">
                     <span
                       className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded uppercase tracking-wider ${
-                        risk.severity === 'critical'
+                        risk.is_resolved
+                          ? 'bg-slate-100 text-slate-600 border border-slate-200'
+                          : risk.severity === 'critical'
                           ? 'bg-rose-100 text-rose-800'
                           : 'bg-amber-100 text-amber-800'
                       }`}
                     >
-                      {risk.severity === 'critical' ? '🔴 阻断级风险' : '🟡 预警级风险'}
+                      {risk.is_resolved
+                        ? '✅ 已处置完成'
+                        : risk.severity === 'critical'
+                        ? '🔴 必须亲自把关'
+                        : '🟡 预警级风险'}
                     </span>
                     <span className="text-xs font-mono text-slate-500">{risk.rule_code}</span>
                     {risk.product_code && (
@@ -150,7 +163,7 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                   </span>
                 </div>
 
-                <h4 className="text-xs font-bold text-slate-900">{risk.title}</h4>
+                <h4 className="text-xs font-bold text-slate-900">{formatRiskTitle(risk.title)}</h4>
                 <p className="text-xs text-slate-600 leading-relaxed">{risk.description}</p>
 
                 {risk.action_suggestion && (
