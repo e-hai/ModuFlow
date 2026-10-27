@@ -95,7 +95,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {loading && !cockpit && (
         <div className="py-24 text-center text-slate-400 space-y-3">
           <Loader2 className="w-8 h-8 mx-auto animate-spin text-emerald-600" />
-          <p className="text-xs">正在聚合商业经营驾驶舱数据 (产品/推广/运营/财务)...</p>
+          <p className="text-xs">正在加载经营数据...</p>
         </div>
       )}
 

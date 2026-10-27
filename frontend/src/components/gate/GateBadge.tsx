@@ -30,7 +30,7 @@ export const GateBadge: React.FC<GateBadgeProps> = ({
   } else if (normLevel === 'red') {
     colorClass = 'bg-rose-50 text-rose-800 border-rose-300 animate-pulse';
     dotClass = 'bg-rose-500';
-    label = isEscalated ? '🔴 重大风险 (需亲自拍板)' : '🔴 必须亲自把关';
+    label = isEscalated ? '🔴 需亲自确认 (重大变动)' : '🔴 必须亲自把关';
     tooltip = isEscalated
       ? '系统检测到涉及真实货币、用户隐私或预算超限等高危变动，已强制暂停等待您亲自确认'
       : '重大关键决策（如对外发布、提审上架、价格与账号权限），必须由您亲自签字放行';

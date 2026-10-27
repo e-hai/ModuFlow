@@ -221,11 +221,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               {/* 1. 主体身份与战略底稿 */}
               <button
                 onClick={() => setShowStrategyModal(true)}
-                title="点击查看主体身份与战略底稿"
+                title="点击查看项目档案与战略目标"
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 border border-slate-200 hover:border-emerald-300 transition text-xs font-semibold cursor-pointer shadow-xs"
               >
                 <FileText className="w-3.5 h-3.5 text-emerald-600" />
-                <span className="hidden sm:inline">主体身份与战略底稿</span>
+                <span className="hidden sm:inline">项目档案与战略目标</span>
               </button>
 
               {/* 2. 周期切换下拉列表（仅在驾驶舱控制指标核算周期） */}
@@ -240,7 +240,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <option value="MTD">本月 (MTD)</option>
                   <option value="QTD">本季 (QTD)</option>
                   <option value="YTD">本年 (YTD)</option>
-                  <option value="lifetime">战役累计 (Lifetime)</option>
+                  <option value="lifetime">累计 (全部)</option>
                 </select>
                 <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
               </div>
@@ -257,7 +257,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 border border-slate-200 transition text-xs font-medium cursor-pointer shadow-2xs"
                 >
                   <FileText className="w-3.5 h-3.5 text-slate-500" />
-                  <span className="hidden md:inline">战略背景参考</span>
+                  <span className="hidden md:inline">战略目标参考</span>
                 </button>
               )}
 
@@ -323,7 +323,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/70">
               <div className="flex items-center gap-2">
                 <Compass className="w-4 h-4 text-emerald-600" />
-                <h3 className="text-sm font-bold text-slate-900">主体身份与战略底稿</h3>
+                <h3 className="text-sm font-bold text-slate-900">项目档案与战略目标</h3>
               </div>
               <button
                 onClick={() => setShowStrategyModal(false)}
@@ -335,10 +335,10 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {/* 弹窗内容 */}
             <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
-              {/* 一、主体身份 */}
+              {/* 一、基本信息 */}
               <div className="space-y-2">
                 <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block font-mono">
-                  一、主体身份 (Entity Identity)
+                  一、基本信息
                 </span>
                 <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-2 gap-3 text-xs">
                   <div>
@@ -365,10 +365,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
               </div>
 
-              {/* 二、战略底稿 */}
+              {/* 二、战略目标与定位 */}
               <div className="space-y-3">
                 <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block font-mono">
-                  二、战略底稿 (Strategic Blueprint)
+                  二、战略目标与定位
                 </span>
 
                 {/* 战略定性 */}
@@ -409,7 +409,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block font-mono">
-                    三、本地工作区目录 (Project Workspace)
+                    三、本地代码与工作区
                   </span>
                   <button
                     onClick={handleSyncWorkspace}
@@ -454,7 +454,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {/* 弹窗底部 */}
             <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/40 flex items-center justify-between">
-              <span className="text-[11px] text-slate-400">战略底稿由董事会与总负责人统一校准</span>
+              <span className="text-[11px] text-slate-400">战略目标由负责人统一把控与校准</span>
               <button
                 onClick={() => setShowStrategyModal(false)}
                 className="px-4 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white transition cursor-pointer"

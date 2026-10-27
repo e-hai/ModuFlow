@@ -34,13 +34,13 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
     badgeColor?: string;
   }> = [
     { key: 'overview', label: '01. 经营总览', icon: <LayoutDashboard className="w-3.5 h-3.5" /> },
-    { key: 'portfolio', label: '02. 产品组合', icon: <Layers className="w-3.5 h-3.5" />, badge: cockpit.portfolio.length },
+    { key: 'portfolio', label: '02. 产品矩阵', icon: <Layers className="w-3.5 h-3.5" />, badge: cockpit.portfolio.length },
     { key: 'marketing', label: '03. 推广增长', icon: <TrendingUp className="w-3.5 h-3.5" /> },
     { key: 'operations', label: '04. 运营变现', icon: <Users className="w-3.5 h-3.5" /> },
     { key: 'finance', label: '05. 财务账本', icon: <Wallet className="w-3.5 h-3.5" /> },
     {
       key: 'decisions',
-      label: '06. 经营决策中心',
+      label: '06. 决策与审批',
       icon: <ShieldAlert className="w-3.5 h-3.5" />,
       badge: pendingDecisionsCount + activeRisksCount > 0 ? pendingDecisionsCount + activeRisksCount : undefined,
       badgeColor: pendingDecisionsCount > 0 ? 'bg-amber-500 text-white' : 'bg-rose-500 text-white',

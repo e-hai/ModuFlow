@@ -424,22 +424,22 @@ async def check_stage_gate_passed(db: AsyncSession, module_id: str) -> Tuple[boo
     # Stage 09: Release strictly requires human approval record
     if mod.module_code == "09":
         if not gate:
-            return False, "❌ 工序 09 (发布上线) 缺少人类确认记录 (G4 提审门禁必须先提交申请单并由人类签署批准)，严禁放行上线。", None
+            return False, "❌ 工序 09 (发布上线) 缺少人类确认记录，须先提交阶段确认单并由负责人签署批准后方可上线。", None
         if gate.status != "approved":
-            return False, f"❌ 工序 09 (G4 提审门禁) 尚未获批 (当前状态: {gate.status})，严禁放行上线。", gate
+            return False, f"❌ 工序 09 (商店提审发布) 尚未获批 (当前状态: {gate.status})，无法放行上线。", gate
         if gate.reviewer_role != "human":
-            return False, "❌ 工序 09 (G4 提审门禁) 必须由人类负责人签署 (reviewer_role='human')，当前审批人非人类账号，严禁放行上线。", gate
-        return True, "工序 09 人类提审确认记录具备，门禁通过", gate
+            return False, "❌ 工序 09 (商店提审发布) 必须由负责人亲自签署，当前审批人非人工账号，无法放行上线。", gate
+        return True, "工序 09 人类提审确认记录具备，已放行上线", gate
 
     # Other stages
     if gate:
         if gate.status == "pending":
-            return False, f"关口「{gate.gate_name}」({gate.effective_level.upper()}) 处于等待审批状态，必须审批通过后方可定稿基线。", gate
+            return False, f"「{gate.gate_name}」处于待审批状态，须确认通过后方可定稿推进。", gate
         elif gate.status == "rejected":
-            return False, f"关口「{gate.gate_name}」已被驳回，禁止定稿基线: {gate.review_comment or '未提供驳回原因'}", gate
+            return False, f"「{gate.gate_name}」已被驳回，暂不能定稿: {gate.review_comment or '未提供驳回原因'}", gate
         elif gate.status == "needs_adjustment":
-            return False, f"关口「{gate.gate_name}」已被要求调整修改，须补充材料后重新申请: {gate.review_comment or '待修改'}", gate
+            return False, f"「{gate.gate_name}」已被要求调整修改，须补充材料后重新提报: {gate.review_comment or '待修改'}", gate
         elif gate.status == "approved":
-            return True, f"关口「{gate.gate_name}」已由 {gate.reviewed_by} 批准通过", gate
+            return True, f"「{gate.gate_name}」已由 {gate.reviewed_by} 批准通过", gate
 
     return True, "无需关口拦截或默认放行", None

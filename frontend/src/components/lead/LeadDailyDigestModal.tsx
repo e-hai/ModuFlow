@@ -71,7 +71,7 @@ export const LeadDailyDigestModal: React.FC<LeadDailyDigestModalProps> = ({
                 <h3 className="font-bold text-slate-900 text-base">项目今日速报</h3>
               </div>
               <p className="text-xs text-purple-900 mt-0.5">
-                由 AI 项目主管汇总当日研发进度、预算开销与待办事项，方便您 1 分钟快速掌握
+                汇总当日研发进度、预算开销与待办事项，方便您快速掌握
               </p>
             </div>
           </div>
@@ -102,7 +102,7 @@ export const LeadDailyDigestModal: React.FC<LeadDailyDigestModalProps> = ({
           {loading ? (
             <div className="py-16 text-center text-slate-400 space-y-2">
               <Loader2 className="w-6 h-6 animate-spin mx-auto text-purple-600" />
-              <p>AI 项目主管正在帮您整理今日简报...</p>
+              <p>正在整理今日进度速报...</p>
             </div>
           ) : digest ? (
             <>
@@ -116,8 +116,8 @@ export const LeadDailyDigestModal: React.FC<LeadDailyDigestModalProps> = ({
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">整理主管</span>
-                  <span className="font-bold text-purple-900 mt-0.5 block">AI 项目主管 (Lead)</span>
+                  <span className="text-slate-400 block text-[11px]">整理人</span>
+                  <span className="font-bold text-purple-900 mt-0.5 block">项目总控 (Lead)</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[11px]">当前版本/迭代</span>
@@ -190,7 +190,7 @@ export const LeadDailyDigestModal: React.FC<LeadDailyDigestModalProps> = ({
               <div className="p-4 bg-purple-50/70 border border-purple-200 rounded-xl space-y-1.5 shadow-2xs">
                 <h4 className="font-bold text-purple-950 text-xs flex items-center gap-1.5">
                   <Sparkles className="w-4 h-4 text-purple-700" />
-                  AI 项目主管今日核心研判
+                  项目总控核心研判
                 </h4>
                 <p className="text-purple-900 leading-relaxed font-medium">
                   {digest.lead_assessment}

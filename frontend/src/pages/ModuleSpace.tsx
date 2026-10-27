@@ -493,7 +493,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
             title="查看或提报本工序阶段把关确认单"
           >
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span>阶段把关拍板卡</span>
+            <span>阶段把关确认单</span>
             {moduleGateApp?.status === 'pending' && (
               <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
             )}
@@ -1043,7 +1043,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                 <button
                   type="button"
                   onClick={() =>
-                    setInputText('围绕当前赛道与讨论结论，按双层精简标准生成《全球赛道摸底与立项可行性报告》：置顶30秒拍板摘要卡（干/不干/怎么截胡/全球首发梯队），下方输出全球T1-T3含金量与SOM测算、Top5竞品差评与流量钩子拆解、3类核心画像与单点破局刀法。')
+                    setInputText('围绕当前赛道与讨论结论，按双层精简标准生成《全球赛道摸底与立项可行性报告》：置顶核心决策摘要（干/不干/怎么截胡/全球首发梯队），下方输出全球T1-T3含金量与SOM测算、Top5竞品差评与流量钩子拆解、3类核心画像与单点破局刀法。')
                   }
                   className="px-2.5 py-0.5 rounded bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium transition cursor-pointer shrink-0"
                 >
@@ -1487,9 +1487,9 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                                   ? 'bg-indigo-600 text-white shadow-2xs'
                                   : 'text-slate-600 hover:text-slate-900'
                               }`}
-                              title="仅展示负责人拍板所需的核心量化结论与决策开关"
+                              title="仅展示核心结论与决策建议，便于快速查阅"
                             >
-                              30秒拍板视图
+                              核心摘要视图
                             </button>
                             <button
                               type="button"
@@ -1557,7 +1557,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                               <div className="text-xs text-slate-600">
                                 <span className="font-semibold text-slate-800">第二层（执行与传参层）已折叠</span>
                                 <span className="ml-2 text-slate-500">
-                                  已隐藏 {layerInfo.hiddenChars.toLocaleString()} 字底层推导与供下游 AI 读取的参数细节，让您专注核心拍板。
+                                  已隐藏 {layerInfo.hiddenChars.toLocaleString()} 字技术推导与下游参数细节，让您专注核心结论。
                                 </span>
                               </div>
                               <button

@@ -69,10 +69,10 @@ export const MarketingTab: React.FC<MarketingTabProps> = ({
           <div className="space-y-1">
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-emerald-600" />
-              推广增长与渠道获客 (Marketing & Acquisition)
+              推广增长与获客渠道
             </h2>
             <p className="text-xs text-slate-500">
-              按「一级获客机制」结构化归因，回答 CEO 核心三问：<strong>钱花在哪里、用户从哪里来、哪种获客机制最值得继续投入？</strong>
+              结构化归因渠道成本与转化效果，清晰呈现：<strong>钱花在哪里、用户从哪里来、哪些渠道产出最高。</strong>
             </p>
           </div>
 
@@ -163,7 +163,7 @@ export const MarketingTab: React.FC<MarketingTabProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
           <div>
             <h3 className="text-xs font-bold text-slate-900 flex items-center gap-2">
-              <span>一级获客机制经营成效与二级渠道展开对照</span>
+              <span>获客渠道成效与明细</span>
             </h3>
             <span className="text-[11px] text-slate-400">
               一级按获客机制汇总成本与 ROI，点击行即可展开查看二级具体平台/渠道明细
@@ -194,7 +194,7 @@ export const MarketingTab: React.FC<MarketingTabProps> = ({
                 <th className="py-2.5 px-3 font-medium">单客 CAC</th>
                 <th className="py-2.5 px-3 font-medium">转化率</th>
                 <th className="py-2.5 px-3 font-medium">贡献收入 (回本期)</th>
-                <th className="py-2.5 px-3 font-medium text-right">CEO 经营决策建议</th>
+                <th className="py-2.5 px-3 font-medium text-right">建议调整举措</th>
               </tr>
             </thead>
             <tbody>

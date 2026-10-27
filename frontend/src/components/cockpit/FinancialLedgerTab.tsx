@@ -27,10 +27,10 @@ export const FinancialLedgerTab: React.FC<FinancialLedgerTabProps> = ({ financia
           <div className="space-y-1">
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <Wallet className="w-4 h-4 text-emerald-600" />
-              财务账本与资金健康盘 (Financial Ledger & Capital Runway)
+              财务账本与资金健康
             </h2>
             <p className="text-xs text-slate-500">
-              严格解耦收付实现制（真实出入金净现金流）与权责发生制（营业确认收入与投资回报率），严禁混淆概念与编造数据。
+              清晰区分实际现金流水与会计确认收入，数据真实严谨，杜绝虚构与概念混淆。
             </p>
           </div>
 
@@ -48,7 +48,7 @@ export const FinancialLedgerTab: React.FC<FinancialLedgerTabProps> = ({ financia
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div>
             <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-              <span>一、预算总盘与可用余额核算 (Budget Balance Breakdown)</span>
+              <span>一、预算总盘与可用余额</span>
               <MetricTooltip
                 title="可用预算余额 (Available Budget)"
                 definition="批准总预算减去已承诺未付合同款，再减去已实际发生的银行支出。保证承诺款不被二次重复扣减。"
@@ -67,7 +67,7 @@ export const FinancialLedgerTab: React.FC<FinancialLedgerTabProps> = ({ financia
         {/* 4 栏预算拆解 */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-            <span className="text-[11px] text-slate-400 block">① 批准总预算 (Budget Total)</span>
+            <span className="text-[11px] text-slate-400 block">① 批准总预算</span>
             <span className="text-lg font-bold text-slate-900 font-mono">
               ¥{financials.budget_total.toLocaleString()}
             </span>
@@ -75,7 +75,7 @@ export const FinancialLedgerTab: React.FC<FinancialLedgerTabProps> = ({ financia
           </div>
 
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-            <span className="text-[11px] text-slate-400 block">② 已承诺未付 (Committed Unpaid)</span>
+            <span className="text-[11px] text-slate-400 block">② 已签合同待付款</span>
             <span className="text-lg font-bold text-amber-700 font-mono">
               ¥{financials.committed_unpaid.toLocaleString()}
             </span>
@@ -83,7 +83,7 @@ export const FinancialLedgerTab: React.FC<FinancialLedgerTabProps> = ({ financia
           </div>
 
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-            <span className="text-[11px] text-slate-400 block">③ 累计实际已付 (Actual Paid)</span>
+            <span className="text-[11px] text-slate-400 block">③ 累计实际支出</span>
             <span className="text-lg font-bold text-slate-900 font-mono">
               ¥{financials.actual_paid.toLocaleString()}
             </span>
@@ -91,7 +91,7 @@ export const FinancialLedgerTab: React.FC<FinancialLedgerTabProps> = ({ financia
           </div>
 
           <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200 space-y-1">
-            <span className="text-[11px] text-emerald-800 font-semibold block">④ 可用预算余额 (Available)</span>
+            <span className="text-[11px] text-emerald-800 font-semibold block">④ 可用预算余额</span>
             <span className="text-lg font-bold text-emerald-700 font-mono">
               ¥{financials.available_budget.toLocaleString()}
             </span>
@@ -138,7 +138,7 @@ export const FinancialLedgerTab: React.FC<FinancialLedgerTabProps> = ({ financia
         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-              <span>二、现金流与回本节点 (Cash Flow & Breakeven)</span>
+              <span>二、实际现金流与回本预测</span>
               <MetricTooltip
                 title="累计净现金流 (Net Cash Flow)"
                 definition="银行实际收到的现金减去银行实际支出的现金。大于 0 代表投资已全额回本并产生自由净现金流。"
@@ -207,7 +207,7 @@ export const FinancialLedgerTab: React.FC<FinancialLedgerTabProps> = ({ financia
         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-              <span>三、权责发生制收入与 ROI (Accrual & ROI)</span>
+              <span>三、业务收入与投资回报率 (ROI)</span>
               <MetricTooltip
                 title="投资回报率 (ROI)"
                 definition="核算期内确认收入减去实际已付成本占实际已付成本的比例。仅在分子分母采用严格统一核算期间时计算。"

@@ -110,43 +110,43 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           className="bg-white border border-slate-200 hover:border-amber-300 rounded-xl p-4 shadow-xs cursor-pointer transition group"
         >
           <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
-            <span>量化经营预警</span>
+            <span>经营预警</span>
             <AlertTriangle className="w-4 h-4 text-amber-500" />
           </div>
           <div className="text-xl font-bold text-amber-600 font-mono">
             {cockpit.risks.length} 项
           </div>
           <div className="text-[11px] text-slate-400 group-hover:text-amber-700 mt-1 flex items-center justify-between transition">
-            <span>需关注业务偏差</span>
+            <span>需关注的异常项</span>
             <span>查看 &gt;</span>
           </div>
         </div>
 
-        {/* 待拍板决策 */}
+        {/* 待批决策 */}
         <div
           onClick={() => onNavigateTab('decisions')}
           className="bg-white border border-slate-200 hover:border-emerald-300 rounded-xl p-4 shadow-xs cursor-pointer transition group"
         >
           <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
-            <span>待 CEO 拍板</span>
+            <span>待您把关审批</span>
             <ShieldAlert className="w-4 h-4 text-emerald-600" />
           </div>
           <div className="text-xl font-bold text-slate-900 font-mono">
             {cockpit.decisions.filter((d) => d.status === 'proposed').length} 件
           </div>
           <div className="text-[11px] text-slate-400 group-hover:text-emerald-700 mt-1 flex items-center justify-between transition">
-            <span>结构化 AI 决策方案</span>
+            <span>待您确认的决策建议</span>
             <span>审批 &gt;</span>
           </div>
         </div>
       </div>
 
-      {/* 2. CEO 本期 3 大焦点卡片 (Focus Cards) */}
+      {/* 2. 本期重点关注卡片 (Focus Cards) */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
             <Target className="w-4 h-4 text-emerald-600" />
-            CEO 本期焦点经营议题 (Focus Issues)
+            本期重点关注事项
           </h2>
           <span className="text-xs text-slate-400">基于最新经营数据自动研判并触发</span>
         </div>
@@ -154,7 +154,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         {focus_alerts.length === 0 ? (
           <div className="bg-white border border-slate-200 rounded-xl p-5 text-center text-slate-400 flex items-center justify-center gap-3">
             <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
-            <span className="text-xs text-slate-600">当前经营运行平稳，无阻断级风险或预算超支预警</span>
+            <span className="text-xs text-slate-600">当前运行平稳，无高危风险或预算超限</span>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

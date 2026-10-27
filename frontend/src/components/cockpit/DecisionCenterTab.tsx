@@ -80,10 +80,10 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
           <div className="space-y-1">
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 text-emerald-600" />
-              经营决策中心 (Executive Decision & Risk Center)
+              经营决策与审批中心
             </h2>
             <p className="text-xs text-slate-500">
-              面向 CEO / 总负责人的闭环管控：将宏观经营偏差与触发风险转化为结构化 AI 决策提议，严禁 AI 自主修改账本，由 CEO 最终拍板并执行原子事务。
+              汇集关键经营风险与 AI 调配建议。重大决策与资金变动由您亲自确认，杜绝系统盲目自主变更。
             </p>
           </div>
 
@@ -107,12 +107,12 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
         </div>
       )}
 
-      {/* 1. 已触发的量化经营风险 */}
+      {/* 1. 经营风险预警 */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <h3 className="text-xs font-bold text-slate-900 flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-500" />
-            <span>一、已触发的量化经营风险 (Triggered Business Risks)</span>
+            <span>一、经营风险预警</span>
           </h3>
           <span className="text-xs text-slate-400">系统根据财务与埋点数据自动监控</span>
         </div>
@@ -120,7 +120,7 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
         {risks.length === 0 ? (
           <div className="py-8 text-center text-slate-400 text-xs">
             <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-500" />
-            暂无已触发的量化经营风险，各项指标均在安全基线范围内。
+            当前无触发风险，各项经营指标均在安全范围内。
           </div>
         ) : (
           <div className="space-y-3">
@@ -178,25 +178,25 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
         )}
       </div>
 
-      {/* 2. 结构化 AI 决策提议与 CEO 拍板 */}
+      {/* 2. AI 决策建议与审批 */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <h3 className="text-xs font-bold text-slate-900 flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-emerald-600" />
-            <span>二、结构化 AI 决策建议与审批执行 (Executive Proposals)</span>
+            <span>二、AI 辅助调配建议与审批</span>
           </h3>
-          <span className="text-xs text-slate-400">推导依据可验证 · 审批留存不可篡改审计流水</span>
+          <span className="text-xs text-slate-400">依据充分可查 · 确认后自动执行</span>
         </div>
 
         {decisions.length === 0 ? (
           <div className="py-8 text-center text-slate-400 text-xs">
-            暂无需要 CEO 审批的决策建议方案。
+            当前暂无待确认的建议方案。
           </div>
         ) : (
           <div className="space-y-5">
             {decisions.map((dec) => {
               const isProposed = dec.status === 'proposed';
-              const isExecuted = dec.status === 'executed' || dec.status === 'approved';
+              const isExecuted = dec.status === 'approved' || dec.status === 'executed';
               const isRejected = dec.status === 'rejected';
 
               return (
@@ -217,7 +217,7 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                               : 'bg-rose-100 text-rose-800 border border-rose-300'
                           }`}
                         >
-                          {isProposed ? '待拍板 (Proposed)' : isExecuted ? '已生效执行 (Executed)' : '已驳回 (Rejected)'}
+                          {isProposed ? '待您确认' : isExecuted ? '已确认生效' : '已驳回'}
                         </span>
                         <span className="text-xs font-mono text-slate-400">ID: {dec.id}</span>
                       </div>
@@ -240,7 +240,7 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                       <div className="font-semibold text-slate-800 flex items-center justify-between">
                         <span className="flex items-center gap-1.5 text-emerald-700">
                           <FileCheck2 className="w-4 h-4" />
-                          调配执行内容与金额
+                          建议调整方案
                         </span>
                         {dec.recommendation.amount && (
                           <span className="font-mono font-bold text-emerald-700 text-sm">
@@ -271,7 +271,7 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                     <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2">
                       <span className="font-semibold text-slate-800 flex items-center gap-1">
                         <Database className="w-3.5 h-3.5 text-blue-600" />
-                        计算与推导证据 (Evidence)
+                        推导依据与数据支撑
                       </span>
                       {dec.evidence?.data_coverage && (
                         <p className="text-[11px] text-slate-500">
@@ -291,7 +291,7 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                     <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2">
                       <span className="font-semibold text-slate-800 flex items-center gap-1">
                         <TrendingDown className="w-3.5 h-3.5 text-emerald-600" />
-                        预测影响与折衷 (Impact Projection)
+                        预期收益与潜在影响
                       </span>
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="text-slate-500">预计节省/提升资金：</span>
@@ -313,11 +313,11 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                     </div>
                   </div>
 
-                  {/* CEO 审批操作按钮 */}
+                  {/* 审批操作按钮 */}
                   <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
                     <span className="text-[11px] text-slate-400 flex items-center gap-1 font-mono">
                       <Lock className="w-3 h-3 text-slate-400" />
-                      幂等事务写入 · 防止重复划转
+                      安全事务机制 · 防重复执行
                     </span>
 
                     {isProposed ? (
@@ -335,7 +335,7 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                           className="px-4 py-1.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          {actingId === dec.id ? '执行中...' : '批准并生效执行'}
+                          {actingId === dec.id ? '执行中...' : '确认并执行'}
                         </button>
                       </div>
                     ) : (
@@ -352,16 +352,16 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
         )}
       </div>
 
-      {/* 3. 三层架构人类战略关口待审批池 */}
+      {/* 3. 战略关口待审批池 */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div className="space-y-0.5">
             <h3 className="text-xs font-bold text-slate-900 flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 text-rose-600" />
-              <span>三、待您亲自把关确认的阶段成果 (审批待办池)</span>
+              <span>三、关键产研关口与阶段成果 (待您亲自把关)</span>
             </h3>
             <p className="text-[11px] text-slate-500">
-              为防止走偏或误操作，重大决策节点（如立项方向、假门外测决议、提审上架、价格与真实货币结算）必须由您亲自签署确认放行。
+              为把控质量与合规，重大节点（如立项方向、外测决议、商店提审、价格方案）需由您确认后继续推进。
             </p>
           </div>
           <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
@@ -409,7 +409,7 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                     <div className="text-[11px] text-purple-900 flex items-center gap-1.5 pt-0.5">
                       <Bot className="w-3.5 h-3.5 text-purple-600 shrink-0" />
                       <span>
-                        AI主管预审建议：<strong>{gate.lead_recommendation}</strong>
+                        项目总控建议：<strong>{gate.lead_recommendation}</strong>
                         {gate.lead_rationale && ` (${gate.lead_rationale})`}
                       </span>
                     </div>
@@ -418,7 +418,7 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                   {gate.is_escalated && gate.escalation_reasons?.length > 0 && (
                     <div className="text-[11px] text-rose-700 flex items-center gap-1 pt-0.5">
                       <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                      <span>重大变更原因：{gate.escalation_reasons.join('；')}</span>
+                      <span>特别提示：{gate.escalation_reasons.join('；')}</span>
                     </div>
                   )}
                 </div>
@@ -429,7 +429,7 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                     className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white transition shadow-xs flex items-center gap-1.5 cursor-pointer"
                   >
                     <FileCheck2 className="w-3.5 h-3.5" />
-                    <span>查看详情并拍板</span>
+                    <span>查看详情并确认</span>
                   </button>
                 </div>
               </div>

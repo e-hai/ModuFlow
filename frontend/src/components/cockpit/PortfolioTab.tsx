@@ -76,16 +76,16 @@ export const PortfolioTab: React.FC<PortfolioTabProps> = ({
           <div className="space-y-1">
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <Layers className="w-4 h-4 text-emerald-600" />
-              战略产品矩阵与分工 (Portfolio Management)
+              产品矩阵与业务分工
             </h2>
             <p className="text-xs text-slate-500">
-              各产品聚焦独立业务场景与商业职责，评估单品投入产出、KPI 达成与是否值得继续投资。
+              各产品聚焦独立业务场景与定位，清晰展示单品投入产出、KPI 达成与投资价值。
             </p>
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
             <div className="text-right pr-3 border-r border-slate-100 text-xs">
-              <span className="text-slate-400 block text-[11px]">组合总支出 / 确认贡献</span>
+              <span className="text-slate-400 block text-[11px]">总支出 / 实际回款</span>
               <span className="font-mono font-bold text-slate-900">
                 ¥{(totalSpent / 1000).toFixed(0)}k /{' '}
                 <span className="text-emerald-700">¥{(totalRevenue / 1000).toFixed(0)}k</span>
@@ -95,10 +95,10 @@ export const PortfolioTab: React.FC<PortfolioTabProps> = ({
             <button
               onClick={() => setShowWeeklyReportModal(true)}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition shadow-2xs cursor-pointer"
-              title="自下而上汇总矩阵所有产品的研发进度、花销与经营调整建议"
+              title="汇总矩阵所有产品的研发进度、花销与经营调整建议"
             >
               <FileText className="w-3.5 h-3.5 text-emerald-600" />
-              <span>产品经营周报</span>
+              <span>生成投资周报</span>
             </button>
 
             <button
@@ -106,7 +106,7 @@ export const PortfolioTab: React.FC<PortfolioTabProps> = ({
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xs cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              新增矩阵产品
+              新增产品
             </button>
           </div>
         </div>
@@ -118,14 +118,14 @@ export const PortfolioTab: React.FC<PortfolioTabProps> = ({
           <Layers className="w-10 h-10 mx-auto text-slate-300" />
           <p className="text-sm font-semibold text-slate-700">暂无子产品</p>
           <p className="text-xs text-slate-400 max-w-md mx-auto">
-            顶层战略工程需要拆解为具体的产品矩阵推进，点击右上角“新增矩阵产品”创建首个产品
+            顶层战略工程需要拆解为具体的产品矩阵推进，点击右上角“新增产品”创建首个产品
           </p>
           <button
             onClick={onOpenNewProductModal}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xs cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            新增矩阵产品
+            新增产品
           </button>
         </div>
       ) : (
@@ -169,7 +169,7 @@ export const PortfolioTab: React.FC<PortfolioTabProps> = ({
                   <div>
                     <h3 className="text-sm font-bold text-slate-900">{prod.name}</h3>
                     <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                      {matchingProduct.description || '为本战略工程提供核心业务支持与场景覆盖。'}
+                      {matchingProduct.description || '为当前业务提供核心功能与场景支持。'}
                     </p>
                   </div>
 
@@ -209,7 +209,7 @@ export const PortfolioTab: React.FC<PortfolioTabProps> = ({
                       </span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block">贡献商业收入</span>
+                      <span className="text-[10px] text-slate-400 block">实际回款收入</span>
                       <span className="font-mono font-bold text-emerald-700">
                         ¥{(prod.revenue_contribution / 1000).toFixed(0)}k
                       </span>
@@ -233,7 +233,7 @@ export const PortfolioTab: React.FC<PortfolioTabProps> = ({
                         管理建议：<strong className="text-slate-800">{prod.recommendation || '推进中'}</strong>
                       </span>
                       <span className="text-slate-400 font-mono">
-                        {prod.active_runs_count || 0} 个活跃发布周期
+                        {prod.active_runs_count || 0} 个进行中迭代
                       </span>
                     </div>
                   </div>
@@ -242,14 +242,14 @@ export const PortfolioTab: React.FC<PortfolioTabProps> = ({
                 {/* 底部下潜通道 */}
                 <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
                   <span className="text-[11px] text-slate-400">
-                    微观 PRD/架构/研发/测试细节已隔离
+                    各产品拥有独立工作区与专业团队
                   </span>
 
                   <button
                     onClick={() => onEnterProductWorkbench(matchingProduct)}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-semibold transition group cursor-pointer"
                   >
-                    进入产品 13 模块工作台
+                    进入产研流水线
                     <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition" />
                   </button>
                 </div>

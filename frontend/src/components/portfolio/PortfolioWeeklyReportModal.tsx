@@ -70,7 +70,7 @@ export const PortfolioWeeklyReportModal: React.FC<PortfolioWeeklyReportModalProp
                 </h3>
               </div>
               <p className="text-xs text-emerald-800 mt-0.5">
-                自下而上汇总矩阵所有产品的研发进度、花销状况、关键指标与经营调整建议
+                汇总各产品的开发进度、花销状况与调整建议
               </p>
             </div>
           </div>
@@ -110,7 +110,7 @@ export const PortfolioWeeklyReportModal: React.FC<PortfolioWeeklyReportModalProp
                 <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0" />
                 <div className="text-[11px] leading-relaxed">
                   <span className="font-bold text-amber-400">决策权保障：</span>{' '}
-                  本周报仅提供数据分析与经营建议，系统绝不会自动加减预算或自主关停产品，所有资金调配与立项决策必须由您亲自拍板确认。
+                  本周报仅提供数据分析与经营建议，系统绝不会自动调整预算或自主关停产品，所有资金调配与立项决策必须由您亲自确认。
                 </div>
               </div>
 

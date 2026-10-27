@@ -40,10 +40,10 @@ export const OperationsTab: React.FC<OperationsTabProps> = ({ operations }) => {
         <div className="space-y-1">
           <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
             <Users className="w-4 h-4 text-emerald-600" />
-            运营黏性与商业变现 (Operations & Monetization)
+            运营活跃与商业变现
           </h2>
           <p className="text-xs text-slate-500">
-            回答 CEO 核心关切：用户能否留下并产生收入？转化漏斗各环节效率如何？单位经济模型 LTV/CAC 是否成立？
+            关注核心经营指标：用户留存、付费转化与单位经济模型 (LTV/CAC)。
           </p>
         </div>
       </div>
@@ -139,7 +139,7 @@ export const OperationsTab: React.FC<OperationsTabProps> = ({ operations }) => {
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold text-slate-900 flex items-center gap-2">
               <Activity className="w-4 h-4 text-emerald-600" />
-              <span>用户留存 Cohort 表现</span>
+              <span>用户留存走势</span>
             </h3>
             <span className="text-xs text-slate-400">次日 / 7日 / 30日 留存率</span>
           </div>

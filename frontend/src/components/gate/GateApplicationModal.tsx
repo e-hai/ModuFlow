@@ -41,7 +41,7 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
   const [submitting, setSubmitting] = useState(false);
   const [reviewAction, setReviewAction] = useState<'approve' | 'reject' | 'adjust'>('approve');
   const [reviewComment, setReviewComment] = useState('');
-  const [reviewerName, setReviewerName] = useState('业务负责人 / CEO');
+  const [reviewerName, setReviewerName] = useState('负责人');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Form fields for creating a new gate application if none exists
@@ -159,7 +159,7 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                   工序 {moduleCode}
                 </span>
                 <h3 className="font-bold text-slate-900 text-base">
-                  {gateConfig?.name ? `${gateConfig.name} · 阶段把关拍板卡` : `阶段把关拍板卡`}
+                  {gateConfig?.name ? `${gateConfig.name} · 阶段把关确认单` : `阶段把关确认单`}
                 </h3>
                 {gateApp ? (
                   <GateBadge
@@ -173,7 +173,7 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                 ) : null}
               </div>
               <p className="text-xs text-slate-600 mt-0.5">
-                所属环节：<strong>{moduleName}</strong> · 汇总交付成果、真实数据与风险对策，供您 30 秒轻松拍板
+                所属环节：<strong>{moduleName}</strong> · 汇总关键成果与数据依据，供您快速查阅并确认放行
               </p>
             </div>
           </div>
@@ -321,7 +321,7 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                   <div className="flex items-center justify-between">
                     <h5 className="font-bold text-purple-950 text-xs flex items-center gap-1.5">
                       <Bot className="w-4 h-4 text-purple-600" />
-                      AI 项目主管 (Lead) 预审研判
+                      项目总控预审研判
                     </h5>
                     {gateApp.is_consistent !== null && gateApp.is_consistent !== undefined && (
                       <span
@@ -348,7 +348,7 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                   <div className="flex items-center justify-between">
                     <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
                       <UserCheck className="w-4 h-4 text-emerald-600" />
-                      请给出您的拍板决定
+                      请签署您的审核意见
                     </h4>
                     <span className="text-[11px] text-slate-500">
                       所有放行与修改要求均完整记录在审计日志中
@@ -403,7 +403,7 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                       value={reviewerName}
                       onChange={(e) => setReviewerName(e.target.value)}
                       className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                      placeholder="例如：业务负责人 / CEO"
+                      placeholder="例如：业务负责人"
                     />
                   </div>
 
@@ -459,7 +459,7 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                   <span>当前环节尚未生成阶段把关确认单</span>
                 </div>
                 <p className="text-[11px] text-emerald-900 leading-relaxed">
-                  在将本环节成果定稿推进至下一阶段前，需要一份结构清晰的拍板确认单（涵盖交付结论、依据事实、风险排查）。您可以让 AI 项目主管为您一键整理提报，也可以手动输入内容。
+                  在将本环节成果定稿推进至下一阶段前，需要一份结构清晰的阶段确认单（涵盖交付结论、依据事实、风险排查）。您可以让项目总控为您一键整理提报，也可以手动输入内容。
                 </p>
                 <div className="pt-2">
                   <button
@@ -468,7 +468,7 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                     className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-xs"
                   >
                     {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                    让 AI 项目主管 (Lead) 帮我一键整理提报
+                    让项目总控帮我一键整理提报
                   </button>
                 </div>
               </div>
