@@ -27,7 +27,8 @@ def generate_default_authorization_dict(
     product_code: str,
     product_name: str,
     budget_allocated: float = 5000.0,
-    platform: str = "ios"
+    platform: str = "ios",
+    client_zero_inference: bool = True
 ) -> dict:
     now = datetime.now(timezone.utc)
     today_str = now.strftime("%Y-%m-%d")
@@ -117,7 +118,7 @@ def generate_default_authorization_dict(
         },
         "profile": {
             "platform": platform,
-            "client_zero_inference": True
+            "client_zero_inference": client_zero_inference
         }
     }
 

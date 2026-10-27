@@ -92,6 +92,18 @@ ROLE_MCP_TOOLS: Dict[str, List[Dict[str, Any]]] = {
                 },
                 "required": ["top_safe_padding_pt", "min_touch_target_pt"]
             }
+        },
+        {
+            "name": "audit_material_spec",
+            "description": "审计 UI 原型与交互规范是否满足 Android Material 3 规范（触控热区 ≥48dp、状态栏/挖孔避让留白 ≥24~48dp 与 Google Play 交互要求）。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "status_bar_safe_dp": {"type": "integer", "description": "顶部状态栏/挖孔避让留白 dp 值"},
+                    "min_touch_target_dp": {"type": "integer", "description": "最小触控热区 dp 值"}
+                },
+                "required": ["status_bar_safe_dp", "min_touch_target_dp"]
+            }
         }
     ],
     "eng": [
@@ -102,9 +114,23 @@ ROLE_MCP_TOOLS: Dict[str, List[Dict[str, Any]]] = {
                 "type": "object",
                 "properties": {
                     "client_realtime_ai_calls": {"type": "integer", "description": "客户端实时 AI 推理调用次数/人"},
-                    "avg_cdn_bandwidth_mb": {"type": "number", "description": "人均月下行 CDN 流量 (MB)"}
+                    "avg_cdn_bandwidth_mb": {"type": "number", "description": "人均月下行 CDN 流量 (MB)"},
+                    "enforce_zero_inference": {"type": "boolean", "description": "是否严格执行客户端零推理成本"}
                 },
                 "required": ["client_realtime_ai_calls", "avg_cdn_bandwidth_mb"]
+            }
+        },
+        {
+            "name": "audit_client_zero_inference",
+            "description": "根据项目 profile 参数化审计客户端实时 AI 推理调用与云端毛利防线。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "client_realtime_ai_calls": {"type": "integer", "description": "客户端实时 AI 推理调用次数/人"},
+                    "avg_cdn_bandwidth_mb": {"type": "number", "description": "人均月下行 CDN 流量 (MB)"},
+                    "enforce_zero_inference": {"type": "boolean", "description": "是否严格执行客户端零推理成本"}
+                },
+                "required": ["client_realtime_ai_calls"]
             }
         }
     ],
@@ -205,19 +231,50 @@ def execute_role_tool(role_code: str, workspace_dir: Path, tool_name: str, args:
         top_pt = int(args.get("top_safe_padding_pt", 71))
         touch_pt = int(args.get("min_touch_target_pt", 44))
         return {
+            "platform": "ios",
+            "ruleset": "iOS Human Interface Guidelines (HIG)",
             "dynamic_island_safe": top_pt >= 71,
             "touch_target_safe": touch_pt >= 44,
             "passed": top_pt >= 71 and touch_pt >= 44
         }
-    elif tool_name == "estimate_cloud_marginal_cost":
+    elif tool_name == "audit_material_spec":
+        status_bar_dp = int(args.get("status_bar_safe_dp", 48))
+        touch_dp = int(args.get("min_touch_target_dp", 48))
+        return {
+            "platform": "android",
+            "ruleset": "Google Material Design 3 (M3)",
+            "material_version": "Material 3",
+            "status_bar_cutout_safe": status_bar_dp >= 24,
+            "touch_target_safe": touch_dp >= 48,
+            "passed": status_bar_dp >= 24 and touch_dp >= 48
+        }
+    elif tool_name in ["estimate_cloud_marginal_cost", "audit_client_zero_inference"]:
         ai_calls = int(args.get("client_realtime_ai_calls", 0))
         bw_mb = float(args.get("avg_cdn_bandwidth_mb", 15.0))
+        enforce_default = os.getenv("MODUFLOW_ZERO_INFERENCE", "true").lower() == "true"
+        enforce_zero = bool(args.get("enforce_zero_inference", enforce_default))
         cost = round(ai_calls * 0.015 + bw_mb * 0.00005, 5)
-        return {
-            "estimated_cost_per_mau_usd": cost,
-            "zero_client_ai_compliant": ai_calls == 0,
-            "passed": ai_calls == 0 and cost <= 0.005
-        }
+
+        if enforce_zero:
+            compliant = (ai_calls == 0)
+            passed = compliant and (cost <= 0.005)
+            return {
+                "estimated_cost_per_mau_usd": cost,
+                "zero_client_ai_compliant": compliant,
+                "enforce_zero_inference": True,
+                "edge_ai_permitted": False,
+                "passed": passed,
+                "mode": "strict_zero_client_inference"
+            }
+        else:
+            return {
+                "estimated_cost_per_mau_usd": cost,
+                "zero_client_ai_compliant": True,
+                "enforce_zero_inference": False,
+                "edge_ai_permitted": True,
+                "passed": cost <= 0.05,
+                "mode": "edge_ai_permitted"
+            }
     elif tool_name == "audit_app_store_compliance":
         has_rc = bool(args.get("has_remote_config_fallback", True))
         bugs = int(args.get("open_critical_issues", 0))

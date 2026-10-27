@@ -91,6 +91,18 @@ class CliSubprocessAdapter(BaseAgentAdapter):
         role_code = (metadata or {}).get("role_code") or "pm"
         output_filename = f"交付物_{mod_code}_{mod_name}.md"
 
+        # Resolve project profile (platform & client_zero_inference)
+        from backend.app.services.profile_guard import resolve_project_profile
+        init_id = (metadata or {}).get("initiative_id")
+        prof = resolve_project_profile(
+            initiative_id=init_id,
+            product_code=prod_code,
+            fallback_platform=(metadata or {}).get("platform", "ios"),
+            fallback_zero_inference=(metadata or {}).get("client_zero_inference", True)
+        )
+        target_platform = prof["platform"]
+        target_zero_inf = prof["client_zero_inference"]
+
         # Ensure exclusive role Skills and MCP config are mounted into workspace_dir
         from backend.app.services.skill_mcp_mounter import mount_role_skills_and_mcp
         from backend.app.services.agent_roles import STAGE_ROLE_CONFIGS
@@ -100,7 +112,9 @@ class CliSubprocessAdapter(BaseAgentAdapter):
         arsenal_info = mount_role_skills_and_mcp(
             workspace_dir=workspace_dir,
             primary_role_code=primary_rc,
-            collaborator_role_codes=collab_rcs
+            collaborator_role_codes=collab_rcs,
+            platform=target_platform,
+            client_zero_inference=target_zero_inf
         )
 
         yield AgentStreamEvent(
@@ -311,27 +325,45 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                 f"  - 第四章：商业化计费与权限业务规则（Mermaid StateDiagram 权益状态机、SKU 定价阶梯映射表、免费 vs 付费特权矩阵、付费门槛触发时机、网络超时或未支付时的用户端友好降级体验规则、防刷与风控业务规则）；\n"
                 f"  - 第五章：核心业务数据字典与本地存储业务策略（纯业务视角，严禁代码/SQL/JSON Schema：①核心业务实体清单与业务关系说明、②逐实体业务数据字典表【字段名、业务含义、业务类型、是否必填、取值范围/枚举值、默认值、校验失败提示文案】、③用户数据存储与隐私分级业务策略【离线持久化诉求、敏感隐私保护诉求、缓存自动清理业务诉求与生命周期】）；\n"
                 f"  - 第六章：全链路数据埋点规范（`E-01~E-12` 核心事件埋点总表、转化漏斗与留存计算公式）；\n"
-                f"  - 第七章：端到端验收用例与体验质量需求（结构化 `AC-01~AC-08` Gherkin 验收矩阵表包含用例ID/场景/Given/When/Then、用户感知级性能要求【如冷启首屏、导出等待感知】、iOS HIG 灵动岛安全区 ≥71pt 与 Apple 4.3 审核合规业务护栏）。\n"
+                f"  - 第七章：端到端验收用例与体验质量需求（结构化 `AC-01~AC-08` Gherkin 验收矩阵表包含用例ID/场景/Given/When/Then、用户感知级性能要求【如冷启首屏、导出等待感知】、{'Android Material 3 规范与 Google Play 政策合规业务护栏（触控热区 ≥48dp）' if target_platform == 'android' else 'iOS HIG 灵动岛安全区 ≥71pt 与 Apple 4.3 审核合规业务护栏'}）。\n"
             )
         elif mod_code == "06":
-            extra_methodology = (
-                f"\n【工序 06（设计实现）专项作业红线 —— 完整设计规范文档 + Sketch/Figma 级全画板 HTML 标注包与资产库】\n"
-                f"- 1. 交付物规范文档（`{output_filename}`）：完整输出全局 Design Tokens（色彩/字阶/圆角/间距及 SwiftUI 代码契约）、iOS 灵动岛安全区（顶部 ≥ 71pt、底部 ≥ 34pt、最小触控热区 44×44pt）合规矩阵、工序 05 封版的全部核心视图（V-01 ~ V-05）逐页面图层树与四态（Default/Loading/Empty/Error）交互规范。\n"
-                f"- 2. 【强制真交付要求 —— Sketch 级 HTML 标注工作台与设计资产包】：你必须在当前工作区下同步创建并落盘：\n"
-                f"  - `index.html`：高保真多画板交互原型与 Sketch 级点选标注检视工作台（涵盖 V-01 ~ V-05 全画板切换、点击任意组件在右侧面板实时检视宽高/圆角/字阶并一键复制 SwiftUI 与 Tailwind 代码、74pt 灵动岛安全区标尺开关、图标库预览、字阶表与 Design Tokens 调色板）；\n"
-                f"  - `assets/icons/*.svg`：全套独立矢量 SVG 图标文件；\n"
-                f"  - `assets/fonts/fonts.css` 与 `typography.json`：字体排印样式表与字阶映射配置；\n"
-                f"  - `assets/tokens/design_tokens.json`：标准设计令牌 JSON 字典及打包好的 `.zip` 离线资产包。\n"
-                f"- 3. 【需求合理性反馈】：在设计过程中，如发现工序 05 PRD 存在用户体验割裂、交互路径过深或平台 HIG 规范冲突，严禁私自绕过，应通过向工序 05 提需求变更单 (CR) 驱动上游基线闭环演进。\n"
-                f"- 【硬性禁区】：严禁私自增删改产品业务流程；严禁编写生产业务逻辑代码（归属于 eng）；严禁违背 HIG 灵动岛安全区与触控热区规范。\n"
-            )
+            if target_platform == "android":
+                extra_methodology = (
+                    f"\n【工序 06（设计实现）专项作业红线 —— Google Material 3 规范文档 + Sketch/Figma 级全画板 HTML 标注包与资产库】\n"
+                    f"- 1. 交付物规范文档（`{output_filename}`）：完整输出全局 Material 3 Design Tokens（色彩/字阶/圆角/间距及 Compose/Tailwind 代码契约）、Android 状态栏/挖孔避让安全区（顶部 ≥ 24~48dp、底部导航栏避让、最小触控热区 48×48dp）合规矩阵、工序 05 封版的全部核心视图（V-01 ~ V-05）逐页面图层树与四态（Default/Loading/Empty/Error）交互规范。\n"
+                    f"- 2. 【强制真交付要求 —— Sketch 级 HTML 标注工作台与设计资产包】：你必须在当前工作区下同步创建并落盘：\n"
+                    f"  - `index.html`：高保真多画板交互原型与 Sketch 级点选标注检视工作台（涵盖 V-01 ~ V-05 全画板切换、点击任意组件在右侧面板实时检视宽高/圆角/字阶并一键复制 Compose 与 Tailwind 代码、Material 3 标尺开关、图标库预览、字阶表与 Design Tokens 调色板）；\n"
+                    f"  - `assets/icons/*.svg`：全套独立矢量 SVG 图标文件；\n"
+                    f"  - `assets/fonts/fonts.css` 与 `typography.json`：字体排印样式表与字阶映射配置；\n"
+                    f"  - `assets/tokens/design_tokens.json`：标准设计令牌 JSON 字典及打包好的 `.zip` 离线资产包。\n"
+                    f"- 3. 【需求合理性反馈】：在设计过程中，如发现工序 05 PRD 存在用户体验割裂、交互路径过深或平台规范冲突，严禁私自绕过，应通过向工序 05 提需求变更单 (CR) 驱动上游基线闭环演进。\n"
+                    f"- 【硬性禁区】：严禁私自增删改产品业务流程；严禁编写生产业务逻辑代码（归属于 eng）；严禁违背 Material 3 状态栏避让与 48dp 触控热区规范（无需执行 iOS 灵动岛检查）。\n"
+                )
+            else:
+                extra_methodology = (
+                    f"\n【工序 06（设计实现）专项作业红线 —— 完整设计规范文档 + Sketch/Figma 级全画板 HTML 标注包与资产库】\n"
+                    f"- 1. 交付物规范文档（`{output_filename}`）：完整输出全局 Design Tokens（色彩/字阶/圆角/间距及 SwiftUI 代码契约）、iOS 灵动岛安全区（顶部 ≥ 71pt、底部 ≥ 34pt、最小触控热区 44×44pt）合规矩阵、工序 05 封版的全部核心视图（V-01 ~ V-05）逐页面图层树与四态（Default/Loading/Empty/Error）交互规范。\n"
+                    f"- 2. 【强制真交付要求 —— Sketch 级 HTML 标注工作台与设计资产包】：你必须在当前工作区下同步创建并落盘：\n"
+                    f"  - `index.html`：高保真多画板交互原型与 Sketch 级点选标注检视工作台（涵盖 V-01 ~ V-05 全画板切换、点击任意组件在右侧面板实时检视宽高/圆角/字阶并一键复制 SwiftUI 与 Tailwind 代码、74pt 灵动岛安全区标尺开关、图标库预览、字阶表与 Design Tokens 调色板）；\n"
+                    f"  - `assets/icons/*.svg`：全套独立矢量 SVG 图标文件；\n"
+                    f"  - `assets/fonts/fonts.css` 与 `typography.json`：字体排印样式表与字阶映射配置；\n"
+                    f"  - `assets/tokens/design_tokens.json`：标准设计令牌 JSON 字典及打包好的 `.zip` 离线资产包。\n"
+                    f"- 3. 【需求合理性反馈】：在设计过程中，如发现工序 05 PRD 存在用户体验割裂、交互路径过深或平台 HIG 规范冲突，严禁私自绕过，应通过向工序 05 提需求变更单 (CR) 驱动上游基线闭环演进。\n"
+                    f"- 【硬性禁区】：严禁私自增删改产品业务流程；严禁编写生产业务逻辑代码（归属于 eng）；严禁违背 HIG 灵动岛安全区与触控热区规范。\n"
+                )
         elif mod_code == "07":
+            inference_redline = (
+                "死守“客户端零推理成本”红线（AI 离线或云端预处理）"
+                if target_zero_inf
+                else "当前项目 Profile 允许端侧本地模型推理 (client_zero_inference=False)，请权衡端侧计算与能耗优化"
+            )
             extra_methodology = (
                 f"\n【工序 07（开发实现）专项作业红线 —— 轻量架构选型 + 代码交付与自测】\n"
                 f"- 1. 承接工序 05（产品需求定义）与工序 06（设计实现），在开发启动前先用精简章节明确技术栈选型、核心模块划分与接口/存储方案（无需单独拆分长篇架构八股文），随后聚焦代码实现、核心逻辑交付与自测覆盖率报告。\n"
                 f"- 2. 物理数据模型与持久化：输出具体表结构建表 DDL、索引规范、ORM 映射与安全存储加密封装；\n"
                 f"- 3. 【技术可行性反馈】：如在开发中发现工序 05 PRD 定义的数据 Schema、三方 SDK 限制或性能瓶颈无法落地，严禁粗暴魔改，应通过向工序 05 提需求变更单 (CR) 驱动上游基线修订。\n"
-                f"- 【硬性禁区】：严禁私自阉割功能；死守“客户端零推理成本”红线（AI 离线或云端预处理）；研发自测不等于测试通过，准入严格归属 qa。\n"
+                f"- 【硬性禁区】：严禁私自阉割功能；{inference_redline}；研发自测不等于测试通过，准入严格归属 qa。\n"
             )
         elif mod_code == "08":
             extra_methodology = (

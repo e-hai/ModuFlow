@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Header, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -527,7 +527,9 @@ async def create_product(data: ProductCreate, db: AsyncSession = Depends(get_db)
         auth_pkg = generate_default_authorization_dict(
             product_code=data.code,
             product_name=data.name,
-            budget_allocated=data.budget_allocated or 5000.0
+            budget_allocated=data.budget_allocated or 5000.0,
+            platform=data.platform or "ios",
+            client_zero_inference=True if data.client_zero_inference is None else data.client_zero_inference
         )
 
     if auth_pkg:
@@ -538,12 +540,24 @@ async def create_product(data: ProductCreate, db: AsyncSession = Depends(get_db)
                 detail={"message": "非法授权包被拒", "errors": errors}
             )
 
+    target_platform = "ios"
+    target_zero_inf = True
+    if auth_pkg and isinstance(auth_pkg, dict):
+        prof = auth_pkg.get("profile", {})
+        target_platform = prof.get("platform", data.platform or "ios")
+        target_zero_inf = prof.get("client_zero_inference", True if data.client_zero_inference is None else data.client_zero_inference)
+    else:
+        target_platform = data.platform or "ios"
+        target_zero_inf = True if data.client_zero_inference is None else data.client_zero_inference
+
     prod = Product(
         name=data.name,
         code=data.code,
         description=data.description,
         initiative_id=data.initiative_id,
         budget_allocated=data.budget_allocated or 0.0,
+        platform=target_platform,
+        client_zero_inference=target_zero_inf,
         stage="validating" if auth_pkg else "needs_authorization"
     )
     if data.id:
@@ -1902,4 +1916,131 @@ async def get_module_roles(module_id: str, db: AsyncSession = Depends(get_db)):
         primary=AgentRoleDefinitionOut.model_validate(bundle["primary_role"]) if bundle.get("primary_role") else None,
         collaborators=[AgentRoleDefinitionOut.model_validate(r) for r in bundle.get("collaborator_roles", [])]
     )
+
+
+# --- Phase 6: Project Profile & Parameterized Redlines Endpoints ---
+
+@api_router.get("/products/{product_id}/profile")
+async def get_product_profile_endpoint(product_id: str, db: AsyncSession = Depends(get_db)):
+    """Retrieve product profile parameters (platform, client_zero_inference, ruleset)."""
+    p_stmt = select(Product).where(Product.id == product_id)
+    p_res = await db.execute(p_stmt)
+    product = p_res.scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    from backend.app.services.profile_guard import resolve_project_profile
+    prof = resolve_project_profile(
+        initiative_id=product.initiative_id,
+        product_code=product.code,
+        fallback_platform=product.platform or "ios",
+        fallback_zero_inference=product.client_zero_inference if product.client_zero_inference is not None else True
+    )
+    ruleset = "Google Material Design 3 (M3)" if prof["platform"] == "android" else "iOS Human Interface Guidelines (HIG)"
+    return {
+        "product_id": product.id,
+        "product_code": product.code,
+        "platform": prof["platform"],
+        "client_zero_inference": prof["client_zero_inference"],
+        "ruleset": ruleset
+    }
+
+
+@api_router.post("/modules/{module_id}/design-audit")
+async def audit_module_design_system(
+    module_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Executes profile-aware design system audit for Stage 06:
+    - If platform is Android: executes check_material (Material 3: touch >= 48dp, status bar >= 24~48dp, NO Dynamic Island).
+    - If platform is iOS: executes check_hig (Apple HIG: Dynamic Island >= 71pt, touch >= 44pt).
+    """
+    m_stmt = select(ModuleInstance).where(ModuleInstance.id == module_id)
+    m_res = await db.execute(m_stmt)
+    mod = m_res.scalar_one_or_none()
+    if not mod:
+        raise HTTPException(status_code=404, detail="Module not found")
+
+    run_stmt = select(WorkflowRun).where(WorkflowRun.id == mod.run_id)
+    run_res = await db.execute(run_stmt)
+    run_obj = run_res.scalar_one_or_none()
+    product_id = run_obj.product_id if run_obj else None
+
+    product = None
+    if product_id:
+        p_stmt = select(Product).where(Product.id == product_id)
+        p_res = await db.execute(p_stmt)
+        product = p_res.scalar_one_or_none()
+
+    from backend.app.services.profile_guard import resolve_project_profile, audit_platform_design_system
+    prof = resolve_project_profile(
+        initiative_id=product.initiative_id if product else None,
+        product_code=product.code if product else None,
+        fallback_platform=getattr(product, "platform", "ios") or "ios",
+        fallback_zero_inference=getattr(product, "client_zero_inference", True)
+    )
+
+    args = payload or {}
+    top_val = args.get("top_safe_value")
+    touch_val = args.get("min_touch_value")
+    content = args.get("content")
+
+    audit_result = audit_platform_design_system(
+        platform=prof["platform"],
+        top_safe_value=top_val,
+        min_touch_value=touch_val,
+        content=content
+    )
+    return audit_result
+
+
+@api_router.post("/modules/{module_id}/zero-inference-audit")
+async def audit_module_zero_inference(
+    module_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Executes profile-parameterized zero inference audit for Stage 07:
+    - If client_zero_inference=True: requires client_realtime_ai_calls == 0.
+    - If client_zero_inference=False: explicitly permits on-device / edge AI calls.
+    """
+    m_stmt = select(ModuleInstance).where(ModuleInstance.id == module_id)
+    m_res = await db.execute(m_stmt)
+    mod = m_res.scalar_one_or_none()
+    if not mod:
+        raise HTTPException(status_code=404, detail="Module not found")
+
+    run_stmt = select(WorkflowRun).where(WorkflowRun.id == mod.run_id)
+    run_res = await db.execute(run_stmt)
+    run_obj = run_res.scalar_one_or_none()
+    product_id = run_obj.product_id if run_obj else None
+
+    product = None
+    if product_id:
+        p_stmt = select(Product).where(Product.id == product_id)
+        p_res = await db.execute(p_stmt)
+        product = p_res.scalar_one_or_none()
+
+    from backend.app.services.profile_guard import resolve_project_profile, audit_client_zero_inference
+    prof = resolve_project_profile(
+        initiative_id=product.initiative_id if product else None,
+        product_code=product.code if product else None,
+        fallback_platform=getattr(product, "platform", "ios") or "ios",
+        fallback_zero_inference=getattr(product, "client_zero_inference", True)
+    )
+
+    args = payload or {}
+    ai_calls = int(args.get("client_realtime_ai_calls", 0))
+    bw_mb = float(args.get("avg_cdn_bandwidth_mb", 15.0))
+
+    audit_result = audit_client_zero_inference(
+        client_realtime_ai_calls=ai_calls,
+        avg_cdn_bandwidth_mb=bw_mb,
+        enforce_zero_inference=prof["client_zero_inference"]
+    )
+    return audit_result
+
 
