@@ -1298,6 +1298,20 @@ async def arbitrate_cr_endpoint(
     actor = x_moduflow_actor or "agent:lead"
     return await arbitrate_cr_by_lead(db=db, issue_id=issue_id, lead_actor=actor)
 
+# --- Compliance Specialist (cmp) Checkpoints ---
+@api_router.post("/modules/{module_id}/compliance-audit")
+async def run_compliance_audit_endpoint(
+    module_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Runs compliance audit for stage 03, 05, or 09.
+    Outputs: status ('passed', 'needs_fix', 'legal_review') and risk level ('low', 'medium', 'high').
+    High risk triggers automatic escalation to 🔴 G5 gate and emits ExecutiveRisk.
+    """
+    from backend.app.services.compliance_engine import run_stage_compliance_check
+    return await run_stage_compliance_check(db=db, module_id=module_id)
+
 # --- Collaboration Session & Messages ---
 @api_router.get("/modules/{module_id}/session", response_model=CollaborationSessionOut)
 async def get_or_create_module_session(module_id: str, db: AsyncSession = Depends(get_db)):

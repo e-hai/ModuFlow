@@ -556,6 +556,7 @@ async def test_agent_roles_api():
         assert len(roles) >= 8
         role_codes = [r["role_code"] for r in roles]
         assert "lead" in role_codes
+        assert "cmp" in role_codes
         assert "mr" in role_codes
         assert "ba" in role_codes
         assert "pm" in role_codes

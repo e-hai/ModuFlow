@@ -38,6 +38,7 @@ RED_ESCALATION_KEYWORDS = {
     "encryption": ["encryption", "keychain", "keystore", "aes", "rsa", "加密", "密钥存储", "安全凭证"],
     "modify_lead_permissions": ["modify_permissions", "modify_redlines", "lead_permissions", "修改权限", "修改红线", "越权放行"],
     "public_statement": ["public_statement", "press_release", "对外公开表态", "官方声明", "媒体发布"],
+    "compliance_high_risk": ["legal_review", "compliance_violation", "需法务", "合规高风险", "侵权", "商标侵权", "未成年人隐私", "赌博违规", "g5_escalation"],
 }
 
 
