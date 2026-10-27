@@ -1209,6 +1209,95 @@ async def review_gate(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Review failed: {e}")
 
+# --- Lead Agent & Shadow Mode Endpoints ---
+@api_router.post("/modules/{module_id}/lead/evaluate-gate", response_model=GateApplicationOut)
+async def evaluate_gate_by_lead_endpoint(
+    module_id: str,
+    x_moduflow_actor: Optional[str] = Header(None, alias="X-ModuFlow-Actor"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Lead agent evaluates a gate application for the specified module.
+    In shadow mode: outputs recommendation without directly releasing gate.
+    """
+    from backend.app.services.lead_service import evaluate_gate_by_lead
+    stmt = select(GateApplication).where(GateApplication.module_id == module_id)
+    res = await db.execute(stmt)
+    gate = res.scalar_one_or_none()
+    if not gate:
+        raise HTTPException(status_code=404, detail="No GateApplication found for this module")
+
+    actor = x_moduflow_actor or "agent:lead"
+    evaluated_gate, _ = await evaluate_gate_by_lead(db=db, gate_id=gate.id, lead_actor=actor)
+    return evaluated_gate
+
+@api_router.get("/products/{product_id}/lead/shadow-stats")
+async def get_product_shadow_stats_endpoint(
+    product_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Returns consistency tracking statistics for Lead recommendations vs Human decisions.
+    """
+    from backend.app.services.lead_service import get_shadow_mode_stats
+    return await get_shadow_mode_stats(db=db, product_id=product_id)
+
+@api_router.post("/products/{product_id}/lead/shadow-mode")
+async def toggle_product_shadow_mode_endpoint(
+    product_id: str,
+    payload: dict,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Toggles product Shadow Mode (enabled: true/false).
+    Hard constraint: ONLY human accounts can toggle shadow mode.
+    """
+    from backend.app.services.security_guard import parse_actor_identity
+    from backend.app.services.lead_service import toggle_product_shadow_mode
+
+    actor_type, role_code, actor = parse_actor_identity(request.headers.get("X-ModuFlow-Actor"))
+    enabled = payload.get("enabled", True)
+    prod = await toggle_product_shadow_mode(
+        db=db,
+        product_id=product_id,
+        enabled=enabled,
+        actor_type=actor_type,
+        actor_id=actor
+    )
+    return {
+        "ok": True,
+        "product_id": prod.id,
+        "product_code": prod.code,
+        "shadow_mode": prod.shadow_mode,
+        "message": f"项目 {prod.code} 影子模式已{'开启' if prod.shadow_mode else '关闭'}"
+    }
+
+@api_router.get("/products/{product_id}/lead/daily-digest")
+async def get_project_daily_digest_endpoint(
+    product_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Generates a 1-page structured daily digest prepared by Lead agent.
+    """
+    from backend.app.services.lead_service import generate_project_daily_digest
+    return await generate_project_daily_digest(db=db, product_id=product_id)
+
+@api_router.post("/issues/{issue_id}/lead/arbitrate-cr")
+async def arbitrate_cr_endpoint(
+    issue_id: str,
+    x_moduflow_actor: Optional[str] = Header(None, alias="X-ModuFlow-Actor"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Lead agent arbitrates a Change Request (CR) Issue.
+    Auto-escalates to human if sensitive triggers (payment, privacy, encryption) are detected.
+    """
+    from backend.app.services.lead_service import arbitrate_cr_by_lead
+    actor = x_moduflow_actor or "agent:lead"
+    return await arbitrate_cr_by_lead(db=db, issue_id=issue_id, lead_actor=actor)
+
 # --- Collaboration Session & Messages ---
 @api_router.get("/modules/{module_id}/session", response_model=CollaborationSessionOut)
 async def get_or_create_module_session(module_id: str, db: AsyncSession = Depends(get_db)):

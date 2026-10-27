@@ -330,6 +330,20 @@ async def review_gate_application(
     prod = p_res.scalar_one_or_none()
     init_id = prod.initiative_id if prod else "platform"
 
+    # Sync Shadow Mode consistency if human reviewed
+    if actor_role == "human":
+        from backend.app.services.lead_service import sync_shadow_decision_upon_human_review
+        try:
+            await sync_shadow_decision_upon_human_review(
+                db=db,
+                gate=gate,
+                human_action=action,
+                human_actor=actor,
+                human_comment=comment
+            )
+        except Exception:
+            pass
+
     decisions_dir = Path(settings.WORKSPACE_DIR) / init_id / "products" / gate.product_code / "decisions"
     decisions_dir.mkdir(parents=True, exist_ok=True)
     timestamp_str = now.strftime("%Y%m%d_%H%M%S")

@@ -72,6 +72,9 @@ class Product(Base):
     key_risk = Column(String(200), nullable=True)
     recommendation = Column(String(50), nullable=True)
     
+    # 影子模式 (Shadow Mode) 开关：默认为 True，仅人类可关闭
+    shadow_mode = Column(Boolean, nullable=False, default=True)
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -310,8 +313,45 @@ class GateApplication(Base):
     review_comment = Column(Text, nullable=True)
     decision_action = Column(String(20), nullable=True) # "approve", "reject", "adjust"
     
+    # 影子模式与 Lead 建议对比追踪
+    lead_recommendation = Column(String(20), nullable=True) # "approved", "rejected", "adjusted"
+    lead_rationale = Column(Text, nullable=True)
+    is_consistent = Column(Boolean, nullable=True) # Lead 建议与人类最终决策是否一致
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     module = relationship("ModuleInstance")
     run = relationship("WorkflowRun")
+
+
+class LeadShadowDecision(Base):
+    """
+    Lead Agent 影子决策记录与人机一致率分析实体
+    """
+    __tablename__ = "lead_shadow_decisions"
+    
+    id = Column(String, primary_key=True, default=gen_uuid)
+    product_id = Column(String, ForeignKey("products.id"), nullable=False)
+    module_id = Column(String, ForeignKey("module_instances.id"), nullable=True)
+    gate_application_id = Column(String, ForeignKey("gate_applications.id"), nullable=True)
+    decision_type = Column(String(30), nullable=False, default="gate_review") # gate_review, cr_arbitration, dispatch
+    stage_code = Column(String(10), nullable=True)
+    
+    # Lead 影子建议 (Lead Recommendation)
+    lead_recommendation = Column(String(20), nullable=False) # approve, reject, adjust
+    lead_rationale = Column(Text, nullable=True)
+    
+    # 人类最终裁决 (Human Decision)
+    human_decision = Column(String(20), nullable=True) # approve, reject, adjust
+    human_feedback = Column(Text, nullable=True)
+    human_reviewer = Column(String(50), nullable=True)
+    
+    # 一致性分析 (Consistency)
+    is_consistent = Column(Boolean, nullable=True) # True if lead == human
+    resolved_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    product = relationship("Product")
+    gate_application = relationship("GateApplication")
+

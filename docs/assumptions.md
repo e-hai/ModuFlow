@@ -122,3 +122,41 @@
 - **守门验证表现**：
   - 全部 51 项测试（23 基础 + 12 授权包 + 8 关口模型 + 8 权限安全测试）100% 通过；
   - 前端构建编译 `npm run build` 0 错误（8.32s 打包完成）。
+
+---
+
+## 六、Phase 4 落地执行记录 (Phase 4 Execution Log)
+
+- **完成日期**：2026-10-27
+- **分支**：`phase4-lead-agent-shadow-mode`
+- **新增模块与服务**：
+  1. `DEFAULT_AGENT_ROLES` 新增 **`role_lead`（项目总控 Agent，Project Lead）**：
+     - **职责**：项目层整体统筹与调度：跨工序派活派单、阶段交接校验、工序关口申请单汇总整理、低风险需求变更单 (CR) 仲裁与一页纸项目进度日报；
+     - **六大硬红线**：严禁通过 G1/G2/G4/G5 关口；严禁修改自身权限、红线或预算上限；严禁批准支付/隐私相关 CR；严禁触发无授权热修；严禁批准预算增加；严禁提交商店审核；所有决策必须在 `decisions/` 留痕。
+  2. **影子模式 (Shadow Mode) 机制**：
+     - 在 `Product` 增加 `shadow_mode` (默认为 `True`)；
+     - 在影子模式下，Lead 评估关口时仅输出预评估意见 (`lead_recommendation`: `approved` / `rejected` / `adjusted`) 与依据理由 (`lead_rationale`)，关口状态保持 `pending`，绝不直接执行放行；
+     - 人类最终裁决后，系统自动比对 `lead_recommendation vs human_decision`，计算一致性 (`is_consistent`) 并持久化；
+     - 记录决策审计至物理目录 `decisions/{timestamp}_lead_gate_evaluation.json` 与 `decisions/{timestamp}_shadow_consistency_comparison.json`。
+  3. **数据模型扩展 (`backend/app/models/entities.py`)**：
+     - `Product` 新增 `shadow_mode` 字段；
+     - `GateApplication` 新增 `lead_recommendation`、`lead_rationale`、`is_consistent`；
+     - 新增 `LeadShadowDecision` ORM 实体（记录每次 Lead 预评估建议、人类裁决结果、一致性状态与解决时间戳）。
+  4. **Lead 专属服务 (`backend/app/services/lead_service.py`)**：
+     - `evaluate_gate_by_lead`：执行关口评估，遵循影子模式规则；
+     - `sync_shadow_decision_upon_human_review`：在人类审核关口时自动同步一致性结果；
+     - `get_shadow_mode_stats`：精算一致率 (consistency_rate)、一致数、分歧数与历史记录；
+     - `toggle_product_shadow_mode`：开关影子模式，硬约束仅人类账号可操作 (Agent 调用 403 阻断并留痕)；
+     - `arbitrate_cr_by_lead`：低风险 CR 仲裁与高风险（支付/隐私/加密）自动升级人类决策；
+     - `generate_project_daily_digest`：自动装配一页纸项目进度与财务日报。
+  5. **RESTful API 端点 (`backend/app/api/endpoints.py`)**：
+     - `POST /api/v1/modules/{module_id}/lead/evaluate-gate`：触发 Lead 关口评估；
+     - `GET /api/v1/products/{product_id}/lead/shadow-stats`：获取一致率统计与明细；
+     - `POST /api/v1/products/{product_id}/lead/shadow-mode`：开关影子模式（校验人类主体）；
+     - `GET /api/v1/products/{product_id}/lead/daily-digest`：获取项目进度日报；
+     - `POST /api/v1/issues/{issue_id}/lead/arbitrate-cr`：Lead 仲裁需求变更单 (CR)。
+  6. **自动化测试套件 (`backend/tests/test_lead_shadow_mode.py`)**：
+     - 包含 8 项深度测试用例，覆盖角色档案、影子拦截、一致率统计、分歧降分、开关权限拦截、自主放行模式、CR 风险升级、日报生成。
+- **守门验证表现**：
+  - 全部 59 项自动化测试 100% 绿灯通过；
+  - 前端编译 `npm run build` 0 错误（8.72s 完成）。
