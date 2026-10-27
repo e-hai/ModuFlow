@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Header
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
@@ -23,7 +23,8 @@ from backend.app.models.entities import (
     ExecutiveRisk,
     AgentRoleDefinition,
     AgentSettingsModel,
-    ChangeReview
+    ChangeReview,
+    GateApplication
 )
 from backend.app.schemas.all_schemas import (
     StrategicInitiativeOut, StrategicInitiativeCreate, StrategicInitiativeUpdate,
@@ -41,6 +42,12 @@ from backend.app.schemas.all_schemas import (
     AgentRoleDefinitionOut, ModuleRoleBundleOut,
     ChangeReviewOut, ChangeReviewAction
 )
+from backend.app.schemas.gate_schemas import (
+    GateApplicationCreate,
+    GateApplicationReview,
+    GateApplicationOut,
+    GateConfigSchema
+)
 from backend.app.services.workflow_engine import (
     create_workflow_run_from_template,
     can_baseline_module,
@@ -55,6 +62,12 @@ from backend.app.services.authorization_engine import (
     check_budget_limits,
     check_kill_criteria,
     execute_circuit_breaker
+)
+from backend.app.services.gate_keeper import (
+    create_or_update_gate_application,
+    review_gate_application,
+    evaluate_gate_level,
+    get_stage_gate_config
 )
 
 api_router = APIRouter()
@@ -929,6 +942,15 @@ async def get_module(module_id: str, db: AsyncSession = Depends(get_db)):
         dto.primary_role = AgentRoleDefinitionOut.model_validate(bundle["primary_role"])
     dto.collaborator_roles = [AgentRoleDefinitionOut.model_validate(r) for r in bundle.get("collaborator_roles", [])]
 
+    # Gate metadata and application (Phase 2)
+    dto.gate = get_stage_gate_config(mod.module_code)
+    g_res = await db.execute(
+        select(GateApplication).where(GateApplication.module_id == mod.id).order_by(GateApplication.created_at.desc())
+    )
+    latest_gate = g_res.scalars().first()
+    if latest_gate:
+        dto.gate_application = GateApplicationOut.model_validate(latest_gate).model_dump()
+
     return dto
 
 @api_router.patch("/modules/{module_id}/phase", response_model=ModuleInstanceOut)
@@ -1014,6 +1036,129 @@ async def ack_upstream_module(
     await db.refresh(mod)
 
     return await get_module(module_id=mod.id, db=db)
+
+# --- Human Gate Application Endpoints (Phase 2) ---
+
+@api_router.get("/modules/{module_id}/gate-config")
+async def get_module_gate_config(
+    module_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(ModuleInstance).where(ModuleInstance.id == module_id)
+    res = await db.execute(stmt)
+    mod = res.scalar_one_or_none()
+    if not mod:
+        raise HTTPException(status_code=404, detail="Module not found")
+
+    run_stmt = select(WorkflowRun).where(WorkflowRun.id == mod.run_id)
+    run_res = await db.execute(run_stmt)
+    run_obj = run_res.scalar_one_or_none()
+
+    config = get_stage_gate_config(mod.module_code, run_obj.template_id if run_obj else None)
+    return config
+
+
+@api_router.post("/modules/{module_id}/gate-application", response_model=GateApplicationOut)
+async def submit_gate_application(
+    module_id: str,
+    data: GateApplicationCreate,
+    x_moduflow_actor: Optional[str] = Header(None, alias="X-ModuFlow-Actor"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Submits or updates the 1-page Gate Application for a module.
+    Evaluates gate level, auto-escalation to 🔴 red, and emits notifications.
+    """
+    actor_id = x_moduflow_actor or "agent:lead"
+    try:
+        gate_app = await create_or_update_gate_application(
+            db=db,
+            module_id=module_id,
+            recommendation=data.recommendation,
+            evidence=data.evidence,
+            risk_assessment=data.risk_assessment,
+            decision_options=data.decision_options,
+            submitted_by=actor_id,
+            context=data.context
+        )
+        return gate_app
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to submit gate application: {e}")
+
+
+@api_router.get("/modules/{module_id}/gate-application", response_model=GateApplicationOut)
+async def get_module_gate_application(
+    module_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(GateApplication).where(GateApplication.module_id == module_id).order_by(GateApplication.created_at.desc())
+    res = await db.execute(stmt)
+    gate_app = res.scalars().first()
+    if not gate_app:
+        raise HTTPException(status_code=404, detail="No gate application found for this module")
+    return gate_app
+
+
+@api_router.get("/gates/pending-batch", response_model=List[GateApplicationOut])
+async def list_pending_gates_for_batch(
+    level: Optional[str] = None,
+    product_code: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Lists pending gate applications across products for human batch review.
+    Supports filtering by level (yellow, red) and product_code.
+    """
+    stmt = select(GateApplication).where(GateApplication.status == "pending")
+    if level:
+        stmt = stmt.where(GateApplication.effective_level == level)
+    if product_code:
+        stmt = stmt.where(GateApplication.product_code == product_code)
+    stmt = stmt.order_by(GateApplication.created_at.asc())
+    res = await db.execute(stmt)
+    return res.scalars().all()
+
+
+@api_router.post("/gates/{gate_id}/review", response_model=GateApplicationOut)
+async def review_gate(
+    gate_id: str,
+    data: GateApplicationReview,
+    x_moduflow_actor: Optional[str] = Header(None, alias="X-ModuFlow-Actor"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Reviews a GateApplication (approve / reject / adjust).
+    Enforces hard constraints:
+    - Lead (agent) CANNOT approve Yellow or Red gates (G1, G2, G4, G5, etc.).
+    - Only actor_role == 'human' can approve Yellow/Red gates.
+    """
+    actor_str = x_moduflow_actor or (f"human:{data.reviewer_name}" if data.reviewer_name else "human:sponsor")
+    if ":" in actor_str:
+        prefix, _ = actor_str.split(":", 1)
+        actor_role = prefix
+        actor = actor_str
+    else:
+        actor = actor_str
+        actor_role = "human" if "human" in actor_str else "lead"
+
+    try:
+        updated_gate = await review_gate_application(
+            db=db,
+            gate_id=gate_id,
+            action=data.action,
+            comment=data.comment or "",
+            actor=actor,
+            actor_role=actor_role
+        )
+        return updated_gate
+    except PermissionError as pe:
+        raise HTTPException(status_code=403, detail=str(pe))
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Review failed: {e}")
 
 # --- Collaboration Session & Messages ---
 @api_router.get("/modules/{module_id}/session", response_model=CollaborationSessionOut)

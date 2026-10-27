@@ -275,3 +275,43 @@ class Issue(Base):
     
     source_module = relationship("ModuleInstance", foreign_keys=[source_module_id], back_populates="sourced_issues")
     target_module = relationship("ModuleInstance", foreign_keys=[target_module_id], back_populates="targeted_issues")
+
+class GateApplication(Base):
+    __tablename__ = "gate_applications"
+    
+    id = Column(String, primary_key=True, default=gen_uuid)
+    module_id = Column(String, ForeignKey("module_instances.id"), nullable=False)
+    run_id = Column(String, ForeignKey("workflow_runs.id"), nullable=False)
+    product_code = Column(String(50), nullable=False)
+    module_code = Column(String(10), nullable=False)
+    gate_name = Column(String(100), nullable=False)
+    
+    # 关口级别与自动升级状态 (🟢 green | 🟡 yellow | 🔴 red)
+    base_level = Column(String(10), nullable=False, default="green")
+    effective_level = Column(String(10), nullable=False, default="green")
+    is_escalated = Column(Boolean, nullable=False, default=False)
+    escalation_reasons = Column(JSON, nullable=False, default=list)
+    
+    # 审批状态 (pending, approved, rejected, needs_adjustment)
+    status = Column(String(20), nullable=False, default="pending")
+    
+    # 一页纸申请单核心内容
+    recommendation = Column(Text, nullable=False)
+    evidence = Column(JSON, nullable=False, default=list)
+    risk_assessment = Column(Text, nullable=False)
+    decision_options = Column(JSON, nullable=False, default=list) # ["approve", "reject", "adjust"]
+    
+    # 提单人与审核人审计追踪 (Actor Context)
+    submitted_by = Column(String(50), nullable=False)
+    submitted_at = Column(DateTime, default=datetime.utcnow)
+    reviewed_by = Column(String(50), nullable=True)
+    reviewer_role = Column(String(20), nullable=True) # "human", "lead", "qa"
+    reviewed_at = Column(DateTime, nullable=True)
+    review_comment = Column(Text, nullable=True)
+    decision_action = Column(String(20), nullable=True) # "approve", "reject", "adjust"
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    module = relationship("ModuleInstance")
+    run = relationship("WorkflowRun")

@@ -78,3 +78,21 @@
   - 未配置授权包项目，工序 01 派活与基线定稿被确定性阻断并返回清晰提示；
   - 预算超限、时限超期、止损命中 (如 LTV/CAC < 3.0 或 CAC > 2.5) 自动将单品置为 `paused`，写入 `decisions/` 留痕，并生成 🔴 级系统告警；
   - 现有 23 项测试与新增 12 项授权包测试（共 35 项测试）全部 100% 绿灯通过，前端构建 0 错误。
+
+---
+
+## 四、Phase 2 落地执行记录 (Phase 2 Execution Log)
+
+- **完成日期**：2026-10-27
+- **分支**：`phase2-human-gates`
+- **新增模型与服务**：
+  1. `GateApplication` ORM 实体（table: `gate_applications`，字段包含结论建议、事实依据、风险排查、选项、关口级别与审计追踪）；
+  2. `backend/app/schemas/gate_schemas.py`（Pydantic 契约模型与一页纸申请单结构）；
+  3. `backend/app/services/gate_keeper.py`（关口分级、自动升 🔴 规则、申请单提交与裁决守门引擎）；
+  4. `STAGE_ROLE_CONFIGS` 扩充 `gate` 字段，覆盖全部 11 道标准工序与 Hotfix 门禁。
+- **硬红线守门表现**：
+  - **自动升红**：检测到涉及支付、隐私、用户敏感数据、加密、修改 lead 权限、对外公开表态或超预算时，关口由 🟢/🟡 自动强制升级为 🔴 red；
+  - **权限拦截**：Agent 账号（包含 `lead`）严禁审批黄级/红级关口（G1/G2/G4/G5 等），试图审批时直接返回 403 Forbidden；
+  - **工序 09 强制人批**：工序 09（发布上线）无人类签署确认记录时，`can_baseline_module` 强制阻断定稿与发布；
+  - **批量与即时分层**：黄级关口聚合进入 `GET /api/v1/gates/pending-batch` 等待批量审批，红级关口触发即时 `ExecutiveRisk (critical)` 告警；
+  - 全部 43 项自动化测试（23 基础 + 12 授权包 + 8 关口模型）100% 绿灯通过，前端构建 0 错误。

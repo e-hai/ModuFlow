@@ -218,85 +218,171 @@ DEFAULT_AGENT_ROLES: List[Dict[str, Any]] = [
     }
 ]
 # ==============================================================================
-# Mapping from 11 Workflow Stages to Roles
+# Mapping from 11 Workflow Stages to Roles and Gates (关口分级模型)
 # ==============================================================================
+# 级别：🟢 green (lead 自批，事后抽查) ｜ 🟡 yellow (人批，批量) ｜ 🔴 red (人必批，即时通知)
+HOTFIX_GATE_CONFIG: Dict[str, Any] = {
+    "name": "P0 热修关口",
+    "level": "red",
+    "approver": "human",
+    "conditions": ["预授权仅限回滚/降级；其余人批", "24h 内补 CR 与 PRD"],
+    "auto_escalate_triggers": []
+}
+
 STAGE_ROLE_CONFIGS: Dict[str, Dict[str, Any]] = {
     "01": {
         "primary": "mr",
         "collaborators": ["ba"],
         "stage_name": "市场研究",
         "execution_mode": "agent_driven",
-        "mission_focus": "全球赛道摸底、真假盘面验资、流量钩子与竞品差评拆解"
+        "mission_focus": "全球赛道摸底、真假盘面验资、流量钩子与竞品差评拆解",
+        "gate": {
+            "name": "门禁自检",
+            "level": "green",
+            "approver": "lead",
+            "conditions": ["含自下而上 SOM 测算", "明确干/不干/怎么干建议", "核心数据带来源 source 或标注假设"],
+            "auto_escalate_triggers": []
+        }
     },
     "02": {
         "primary": "ba",
         "collaborators": ["mr"],
         "stage_name": "商业模式分析",
         "execution_mode": "agent_driven",
-        "mission_focus": "变现路径、定价阶梯、单位经济模型(LTV/CAC)"
+        "mission_focus": "变现路径、定价阶梯、单位经济模型(LTV/CAC)",
+        "gate": {
+            "name": "LTV/CAC 商业关口",
+            "level": "yellow",
+            "approver": "human",
+            "conditions": ["LTV/CAC >= 3.0 且预算受控", "若 < 3.0 自动暂停"],
+            "auto_escalate_triggers": ["ltv_cac_below_3", "budget_exceeded"]
+        }
     },
     "03": {
         "primary": "pm",
         "collaborators": ["mr", "ba"],
         "stage_name": "产品方向决策",
         "execution_mode": "agent_driven",
-        "mission_focus": "一页纸核心卖点(UVP)、MoSCoW减法刀法与待验证生死假设清单(严禁未验先定写代码级PRD)"
+        "mission_focus": "一页纸核心卖点(UVP)、MoSCoW减法刀法与待验证生死假设清单(严禁未验先定写代码级PRD)",
+        "gate": {
+            "name": "G1 立项方向",
+            "level": "yellow",
+            "approver": "human",
+            "conditions": ["一页纸精益方向卡", "H1~H4 生死假设清单明确", "cmp 初筛无红灯合规风险"],
+            "auto_escalate_triggers": ["privacy_compliance_risk", "regulatory_red_flag"]
+        }
     },
     "04": {
         "primary": "mkt",
         "collaborators": ["ux", "ba"],
         "stage_name": "低成本市场验证",
         "execution_mode": "hybrid",
-        "mission_focus": "生成可交互H5假门着陆页原型(index.html)、3条极简测试脚本与获客红线，并在文末设立Go/Pivot/Kill立项决策门禁(需人工外测)"
+        "mission_focus": "生成可交互H5假门着陆页原型(index.html)、3条极简测试脚本与获客红线，并在文末设立Go/Pivot/Kill立项决策门禁(需人工外测)",
+        "gate": {
+            "name": "G2 外测决议",
+            "level": "yellow",
+            "approver": "human",
+            "conditions": ["ba 出具外测数据建议", "数据须来自真实外测埋点", "触碰止损线自动暂停"],
+            "auto_escalate_triggers": ["fake_door_ctr_below_threshold", "cac_exceeded"]
+        }
     },
     "05": {
         "primary": "pm",
         "collaborators": ["ba", "eng", "ux"],
         "stage_name": "产品需求定义",
         "execution_mode": "hybrid",
-        "mission_focus": "定义与演进纯正产品经理业务规格说明书PRD（严守PM业务视角与黄金7+1章节，涵盖首版MVP业务规格、后续迭代演进，以及下游工序变更请求CR的评审与基线修订）"
+        "mission_focus": "定义纯业务规格说明书 PRD，管理需求变更单 CR 闭环",
+        "gate": {
+            "name": "prd_linter 规格门禁",
+            "level": "green",
+            "approver": "lead",
+            "conditions": ["prd_linter 满分 100", "黄金 7+1 章节完备", "无工程代码与 SQL DDL 泄露"],
+            "auto_escalate_triggers": ["payment", "privacy", "user_data", "data_dictionary_schema_change"]
+        }
     },
     "06": {
         "primary": "ux",
         "collaborators": ["pm"],
         "stage_name": "设计实现",
         "execution_mode": "human_driven",
-        "mission_focus": "信息架构、交互主流程原型与可用性测试用例"
+        "mission_focus": "信息架构、交互主流程原型与可用性测试用例",
+        "gate": {
+            "name": "HIG/Material 检测",
+            "level": "green",
+            "approver": "lead",
+            "conditions": ["根据项目 profile 匹配规则", "iOS 灵动岛顶部安全区 >= 71pt", "触控热区 >= 44x44pt"],
+            "auto_escalate_triggers": ["interaction_breaking_cr"]
+        }
     },
     "07": {
         "primary": "eng",
         "collaborators": ["qa"],
         "stage_name": "开发实现",
         "execution_mode": "human_driven",
-        "mission_focus": "技术架构与栈选型、工程骨架、接口契约规范与核心业务代码实现"
+        "mission_focus": "技术架构选型、工程骨架、接口契约规范与核心业务代码实现",
+        "gate": {
+            "name": "覆盖率与零推理门禁",
+            "level": "green",
+            "approver": "lead",
+            "conditions": ["核心逻辑单测覆盖率 >= 80%", "零推理成本合规 (按 profile 决定)"],
+            "auto_escalate_triggers": ["payment", "encryption", "privacy_sdk"]
+        }
     },
     "08": {
         "primary": "qa",
         "collaborators": ["eng"],
         "stage_name": "测试与 QA",
         "execution_mode": "human_driven",
-        "mission_focus": "冒烟测试用例、边界条件测试与阻断性Issue审查"
+        "mission_focus": "冒烟测试用例、边界条件测试与阻断性Issue审查",
+        "gate": {
+            "name": "G3 质量门",
+            "level": "green",
+            "approver": "qa",
+            "conditions": ["0 个未关闭的 P0/P1 Issue", "弱网与异常场景验证通过", "抽查 qa 报告通过"],
+            "auto_escalate_triggers": ["open_p0_bug", "unresolved_major_issue"]
+        }
     },
     "09": {
         "primary": "qa",
         "collaborators": ["eng"],
         "stage_name": "发布与上线",
         "execution_mode": "hybrid",
-        "mission_focus": "构建包合规质检、商店元数据与发布风险检查清单"
+        "mission_focus": "构建包合规质检、商店元数据与发布风险检查清单",
+        "gate": {
+            "name": "G4 提审门禁",
+            "level": "red",
+            "approver": "human",
+            "conditions": ["商店提审合规表无红灯 (Apple 4.3 查重/隐私协议)", "具备提审降级保护开关 Remote Config", "具备快速回滚预案", "必须有人类确认记录"],
+            "auto_escalate_triggers": []
+        }
     },
     "10": {
         "primary": "mkt",
         "collaborators": ["ba", "ops"],
         "stage_name": "市场推广与获客",
         "execution_mode": "agent_driven",
-        "mission_focus": "ASO关键词优化、买量投放脚本与分销渠道方案"
+        "mission_focus": "ASO关键词优化、买量投放脚本与分销渠道方案",
+        "gate": {
+            "name": "买量预算门禁",
+            "level": "yellow",
+            "approver": "human",
+            "conditions": ["首次投放需人批", "新市场投放需人批", "超 lead 自批额度需人批", "eCAC 熔断机制生效"],
+            "auto_escalate_triggers": ["budget_exceeded", "new_market_expansion"]
+        }
     },
     "11": {
         "primary": "ops",
         "collaborators": ["pm", "mkt"],
         "stage_name": "运营分析与持续迭代",
         "execution_mode": "agent_driven",
-        "mission_focus": "留存漏斗复盘、核心指标监控与下一阶段迭代建议"
+        "mission_focus": "留存漏斗复盘、核心指标监控与下一阶段迭代建议",
+        "gate": {
+            "name": "Backlog 评审",
+            "level": "green",
+            "approver": "lead",
+            "conditions": ["输出数据驱动的 V1.1 Backlog", "流入工序 05 循环"],
+            "auto_escalate_triggers": ["major_version_pivot", "budget_exceeded"]
+        }
     }
 }
 

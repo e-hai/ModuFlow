@@ -253,6 +253,8 @@ class ModuleInstanceOut(BaseModel):
     open_issues_count: Optional[int] = 0
     blocking_issues_count: Optional[int] = 0
     artifacts_count: Optional[int] = 0
+    gate: Optional[Dict[str, Any]] = None
+    gate_application: Optional[Dict[str, Any]] = None
     created_at: datetime
     updated_at: datetime
 

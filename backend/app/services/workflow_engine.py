@@ -248,6 +248,12 @@ async def can_baseline_module(db: AsyncSession, module_id: str) -> Tuple[bool, s
                             )
                             return False, f"触发确定性止损熔断: {desc}"
 
+    # 1. Check Human Gate Application & Approval status (Phase 2)
+    from backend.app.services.gate_keeper import check_stage_gate_passed
+    gate_ok, gate_reason, _ = await check_stage_gate_passed(db, module_id)
+    if not gate_ok:
+        return False, gate_reason
+
     # Check open critical/major issues targeting this module
     stmt = select(Issue).where(
         Issue.target_module_id == module_id,
