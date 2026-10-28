@@ -134,7 +134,7 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
       const updatedStats = await api.getProductShadowStats(activeProduct.id);
       setShadowStats(updatedStats);
     } catch (err: any) {
-      alert(`切换影子模式失败: ${err.message}`);
+      alert(`切换模式失败: ${err.message}`);
     } finally {
       setActionLoading(false);
     }
@@ -281,14 +281,14 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
           </div>
         </div>
 
-        {/* 右侧：Lead 影子模式监控、每日简报入口与开启迭代 */}
+        {/* 右侧：AI 协作模式监控、每日简报入口与开启迭代 */}
         <div className="flex items-center gap-2.5 flex-wrap self-start md:self-center">
-          {/* Lead Agent 影子模式状态胶囊 */}
+          {/* AI 协作模式状态胶囊 */}
           {shadowStats && (
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 text-xs shadow-2xs">
               <Bot className="w-3.5 h-3.5 text-purple-600" />
               <span className="font-semibold">
-                {shadowStats.shadow_mode_enabled ? '总控影子模式' : '总控自主模式'}
+                {shadowStats.shadow_mode_enabled ? 'AI 仅提建议' : 'AI 自动推进'}
               </span>
               {shadowStats.total_evaluated > 0 && (
                 <span className="font-mono text-[11px] text-purple-700">
@@ -299,9 +299,13 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
                 onClick={handleToggleShadowMode}
                 disabled={actionLoading}
                 className="ml-1 text-[11px] text-purple-700 hover:text-purple-900 underline font-bold cursor-pointer disabled:opacity-50"
-                title="切换项目总控是仅提供建议，还是允许自动核验绿级关口"
+                title={
+                  shadowStats.shadow_mode_enabled
+                    ? '当前模式下 AI 仅提供放行建议，需人工签字确认；点击可开启常规低风险工序自动推进'
+                    : '当前模式下常规低风险工序由 AI 自动流转推进；点击可收回审批权，改为仅提建议'
+                }
               >
-                {shadowStats.shadow_mode_enabled ? '开启自动核验' : '开启影子把关'}
+                {shadowStats.shadow_mode_enabled ? '开启自动推进' : '改为仅提建议'}
               </button>
             </div>
           )}

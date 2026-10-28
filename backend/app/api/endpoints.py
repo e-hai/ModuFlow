@@ -1327,7 +1327,7 @@ async def toggle_product_shadow_mode_endpoint(
         "product_id": prod.id,
         "product_code": prod.code,
         "shadow_mode": prod.shadow_mode,
-        "message": f"项目 {prod.code} 影子模式已{'开启' if prod.shadow_mode else '关闭'}"
+        "message": f"项目 {prod.code} 已切换为{'「AI 仅提建议」模式' if prod.shadow_mode else '「AI 自动推进」模式'}"
     }
 
 @api_router.get("/products/{product_id}/lead/daily-digest")
