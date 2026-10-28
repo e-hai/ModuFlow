@@ -199,7 +199,8 @@ def audit_stage_compliance(
 
         # 2.3 Platform-specific Tracking
         norm_platform = (platform or "all").lower()
-        if norm_platform in ["ios", "all", "cross_platform"]:
+        from backend.app.services.profile_guard import covers_android, covers_ios
+        if covers_ios(norm_platform):
             if "idfa" in content_lower or "广告追踪" in content_lower or "att" in content_lower:
                 findings.append({
                     "category": "platform_policy",
@@ -211,7 +212,7 @@ def audit_stage_compliance(
                 if risk_level == "low":
                     risk_level = "medium"
                     status = "needs_fix"
-        elif norm_platform == "android":
+        if covers_android(norm_platform):
             if "广告追踪" in content_lower or "ad_id" in content_lower or "gaid" in content_lower:
                 findings.append({
                     "category": "platform_policy",
@@ -229,26 +230,24 @@ def audit_stage_compliance(
     # =========================================================================
     elif stage_code == "09":
         norm_platform = (platform or "all").lower()
+        from backend.app.services.profile_guard import covers_android, covers_ios
         # 3.1 Store Policy & Spam/Copycat check
-        if norm_platform == "android":
-            if "查重" in content_lower or "重复应用" in content_lower or "换皮" in content_lower:
-                findings.append({
-                    "category": "platform_policy",
-                    "item": "Google Play 重复内容与抄袭政策排查 (Repetitive Content Policy)",
-                    "severity": "low",
-                    "passed": True,
-                    "advice": "提审包需具备独有 UVP 价值主张与差异化体验，严禁换皮打包违反 Google Play 政策。"
-                })
-        else:
-            # iOS or cross-platform / default
-            if "4.3" in content_lower or "查重" in content_lower or "重复应用" in content_lower:
-                findings.append({
-                    "category": "platform_policy",
-                    "item": "Apple 4.3 查重度排查",
-                    "severity": "low",
-                    "passed": True,
-                    "advice": "提审包需具备独有 UVP 价值主张与差异化 UI 架构，严禁换皮打包。"
-                })
+        if covers_android(norm_platform) and ("查重" in content_lower or "重复应用" in content_lower or "换皮" in content_lower):
+            findings.append({
+                "category": "platform_policy",
+                "item": "Google Play 重复内容与抄袭政策排查 (Repetitive Content Policy)",
+                "severity": "low",
+                "passed": True,
+                "advice": "提审包需具备独有 UVP 价值主张与差异化体验，严禁换皮打包违反 Google Play 政策。"
+            })
+        if covers_ios(norm_platform) and ("4.3" in content_lower or "查重" in content_lower or "重复应用" in content_lower):
+            findings.append({
+                "category": "platform_policy",
+                "item": "Apple 4.3 查重度排查",
+                "severity": "low",
+                "passed": True,
+                "advice": "提审包需具备独有 UVP 价值主张与差异化 UI 架构，严禁换皮打包。"
+            })
 
         # 3.2 Privacy Policy URL check
         if not any(k in content_lower for k in ["privacy", "隐私协议", "隐私政策", "privacy_policy"]):
@@ -309,6 +308,44 @@ def audit_stage_compliance(
     }
 
 
+COMPLIANCE_STAGES = ("03", "05", "09")
+
+
+async def resolve_target_market(db: AsyncSession, product: Optional[Product]) -> str:
+    if not product or not product.initiative_id:
+        return "全球"
+    from backend.app.models.entities import StrategicInitiative
+    init_obj = (await db.execute(
+        select(StrategicInitiative).where(StrategicInitiative.id == product.initiative_id)
+    )).scalar_one_or_none()
+    return (init_obj.target_market if init_obj and init_obj.target_market else None) or "全球"
+
+
+async def audit_module_compliance(
+    db: AsyncSession,
+    module_code: str,
+    product: Optional[Product],
+    content: str,
+) -> Optional[Dict[str, Any]]:
+    """cmp checkpoint for stages 03/05/09; None for stages without a checkpoint."""
+    if module_code not in COMPLIANCE_STAGES:
+        return None
+    return audit_stage_compliance(
+        stage_code=module_code,
+        content=content,
+        target_market=await resolve_target_market(db, product),
+        platform=(getattr(product, "platform", None) or "ios") if product else "ios",
+    )
+
+
+def compliance_failed_items(result: Dict[str, Any]) -> List[str]:
+    return [
+        f"[cmp {f.get('severity')}] {f.get('item')}：{f.get('advice')}"
+        for f in result.get("findings") or []
+        if not f.get("passed")
+    ]
+
+
 async def run_stage_compliance_check(
     db: AsyncSession,
     module_id: str
@@ -337,16 +374,8 @@ async def run_stage_compliance_check(
         p_res = await db.execute(p_stmt)
         product = p_res.scalar_one_or_none()
 
-    target_market = "全球"
-    init_id = "platform"
-    if product and product.initiative_id:
-        init_id = product.initiative_id
-        from backend.app.models.entities import StrategicInitiative
-        i_stmt = select(StrategicInitiative).where(StrategicInitiative.id == product.initiative_id)
-        i_res = await db.execute(i_stmt)
-        init_obj = i_res.scalar_one_or_none()
-        if init_obj and init_obj.target_market:
-            target_market = init_obj.target_market
+    target_market = await resolve_target_market(db, product)
+    init_id = product.initiative_id if product and product.initiative_id else "platform"
 
     # Load latest artifact content
     art_stmt = select(Artifact).where(Artifact.module_id == module_id).order_by(Artifact.version.desc())
@@ -383,18 +412,24 @@ async def run_stage_compliance_check(
             gate.risk_assessment = (gate.risk_assessment or "") + f"\n[G5 合规自动升红] {audit_res['summary']}"
             db.add(gate)
 
-        # Emit ExecutiveRisk
-        risk = ExecutiveRisk(
-            initiative_id=init_id,
-            rule_code=f"COMPLIANCE_G5_{module.module_code}",
-            title=f"🚨 G5 合规高危告警: 工序 {module.module_code} 触碰平台政策红线",
-            severity="critical",
-            description=audit_res["summary"],
-            product_code=product.code if product else None,
-            action_suggestion="请人类负责人组织法务审查，修改涉嫌违规的业务规格或元数据，严禁带病提审。",
-            is_resolved=False
-        )
-        db.add(risk)
+        rule_code = f"COMPLIANCE_G5_{module.module_code}"
+        existing_risk = (await db.execute(select(ExecutiveRisk).where(
+            ExecutiveRisk.initiative_id == init_id,
+            ExecutiveRisk.rule_code == rule_code,
+            ExecutiveRisk.product_code == (product.code if product else None),
+            ExecutiveRisk.is_resolved == False,  # noqa: E712
+        ))).scalars().first()
+        if existing_risk is None:
+            db.add(ExecutiveRisk(
+                initiative_id=init_id,
+                rule_code=rule_code,
+                title=f"🚨 G5 合规高危告警: 工序 {module.module_code} 触碰平台政策红线",
+                severity="critical",
+                description=audit_res["summary"],
+                product_code=product.code if product else None,
+                action_suggestion="请人类负责人组织法务审查，修改涉嫌违规的业务规格或元数据，严禁带病提审。",
+                is_resolved=False
+            ))
 
     # Persist audit record in physical decisions/ directory
     if product and product.initiative_id:

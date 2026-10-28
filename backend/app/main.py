@@ -28,6 +28,7 @@ async def lifespan(app: FastAPI):
         if agent_setting:
             settings.AGENT_ADAPTER_TYPE = agent_setting.adapter_type
             settings.AGENT_CLI_COMMAND = agent_setting.cli_command
+            settings.AGENT_CLI_MODEL = agent_setting.cli_model or ""
             settings.AGENT_CLI_TIMEOUT = agent_setting.timeout
         
     yield

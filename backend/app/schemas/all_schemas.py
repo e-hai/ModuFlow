@@ -40,7 +40,7 @@ class ProductBase(BaseModel):
     code: str
     description: Optional[str] = None
     initiative_id: Optional[str] = None
-    platform: Optional[str] = "ios"
+    platform: Optional[str] = "cross_platform"
     client_zero_inference: Optional[bool] = True
 
 class ProductCreate(ProductBase):
@@ -287,6 +287,7 @@ class WorkflowRunOut(BaseModel):
     template_id: str
     name: str
     status: str
+    auto_advance: bool = True
     created_at: datetime
     updated_at: datetime
     modules: List[ModuleInstanceOut] = []
@@ -434,9 +435,19 @@ class AgentPresetItem(BaseModel):
     install_command: Optional[str] = None
     install_guide: Optional[str] = None
 
+class CliModelItem(BaseModel):
+    id: str
+    label: str
+
+class CliModelListOut(BaseModel):
+    command: str
+    models: List[CliModelItem] = []
+    error: Optional[str] = None
+
 class AgentSettingsOut(BaseModel):
     adapter_type: str
     cli_command: str
+    cli_model: Optional[str] = None
     timeout: int
     available_presets: List[AgentPresetItem]
     is_current_installed: bool = True
@@ -445,4 +456,5 @@ class AgentSettingsOut(BaseModel):
 class AgentSettingsUpdate(BaseModel):
     adapter_type: Optional[str] = None
     cli_command: Optional[str] = None
+    cli_model: Optional[str] = None
     timeout: Optional[int] = None

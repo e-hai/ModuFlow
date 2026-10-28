@@ -17,10 +17,67 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
-import { ExecutiveDecisionItem, ExecutiveRiskItem, GateApplication } from '../../types';
+import { DecisionInboxItem, ExecutiveDecisionItem, ExecutiveRiskItem, GateApplication, Product, ShadowStats } from '../../types';
 import { api } from '../../services/api';
 import { GateBadge } from '../gate/GateBadge';
+import { leadActionLabel, plainLeadRationale, stageDecision, stageName, withoutStageNumber } from '../gate/gateCopy';
 import { GateApplicationModal } from '../gate/GateApplicationModal';
+
+interface ProductGroup<T> {
+  key: string;
+  code: string;
+  name: string;
+  items: T[];
+}
+
+function groupByProduct<T>(
+  items: T[],
+  codeOf: (item: T) => string | undefined | null,
+  products: Product[],
+): ProductGroup<T>[] {
+  const nameByCode = new Map(products.map((product) => [product.code, product.name]));
+  const order = new Map(products.map((product, index) => [product.code, index]));
+  const buckets = new Map<string, T[]>();
+  for (const item of items) {
+    const code = (codeOf(item) || '').trim();
+    const key = code || '__initiative__';
+    const list = buckets.get(key);
+    if (list) list.push(item);
+    else buckets.set(key, [item]);
+  }
+  return [...buckets.entries()]
+    .map(([key, groupItems]) => ({
+      key,
+      code: key === '__initiative__' ? '' : key,
+      name: key === '__initiative__' ? '工程级' : (nameByCode.get(key) || key),
+      items: groupItems,
+    }))
+    .sort((a, b) => {
+      const rank = (group: ProductGroup<T>) => {
+        if (!group.code) return 2000;
+        return order.get(group.code) ?? 1000;
+      };
+      const diff = rank(a) - rank(b);
+      if (diff !== 0) return diff;
+      return a.code.localeCompare(b.code);
+    });
+}
+
+function ProductGroupLabel({ code, name, count }: { code: string; name: string; count: number }) {
+  return (
+    <div className="flex items-center justify-between gap-3 px-1">
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200 shrink-0">
+          {code || '工程级'}
+        </span>
+        {code && name !== code && (
+          <span className="text-xs font-semibold text-slate-700 truncate">{name}</span>
+        )}
+      </div>
+      <span className="text-[11px] font-mono text-slate-400 shrink-0">{count} 项</span>
+    </div>
+  );
+}
 
 interface DecisionCenterTabProps {
   initiativeId: string;
@@ -41,9 +98,21 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pendingGates, setPendingGates] = useState<GateApplication[]>([]);
   const [selectedGateForReview, setSelectedGateForReview] = useState<GateApplication | null>(null);
+  const [shadowReady, setShadowReady] = useState<Array<{ product: Product; stats: ShadowStats }>>([]);
+  const [disablingShadowId, setDisablingShadowId] = useState<string | null>(null);
+  const [scopeCodes, setScopeCodes] = useState<string[] | null>(null);
+  const [matrixProducts, setMatrixProducts] = useState<Product[]>([]);
+  const [inbox, setInbox] = useState<DecisionInboxItem[]>([]);
+  const [inboxBusy, setInboxBusy] = useState<string | null>(null);
 
   const activeRisks = risks.filter((r) => !r.is_resolved);
   const resolvedRisks = risks.filter((r) => r.is_resolved);
+  const visibleGates = scopeCodes
+    ? pendingGates.filter((gate) => scopeCodes.includes(gate.product_code))
+    : pendingGates;
+  const operationalRisks = activeRisks.filter(
+    (risk) => !risk.rule_code.startsWith('GATE_RED_') && !risk.rule_code.startsWith('COMPLIANCE_G5_')
+  );
 
   const formatRiskTitle = (title: string, isResolved: boolean): string => {
     let res = title
@@ -63,22 +132,15 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
   };
 
   const formatRuleCode = (code: string): string => {
-    if (code.startsWith('GATE_RED_')) {
-      const mod = code.replace('GATE_RED_', '');
-      const names: Record<string, string> = {
-        '01': '工序 01 赛道门禁',
-        '02': '工序 02 商业关口',
-        '03': '工序 03 立项关口',
-        '04': '工序 04 外测决议',
-        '05': '工序 05 需求门禁',
-        '06': '工序 06 设计门禁',
-        '07': '工序 07 开发门禁',
-        '08': '工序 08 质量门禁',
-        '09': '工序 09 提审关口',
-        '10': '工序 10 获客门禁',
-        '11': '工序 11 迭代评审',
-      };
-      return names[mod] || `工序 ${mod} 关口`;
+    if (code.startsWith('GATE_RED_') || code.startsWith('COMPLIANCE_G5_')) {
+      const mod = code.replace('GATE_RED_', '').replace('COMPLIANCE_G5_', '');
+      return stageDecision(mod);
+    }
+    if (code.startsWith('ORCH_STUCK_')) {
+      return `${stageName(code.replace('ORCH_STUCK_', ''))}改了两次仍没通过`;
+    }
+    if (code.startsWith('ORCH_DISPUTE_')) {
+      return `${stageName(code.replace('ORCH_DISPUTE_', ''))}的评审意见还没定`;
     }
     if (code.includes('SECURITY_VIOLATION')) {
       return '安全写保护拦截';
@@ -96,7 +158,7 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
     return desc
       .replace(/AI 主管研判建议/g, '项目总控建议')
       .replace(/申请 G4 提审发布审批！?/g, '申请商店提审发布。')
-      .replace(/G4 提审门禁/g, '商店提审关口');
+      .replace(/G4 提审门禁/g, '提交商店');
   };
 
   const formatRiskSuggestion = (suggestion: string | undefined, isResolved: boolean): string => {
@@ -117,7 +179,77 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
 
   useEffect(() => {
     loadPendingGates();
+    loadShadowReadiness();
+    loadInbox();
   }, [initiativeId]);
+
+  const loadShadowReadiness = async () => {
+    try {
+      const products = await api.getProducts(initiativeId);
+      setMatrixProducts(products);
+      setScopeCodes(products.map((product) => product.code));
+      const candidates = products.filter((p) => p.shadow_mode !== false);
+      const results = await Promise.all(
+        candidates.map(async (product) => ({ product, stats: await api.getProductShadowStats(product.id) }))
+      );
+      setShadowReady(results.filter((r) => r.stats.ready_to_disable));
+    } catch (e) {
+      console.error('Failed to load shadow readiness:', e);
+    }
+  };
+
+  const handleDisableShadow = async (productId: string) => {
+    try {
+      setDisablingShadowId(productId);
+      setErrorMsg(null);
+      await api.toggleProductShadowMode(productId, false);
+      await loadShadowReadiness();
+    } catch (err: any) {
+      setErrorMsg(err.message || '关闭影子模式失败');
+    } finally {
+      setDisablingShadowId(null);
+    }
+  };
+
+  const loadInbox = async () => {
+    try {
+      const data = await api.getDecisionInbox(initiativeId);
+      setInbox(data.items);
+    } catch (e) {
+      console.error('Failed to load decision inbox:', e);
+    }
+  };
+
+  const refreshLeaderQueue = async () => {
+    await Promise.all([loadInbox(), loadPendingGates()]);
+    onDecisionUpdated();
+  };
+
+  const handleInboxDecision = async (item: DecisionInboxItem, decision: 'accept_review' | 'override_review') => {
+    try {
+      setInboxBusy(`${item.module_id}:${decision}`);
+      setErrorMsg(null);
+      await api.resolveModuleDispute(item.module_id, decision);
+      await refreshLeaderQueue();
+    } catch (err: any) {
+      setErrorMsg(err.message || '裁决失败');
+    } finally {
+      setInboxBusy(null);
+    }
+  };
+
+  const handleRecheck = async (item: DecisionInboxItem) => {
+    try {
+      setInboxBusy(`${item.module_id}:recheck`);
+      setErrorMsg(null);
+      await api.submitModuleForGate(item.module_id);
+      await refreshLeaderQueue();
+    } catch (err: any) {
+      setErrorMsg(err.message || '重新检查失败');
+    } finally {
+      setInboxBusy(null);
+    }
+  };
 
   const loadPendingGates = async () => {
     try {
@@ -176,6 +308,16 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
     }
   };
 
+  const activeRiskGroups = groupByProduct(operationalRisks, (risk) => risk.product_code, matrixProducts);
+  const resolvedRiskGroups = groupByProduct(resolvedRisks, (risk) => risk.product_code, matrixProducts);
+  const handoffItems = inbox.filter((item) => item.kind === 'handoff_gap');
+  const handoffGroups = groupByProduct(handoffItems, (item) => item.product_code, matrixProducts);
+  const gateGroups = groupByProduct(visibleGates, (gate) => gate.product_code, matrixProducts);
+  const showActiveRiskGroups = activeRiskGroups.length > 1;
+  const showResolvedRiskGroups = resolvedRiskGroups.length > 1;
+  const showHandoffGroups = handoffGroups.length > 1;
+  const showGateGroups = gateGroups.length > 1;
+
   return (
     <div className="space-y-6">
       {/* 顶部总盘 */}
@@ -193,7 +335,7 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
 
           <div className="flex items-center gap-2 text-xs">
             <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 font-mono font-semibold border border-amber-200">
-              待处理风险: {activeRisks.length} 项
+              待处理风险: {operationalRisks.length} 项
             </span>
             {resolvedRisks.length > 0 && (
               <span className="px-2.5 py-1 rounded-lg bg-slate-50 text-slate-600 font-mono font-medium border border-slate-200">
@@ -216,6 +358,34 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
         </div>
       )}
 
+      {shadowReady.length > 0 && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-2">
+          <h3 className="text-xs font-bold text-emerald-950 flex items-center gap-2">
+            <Bot className="w-4 h-4 text-emerald-700" />
+            以下项目的 lead 建议已足够可靠，可以关闭影子模式
+          </h3>
+          <p className="text-[11px] text-emerald-800">关闭后，检查通过的普通阶段会自动继续。方向、花钱、发布，以及评审分歧，仍只在本页等您处理。</p>
+          {shadowReady.map(({ product, stats }) => (
+            <div
+              key={product.id}
+              className="p-3 bg-white border border-emerald-200 rounded-xl flex items-center justify-between gap-3 text-xs"
+            >
+              <div>
+                <span className="font-mono font-bold text-emerald-900 mr-2">{product.code}</span>
+                <span className="text-slate-700">{stats.readiness_reason}</span>
+              </div>
+              <button
+                onClick={() => handleDisableShadow(product.id)}
+                disabled={disablingShadowId === product.id}
+                className="shrink-0 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg font-semibold transition cursor-pointer"
+              >
+                {disablingShadowId === product.id ? '处理中...' : '关闭影子模式'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* 1. 经营风险预警 */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -225,16 +395,16 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
               <span>一、经营风险预警</span>
             </h3>
             <p className="text-[11px] text-slate-500">
-              实时监测资金预算、安全红线与重大工序关口。待办事项可在此直接处理放行。
+              预算超支、安全拦截、修订卡住、评审分歧和交接缺口。需要您确认才能继续的阶段，只列在第三节。
             </p>
           </div>
           <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600">
-            {activeRisks.length > 0 ? `待处理: ${activeRisks.length} 项` : '全部指标安全'}
+            {operationalRisks.length > 0 ? `待处理: ${operationalRisks.length} 项` : '全部指标安全'}
           </span>
         </div>
 
         {/* 待处理风险列表 */}
-        {activeRisks.length === 0 ? (
+        {operationalRisks.length === 0 ? (
           <div className="py-6 px-4 text-center rounded-xl bg-emerald-50/50 border border-emerald-200/60 text-slate-600 text-xs flex flex-col items-center justify-center space-y-1.5">
             <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
               <CheckCircle2 className="w-5 h-5" />
@@ -243,10 +413,16 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
             <span className="text-slate-500 text-xs">各项矩阵产品、资金支出与安全合规均处于基线内。</span>
           </div>
         ) : (
-          <div className="space-y-3">
-            {activeRisks.map((risk) => {
+          <div className="space-y-4">
+            {activeRiskGroups.map((group) => (
+            <div key={group.key} className="space-y-3">
+            {showActiveRiskGroups && (
+              <ProductGroupLabel code={group.code} name={group.name} count={group.items.length} />
+            )}
+            {group.items.map((risk) => {
               const isGateRisk = risk.rule_code.startsWith('GATE_RED_');
               const isSecurity = risk.rule_code.includes('SECURITY_VIOLATION');
+              const queueItem = inbox.find((item) => item.risk_id === risk.id);
 
               return (
                 <div
@@ -286,10 +462,10 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                   </div>
 
                   <h4 className="text-sm font-bold text-slate-900 leading-snug">
-                    {formatRiskTitle(risk.title, false)}
+                    {withoutStageNumber(formatRiskTitle(risk.title, false))}
                   </h4>
                   <p className="text-xs text-slate-700 leading-relaxed font-medium">
-                    {formatRiskDescription(risk.description)}
+                    {withoutStageNumber(formatRiskDescription(risk.description))}
                   </p>
 
                   <div className="pt-2 border-t border-rose-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -299,7 +475,34 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                     </div>
 
                     <div className="shrink-0 flex items-center gap-2">
-                      {isGateRisk ? (
+                      {queueItem?.kind === 'dispute' ? (
+                        <>
+                          <button
+                            disabled={inboxBusy !== null}
+                            onClick={() => handleInboxDecision(queueItem, 'accept_review')}
+                            className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-xs cursor-pointer disabled:opacity-50"
+                          >
+                            {inboxBusy === `${queueItem.module_id}:accept_review` ? '处理中...' : '采纳评审意见'}
+                          </button>
+                          <button
+                            disabled={inboxBusy !== null}
+                            onClick={() => handleInboxDecision(queueItem, 'override_review')}
+                            className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 transition shadow-xs cursor-pointer disabled:opacity-50"
+                          >
+                            按当前交付物继续
+                          </button>
+                        </>
+                      ) : queueItem?.kind === 'stuck' ? (
+                        <button
+                          disabled={inboxBusy !== null}
+                          onClick={() => handleRecheck(queueItem)}
+                          className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white transition shadow-xs cursor-pointer disabled:opacity-50"
+                        >
+                          {inboxBusy === `${queueItem.module_id}:recheck` ? '处理中...' : '重新检查'}
+                        </button>
+                      ) : risk.rule_code.startsWith('ORCH_DISPUTE_') || risk.rule_code.startsWith('ORCH_STUCK_') ? (
+                        <span className="text-[11px] text-slate-500">正在读取可执行操作</span>
+                      ) : isGateRisk ? (
                         <button
                           onClick={() => handleOpenGateReviewFromRisk(risk)}
                           className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white transition shadow-xs flex items-center gap-1.5 cursor-pointer"
@@ -322,6 +525,31 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                 </div>
               );
             })}
+            </div>
+            ))}
+          </div>
+        )}
+
+        {handoffItems.length > 0 && (
+          <div className="space-y-2">
+            <h4 className="text-xs font-bold text-slate-800">交接缺口：下游还不能开工</h4>
+            {handoffGroups.map((group) => (
+            <div key={group.key} className="space-y-2">
+            {showHandoffGroups && (
+              <ProductGroupLabel code={group.code} name={group.name} count={group.items.length} />
+            )}
+            {group.items.map((item) => (
+              <div key={`${item.module_id}:${item.title}`} className="p-3 rounded-xl bg-orange-50 border border-orange-200 text-xs text-slate-700">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-mono font-bold">{item.product_code}</span>
+                  <span>{stageName(item.module_code)}</span>
+                </div>
+                <p className="font-medium text-slate-900">{withoutStageNumber(item.title)}</p>
+                <p className="mt-1 text-slate-600">{withoutStageNumber(item.detail)}</p>
+              </div>
+            ))}
+            </div>
+            ))}
           </div>
         )}
 
@@ -344,8 +572,13 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
             </button>
 
             {showResolvedRisks && (
-              <div className="mt-3 space-y-2.5">
-                {resolvedRisks.map((risk) => (
+              <div className="mt-3 space-y-4">
+                {resolvedRiskGroups.map((group) => (
+                <div key={group.key} className="space-y-2.5">
+                {showResolvedRiskGroups && (
+                  <ProductGroupLabel code={group.code} name={group.name} count={group.items.length} />
+                )}
+                {group.items.map((risk) => (
                   <div
                     key={risk.id}
                     className="p-3.5 rounded-xl bg-slate-50/70 border border-slate-200 text-slate-600 space-y-1.5"
@@ -370,10 +603,10 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                     </div>
 
                     <h4 className="text-xs font-semibold text-slate-800">
-                      {formatRiskTitle(risk.title, true)}
+                      {withoutStageNumber(formatRiskTitle(risk.title, true))}
                     </h4>
                     <p className="text-[11px] text-slate-500 leading-relaxed">
-                      {formatRiskDescription(risk.description)}
+                      {withoutStageNumber(formatRiskDescription(risk.description))}
                     </p>
 
                     <div className="pt-1 text-[11px] text-emerald-700 font-medium flex items-center gap-1.5">
@@ -381,6 +614,8 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                       <span>处置结论：{formatRiskSuggestion(risk.action_suggestion, true)}</span>
                     </div>
                   </div>
+                ))}
+                </div>
                 ))}
               </div>
             )}
@@ -568,25 +803,30 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
           <div className="space-y-0.5">
             <h3 className="text-xs font-bold text-slate-900 flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 text-rose-600" />
-              <span>三、关键产研关口与阶段成果 (待您亲自把关)</span>
+              <span>三、请您确认才能继续的阶段</span>
             </h3>
             <p className="text-[11px] text-slate-500">
-              为把控质量与合规，重大节点（如立项方向、外测决议、商店提审、价格方案）需由您确认后继续推进。
+              方向、小额测试、发布、买量，以及涉及收款、隐私和密钥的变更，都在这里等您确认。
             </p>
           </div>
           <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-            待您确认: {pendingGates.length} 个阶段
+            待您确认: {visibleGates.length} 个阶段
           </span>
         </div>
 
-        {pendingGates.length === 0 ? (
+        {visibleGates.length === 0 ? (
           <div className="py-8 text-center text-slate-400 text-xs">
             <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-500" />
             当前无待确认的重大阶段，所有矩阵产品流水线均在正常流转中。
           </div>
         ) : (
-          <div className="space-y-3">
-            {pendingGates.map((gate) => (
+          <div className="space-y-4">
+            {gateGroups.map((group) => (
+            <div key={group.key} className="space-y-3">
+            {showGateGroups && (
+              <ProductGroupLabel code={group.code} name={group.name} count={group.items.length} />
+            )}
+            {group.items.map((gate) => (
               <div
                 key={gate.id}
                 className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition shadow-2xs ${
@@ -600,10 +840,7 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                     <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-white text-slate-800 border border-slate-200">
                       {gate.product_code}
                     </span>
-                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-white text-slate-700 border border-slate-200">
-                      工序 {gate.module_code}
-                    </span>
-                    <h4 className="font-bold text-slate-900 text-xs">{gate.gate_name}</h4>
+                    <h4 className="font-bold text-slate-900 text-xs">{stageDecision(gate.module_code, gate.gate_name)}</h4>
                     <GateBadge
                       level={gate.effective_level}
                       isEscalated={gate.is_escalated}
@@ -619,8 +856,8 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                     <div className="text-[11px] text-purple-900 flex items-center gap-1.5 pt-0.5">
                       <Bot className="w-3.5 h-3.5 text-purple-600 shrink-0" />
                       <span>
-                        项目总控建议：<strong>{gate.lead_recommendation}</strong>
-                        {gate.lead_rationale && ` (${gate.lead_rationale})`}
+                        项目总控：<strong>{leadActionLabel(gate.lead_recommendation)}</strong>
+                        {gate.lead_rationale && `。${plainLeadRationale(gate.lead_rationale)}`}
                       </span>
                     </div>
                   )}
@@ -643,6 +880,8 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                   </button>
                 </div>
               </div>
+            ))}
+            </div>
             ))}
           </div>
         )}

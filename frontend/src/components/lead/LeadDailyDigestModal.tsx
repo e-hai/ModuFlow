@@ -31,6 +31,19 @@ export const LeadDailyDigestModal: React.FC<LeadDailyDigestModalProps> = ({
   const [digest, setDigest] = useState<ProjectDailyDigest | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [disablingShadow, setDisablingShadow] = useState(false);
+
+  const handleDisableShadow = async () => {
+    try {
+      setDisablingShadow(true);
+      await api.toggleProductShadowMode(productId, false);
+      await loadDigest();
+    } catch (err: any) {
+      setErrorMsg(err.message || '关闭影子模式失败');
+    } finally {
+      setDisablingShadow(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen && productId) {
@@ -196,6 +209,52 @@ export const LeadDailyDigestModal: React.FC<LeadDailyDigestModalProps> = ({
                   {digest.lead_assessment}
                 </p>
               </div>
+
+              {digest.shadow_mode_active && digest.shadow_consistency?.ready_to_disable && (
+                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <h4 className="font-bold text-emerald-950 text-xs flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                      lead 的建议已足够可靠
+                    </h4>
+                    <p className="text-emerald-900 leading-relaxed">{digest.shadow_consistency.readiness_reason}</p>
+                    <p className="text-[11px] text-emerald-700">关闭后，检查通过的普通阶段会自动继续。方向、花钱和发布仍由您确认。</p>
+                  </div>
+                  <button
+                    onClick={handleDisableShadow}
+                    disabled={disablingShadow}
+                    className="shrink-0 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg text-xs font-semibold transition cursor-pointer"
+                  >
+                    {disablingShadow ? '处理中...' : '关闭影子模式'}
+                  </button>
+                </div>
+              )}
+
+              {digest.collaboration && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 rounded-xl border border-indigo-200 bg-indigo-50/60">
+                  <div>
+                    <span className="text-indigo-500 block text-[11px]">今日协作评审</span>
+                    <span className="font-bold text-indigo-950 mt-0.5 block">
+                      {digest.collaboration.reviews_today} 次（要求修订 {digest.collaboration.review_requests_changes_today}）
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-indigo-500 block text-[11px]">待您裁决的分歧</span>
+                    <span className={`font-bold mt-0.5 block ${digest.collaboration.disputes_pending ? 'text-rose-700' : 'text-indigo-950'}`}>
+                      {digest.collaboration.disputes_pending}
+                      {digest.collaboration.dispute_stages.length > 0 && `（工序 ${digest.collaboration.dispute_stages.join('、')}）`}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-indigo-500 block text-[11px]">遗留需求变更</span>
+                    <span className="font-bold text-indigo-950 mt-0.5 block">{digest.collaboration.carried_over_crs}</span>
+                  </div>
+                  <div>
+                    <span className="text-indigo-500 block text-[11px]">交接缺口</span>
+                    <span className="font-bold text-indigo-950 mt-0.5 block">{digest.collaboration.handoff_gaps_open}</span>
+                  </div>
+                </div>
+              )}
 
               {/* 今日推进日志 */}
               <div className="space-y-2">

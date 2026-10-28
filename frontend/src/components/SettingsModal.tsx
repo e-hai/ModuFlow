@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Layers,
@@ -17,7 +17,7 @@ import {
   Copy
 } from 'lucide-react';
 import { api } from '../services/api';
-import { AgentSettings } from '../types';
+import { AgentSettings, CliModelItem } from '../types';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -37,6 +37,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
   const [agentSettings, setAgentSettings] = useState<AgentSettings | null>(null);
   const [selectedCommand, setSelectedCommand] = useState<string>('agy');
   const [customCommand, setCustomCommand] = useState<string>('');
+  const [selectedModel, setSelectedModel] = useState<string>('');
+  const [cliModels, setCliModels] = useState<CliModelItem[]>([]);
+  const [modelsLoading, setModelsLoading] = useState<boolean>(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
+  const [modelNonce, setModelNonce] = useState<number>(0);
+  const refreshModels = useRef(false);
   const [timeoutSeconds, setTimeoutSeconds] = useState<number>(120);
 
   useEffect(() => {
@@ -52,6 +58,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
       setAgentSettings(data);
       onSettingsChanged?.(data);
       setSelectedCommand(data.cli_command);
+      setSelectedModel(data.cli_model || '');
       setTimeoutSeconds(data.timeout);
       if (!['claude', 'agy', 'codex'].includes(data.cli_command)) {
         setCustomCommand(data.cli_command);
@@ -64,6 +71,102 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
     }
   };
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const command = selectedCommand === 'custom' ? customCommand.trim() : selectedCommand;
+    if (!command) {
+      setCliModels([]);
+      setModelsError(null);
+      return;
+    }
+    if (selectedCommand !== 'custom') {
+      const preset = agentSettings?.available_presets.find((item) => item.command === command);
+      if (preset && !preset.installed) {
+        setCliModels([]);
+        setModelsError(null);
+        return;
+      }
+    }
+    let cancelled = false;
+    setCliModels([]);
+    setModelsError(null);
+    setModelsLoading(true);
+    const timer = window.setTimeout(async () => {
+      const refresh = refreshModels.current;
+      refreshModels.current = false;
+      try {
+        const listed = await api.listCliModels(command, refresh);
+        if (cancelled) return;
+        setCliModels(listed.models || []);
+        setModelsError(listed.error || null);
+      } catch (e: any) {
+        if (!cancelled) {
+          setCliModels([]);
+          setModelsError(e?.message || '读取模型列表失败');
+        }
+      } finally {
+        if (!cancelled) setModelsLoading(false);
+      }
+    }, selectedCommand === 'custom' ? 400 : 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [isOpen, selectedCommand, customCommand, agentSettings, modelNonce]);
+
+  const chooseCommand = (command: string) => {
+    if (command !== selectedCommand) {
+      setSelectedModel('');
+    }
+    setSelectedCommand(command);
+  };
+
+  const renderModelPicker = () => (
+    <div
+      className="mt-2.5 pt-2.5 border-t border-slate-200/70 space-y-1.5"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="flex items-center justify-between">
+        <span className="font-semibold text-slate-700">模型</span>
+        <button
+          type="button"
+          onClick={() => {
+            refreshModels.current = true;
+            setModelNonce((value) => value + 1);
+          }}
+          className="text-[10px] font-medium text-emerald-700 hover:text-emerald-800"
+        >
+          重新读取
+        </button>
+      </div>
+      <select
+        value={selectedModel}
+        onChange={(event) => setSelectedModel(event.target.value)}
+        disabled={modelsLoading && cliModels.length === 0}
+        className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+      >
+        <option value="">使用该 CLI 当前默认模型</option>
+        {selectedModel && !cliModels.some((item) => item.id === selectedModel) && (
+          <option value={selectedModel}>{selectedModel}</option>
+        )}
+        {cliModels.map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.label} · {item.id}
+          </option>
+        ))}
+      </select>
+      {modelsLoading && (
+        <p className="text-[10px] text-slate-400">正在读取该 CLI 支持的模型…</p>
+      )}
+      {modelsError && (
+        <p className="text-[10px] text-amber-700">{modelsError}</p>
+      )}
+      {!modelsError && (
+        <p className="text-[10px] text-slate-400">保存后，后续工序会用这里选中的模型调用该 CLI。</p>
+      )}
+    </div>
+  );
+
   const handleSave = async () => {
     setSaving(true);
     setSaveSuccess(false);
@@ -72,6 +175,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
       const updated = await api.updateAgentSettings({
         adapter_type: 'cli',
         cli_command: commandToSave,
+        cli_model: selectedModel,
         timeout: timeoutSeconds,
       });
       setAgentSettings(updated);
@@ -94,6 +198,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
       await api.updateAgentSettings({
         adapter_type: 'cli',
         cli_command: commandToSave,
+        cli_model: selectedModel,
         timeout: timeoutSeconds,
       });
 
@@ -216,7 +321,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
                       return (
                         <div
                           key={preset.id}
-                          onClick={() => setSelectedCommand(preset.command)}
+                          onClick={() => chooseCommand(preset.command)}
                           className={`p-3 rounded-xl border flex flex-col justify-between transition cursor-pointer ${
                             isSelected
                               ? 'border-emerald-600 bg-emerald-50/40 ring-1 ring-emerald-500/20'
@@ -253,7 +358,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
                               type="radio"
                               name="cli_preset"
                               checked={isSelected}
-                              onChange={() => setSelectedCommand(preset.command)}
+                              onChange={() => chooseCommand(preset.command)}
                               className="mt-1 text-emerald-600 cursor-pointer shrink-0"
                             />
                           </div>
@@ -300,13 +405,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
                               )}
                             </div>
                           )}
+                          {isSelected && preset.installed && renderModelPicker()}
                         </div>
                       );
                     })}
 
                   {/* 自定义命令行选项 */}
                   <div
-                    onClick={() => setSelectedCommand('custom')}
+                    onClick={() => chooseCommand('custom')}
                     className={`p-3 rounded-xl border transition cursor-pointer space-y-2 ${
                       selectedCommand === 'custom'
                         ? 'border-emerald-600 bg-emerald-50/50 ring-1 ring-emerald-500/20'
@@ -322,7 +428,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
                         type="radio"
                         name="cli_preset"
                         checked={selectedCommand === 'custom'}
-                        onChange={() => setSelectedCommand('custom')}
+                        onChange={() => chooseCommand('custom')}
                         className="text-emerald-600 cursor-pointer"
                       />
                     </div>
@@ -340,6 +446,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
                         </p>
                       </div>
                     )}
+                    {selectedCommand === 'custom' && customCommand.trim() && renderModelPicker()}
                   </div>
                 </div>
               </div>

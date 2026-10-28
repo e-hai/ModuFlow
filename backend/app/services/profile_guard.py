@@ -20,6 +20,22 @@ import yaml
 from backend.app.core.config import settings
 from backend.app.services.authorization_engine import get_product_authorization_path
 
+DUAL_PLATFORM_VALUES = {"cross_platform", "both", "all"}
+
+
+def is_dual_platform(platform: Optional[str]) -> bool:
+    return (platform or "").lower() in DUAL_PLATFORM_VALUES
+
+
+def covers_ios(platform: Optional[str]) -> bool:
+    """Android-only projects do not run iOS checks. Every other profile does."""
+    return (platform or "ios").lower() != "android"
+
+
+def covers_android(platform: Optional[str]) -> bool:
+    norm = (platform or "ios").lower()
+    return norm == "android" or norm in DUAL_PLATFORM_VALUES
+
 
 def resolve_project_profile(
     initiative_id: Optional[str] = None,
@@ -138,10 +154,28 @@ def audit_platform_design_system(
 ) -> Dict[str, Any]:
     """
     Universal design system auditor dispatching by platform:
-    - android -> check_material (Android Material 3)
+    - android -> check_material (Android Material 3), never iOS HIG
+    - cross_platform -> both HIG and Material must pass
     - ios (or default) -> check_hig (iOS HIG)
     """
     norm_platform = (platform or "ios").lower()
+    if is_dual_platform(norm_platform):
+        if not content:
+            return {
+                "platform": "cross_platform",
+                "ruleset": "iOS Human Interface Guidelines (HIG) + Google Material Design 3 (M3)",
+                "passed": False,
+                "errors": ["双端项目须在交付物中同时给出 iOS（pt）与 Android（dp）实测值，缺省值不能放行"],
+            }
+        from backend.app.services.deliverable_audit import audit_design
+        result = audit_design([content], platform="cross_platform")
+        return {
+            "platform": "cross_platform",
+            "ruleset": result.get("ruleset"),
+            "passed": result["passed"],
+            "errors": result["reasons"],
+            "advice": "iOS 与 Android 两端规范都要通过。" if result["reasons"] else "通过 iOS HIG 与 Android Material 3 规范检查。",
+        }
     if norm_platform == "android":
         status_bar_dp = top_safe_value if top_safe_value is not None else 48
         touch_dp = min_touch_value if min_touch_value is not None else 48

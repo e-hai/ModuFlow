@@ -15,6 +15,7 @@ Validates:
 8. REST API endpoints for profile, design audit, and zero-inference audit.
 """
 
+import json
 import os
 import uuid
 import pytest
@@ -32,6 +33,8 @@ from backend.app.models.entities import (
     ModuleInstance,
     Artifact
 )
+from backend.app.mcp.role_mcp_server import visible_tools
+from backend.app.services.deliverable_audit import audit_design
 from backend.app.services.agent_roles import (
     DEFAULT_AGENT_ROLES,
     STAGE_ROLE_CONFIGS,
@@ -221,9 +224,11 @@ def test_skill_and_mcp_mounting_by_platform_and_profile(tmp_path):
         client_zero_inference=False
     )
     cost_script = ws_eng / ".agents" / "skills" / "eng-lean-architecture-coder" / "scripts" / "cost_audit.py"
-    cost_content = cost_script.read_text(encoding="utf-8")
-    assert "'zero_inference_enforced': False" in cost_content
-    assert "'edge_ai_allowed': True" in cost_content
+    library_script = Path(__file__).resolve().parents[1] / "skills" / "eng" / "eng-lean-architecture-coder" / "scripts" / "cost_audit.py"
+    assert cost_script.read_text(encoding="utf-8") == library_script.read_text(encoding="utf-8")
+    mcp_eng = json.loads((ws_eng / ".mcp.json").read_text(encoding="utf-8"))
+    eng_env = next(iter(mcp_eng["mcpServers"].values()))["env"]
+    assert eng_env["MODUFLOW_ZERO_INFERENCE"] == "false"
 
 
 def test_compliance_audit_by_platform():
@@ -256,6 +261,23 @@ def test_compliance_audit_by_platform():
     items_android_09 = [f["item"] for f in res_android_09["findings"]]
     assert any("Google Play" in it for it in items_android_09)
     assert not any("Apple 4.3" in it for it in items_android_09)
+
+
+def test_cross_platform_design_requires_both_ends():
+    ios_only = '{"top_safe_padding_pt": 74, "min_touch_target_pt": 44}'
+    both = ios_only[:-1] + ', "status_bar_safe_dp": 32, "min_touch_target_dp": 48}'
+    missing_android = audit_design([ios_only], platform="cross_platform")
+    assert missing_android["passed"] is False
+    assert any("Android" in reason for reason in missing_android["reasons"])
+    passed = audit_design([both], platform="cross_platform")
+    assert passed["passed"] is True
+    assert [tool["name"] for tool in visible_tools("ux", "cross_platform")] == [
+        "audit_hig_safe_area",
+        "audit_material_spec",
+    ]
+    conditions = get_stage_gate_conditions("06", platform="cross_platform")
+    assert any("灵动岛" in item for item in conditions)
+    assert any("48x48dp" in item for item in conditions)
 
 
 def test_dynamic_gate_conditions_by_profile():

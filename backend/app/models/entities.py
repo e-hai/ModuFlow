@@ -13,6 +13,7 @@ class AgentSettingsModel(Base):
     id = Column(String(20), primary_key=True, default="default")
     adapter_type = Column(String(30), nullable=False, default="cli")
     cli_command = Column(String(50), nullable=False, default="agy")
+    cli_model = Column(String(120), nullable=True)
     timeout = Column(Integer, nullable=False, default=120)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -136,6 +137,7 @@ class WorkflowRun(Base):
     template_id = Column(String, ForeignKey("workflow_templates.id"), nullable=False)
     name = Column(String(100), nullable=False)
     status = Column(String(20), nullable=False, default="in_progress") # in_progress, completed, paused
+    auto_advance = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

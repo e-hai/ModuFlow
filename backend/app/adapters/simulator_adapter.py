@@ -3,6 +3,7 @@ from typing import AsyncIterator, Optional, Dict, Any
 from pathlib import Path
 from backend.app.adapters.base import BaseAgentAdapter, AgentStreamEvent, AgentEventType
 from backend.app.services.agent_simulator import MODULE_TEMPLATES_CONTENT
+from backend.app.services.simulator_deliverables import SIMULATION_BANNER, build_simulated_deliverable
 
 class SimulatorAdapter(BaseAgentAdapter):
     """
@@ -24,6 +25,13 @@ class SimulatorAdapter(BaseAgentAdapter):
     ) -> AsyncIterator[AgentStreamEvent]:
         mod_code = (metadata or {}).get("module_code", "01")
         mod_name = (metadata or {}).get("module_name", "工序交付物")
+
+        if message_type == "review":
+            from backend.app.services.collaboration import simulated_review
+            spec = (metadata or {}).get("review_spec") or {"reviewer": "agent", "focus": "协作评审"}
+            yield AgentStreamEvent(event_type=AgentEventType.ANSWER, content=simulated_review(spec, mod_code))
+            yield AgentStreamEvent(event_type=AgentEventType.DONE, content="[Simulator] 协作评审完成")
+            return
 
         if message_type == "question":
             from backend.app.services.domain_qa import generate_domain_qa_answer
@@ -75,11 +83,16 @@ class SimulatorAdapter(BaseAgentAdapter):
                 strategic_intent=strategic_intent,
                 user_instruction=user_instruction
             )
+            template_content = SIMULATION_BANNER + template_content
         else:
-            template_content = MODULE_TEMPLATES_CONTENT.get(
-                mod_code,
-                f"# {mod_name} 交付物初稿\n\n基于指令生成：{user_instruction}\n\n已完成基础框架搭建与核心要素梳理。"
-            )
+            template_content, extra_files = build_simulated_deliverable(mod_code, metadata)
+            for rel_name, file_content in extra_files.items():
+                (workspace_dir / rel_name).write_text(file_content, encoding="utf-8")
+            if not template_content:
+                template_content = MODULE_TEMPLATES_CONTENT.get(
+                    mod_code,
+                    f"# {mod_name} 交付物初稿\n\n基于指令生成：{user_instruction}\n\n已完成基础框架搭建与核心要素梳理。"
+                )
 
         if message_type == "feedback":
             content = f"{template_content}\n\n---\n### 依据反馈修订说明\n- **反馈要点**：{user_instruction}\n- **调整说明**：已完成补充与闭环。"

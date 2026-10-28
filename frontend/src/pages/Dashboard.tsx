@@ -20,6 +20,10 @@ interface DashboardProps {
   onOpenNewProductModal: () => void;
   onOpenNewInitiativeModal?: () => void;
   onNavigateToIssues?: () => void;
+  initialTab?: CockpitTabKey;
+  listStatus?: 'loading' | 'ready' | 'error';
+  listError?: string | null;
+  onRetryLoad?: () => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -32,8 +36,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onOpenNewProductModal,
   onOpenNewInitiativeModal,
   onNavigateToIssues,
+  initialTab = 'overview',
+  listStatus = 'ready',
+  listError = null,
+  onRetryLoad,
 }) => {
-  const [activeTab, setActiveTab] = useState<CockpitTabKey>('overview');
+  const [activeTab, setActiveTab] = useState<CockpitTabKey>(initialTab);
   const [cockpit, setCockpit] = useState<ExecutiveCockpitResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,12 +66,30 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }, [loadCockpitData, refreshTrigger, products]);
 
   if (!currentInitiative) {
+    const waiting = listStatus === 'loading';
+    const failed = listStatus === 'error';
     return (
       <div className="max-w-4xl mx-auto py-16 text-center text-slate-500">
         <Building2 className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-        <p className="text-base font-semibold text-slate-800">暂无选中的战略工程</p>
-        <p className="text-xs text-slate-400 mt-1 mb-4">请在左侧侧边栏中选择已有工程，或新建首个顶层战略工程</p>
-        {onOpenNewInitiativeModal && (
+        <p className="text-base font-semibold text-slate-800">
+          {waiting ? '正在读取工程…' : failed ? '工程还在，页面暂时读不出来' : '暂无选中的战略工程'}
+        </p>
+        <p className="text-xs text-slate-400 mt-1 mb-4">
+          {waiting
+            ? '同意之后下一步会在后台继续，刷新不会把工程删掉。'
+            : failed
+              ? (listError || '请稍后重试')
+              : '请在左侧侧边栏中选择已有工程，或新建首个顶层战略工程'}
+        </p>
+        {failed && onRetryLoad && (
+          <button
+            onClick={onRetryLoad}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-xs transition cursor-pointer"
+          >
+            重试
+          </button>
+        )}
+        {!waiting && !failed && onOpenNewInitiativeModal && (
           <button
             onClick={onOpenNewInitiativeModal}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-xs transition cursor-pointer"

@@ -23,6 +23,9 @@ interface SidebarProps {
   onDeleteInitiative: (initId: string) => Promise<void>;
   onOpenSettingsModal: () => void;
   hasAgentWarning?: boolean;
+  listStatus?: 'loading' | 'ready' | 'error';
+  listError?: string | null;
+  onRetryLoad?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -34,7 +37,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onRenameInitiative,
   onDeleteInitiative,
   onOpenSettingsModal,
-  hasAgentWarning = false
+  hasAgentWarning = false,
+  listStatus = 'ready',
+  listError = null,
+  onRetryLoad
 }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
@@ -120,7 +126,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {/* 工程卡片列表 */}
           <div className="space-y-1.5">
-            {initiatives.length === 0 ? (
+            {listStatus === 'loading' && initiatives.length === 0 ? (
+              <div className="py-10 text-center text-slate-400 space-y-2">
+                <Building2 className="w-8 h-8 mx-auto text-slate-300" />
+                <p className="text-xs">正在读取工程…</p>
+              </div>
+            ) : listStatus === 'error' && initiatives.length === 0 ? (
+              <div className="py-10 text-center text-slate-400 space-y-2">
+                <AlertTriangle className="w-8 h-8 mx-auto text-amber-500" />
+                <p className="text-xs text-slate-700">工程还在，列表暂时读不出来</p>
+                <p className="text-[11px] text-slate-400 px-2">{listError || '请稍后再试'}</p>
+                {onRetryLoad && (
+                  <button
+                    type="button"
+                    onClick={onRetryLoad}
+                    className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800"
+                  >
+                    重试
+                  </button>
+                )}
+              </div>
+            ) : initiatives.length === 0 ? (
               <div className="py-10 text-center text-slate-400 space-y-2">
                 <Building2 className="w-8 h-8 mx-auto text-slate-300" />
                 <p className="text-xs">暂无战略工程</p>

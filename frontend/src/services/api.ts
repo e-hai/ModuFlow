@@ -10,8 +10,10 @@ import {
   Issue,
   ExecutiveCockpitResponse,
   ExecutiveDecisionItem,
+  DecisionInboxItem,
   ExecutiveRiskItem,
   AgentSettings,
+  CliModelList,
   ChangeReview,
   GateConfig,
   GateApplication,
@@ -20,19 +22,34 @@ import {
   HotfixTasksStatus,
   HotfixFollowupTask,
   PortfolioWeeklyReport,
-  ProjectDailyDigest
+  ProjectDailyDigest,
+  RunOrchestrationStatus
 } from '../types';
 
 const API_BASE = '/api/v1';
 
-async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${url}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
-  });
+async function fetchJSON<T>(url: string, options?: RequestInit, timeoutMs?: number): Promise<T> {
+  const controller = new AbortController();
+  const timer = timeoutMs ? window.setTimeout(() => controller.abort(), timeoutMs) : 0;
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${url}`, {
+      ...options,
+      signal: timeoutMs ? controller.signal : options?.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers,
+      },
+    });
+  } catch (err) {
+    const aborted = err instanceof DOMException && err.name === 'AbortError';
+    if (aborted) {
+      throw new Error('服务器正在处理上一步，列表暂时读不出来。工程还在，请稍后再试。');
+    }
+    throw err instanceof Error ? err : new Error('连不上服务器。工程还在，请稍后再试。');
+  } finally {
+    if (timer) window.clearTimeout(timer);
+  }
   if (!res.ok) {
     let errorDetail = 'Request failed';
     try {
@@ -46,7 +63,7 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   // Initiatives
-  getInitiatives: () => fetchJSON<StrategicInitiative[]>('/initiatives'),
+  getInitiatives: () => fetchJSON<StrategicInitiative[]>('/initiatives', undefined, 8000),
   createInitiative: (data: Partial<StrategicInitiative>) =>
     fetchJSON<StrategicInitiative>('/initiatives', { method: 'POST', body: JSON.stringify(data) }),
   updateInitiative: (id: string, data: Partial<StrategicInitiative>) =>
@@ -71,6 +88,30 @@ export const api = {
     fetchJSON<WorkflowRun>('/runs', { method: 'POST', body: JSON.stringify(data) }),
   updateRun: (runId: string, updates: { name?: string; status?: string }) =>
     fetchJSON<WorkflowRun>(`/runs/${runId}`, { method: 'PATCH', body: JSON.stringify(updates) }),
+  getRunOrchestrationStatus: (runId: string) =>
+    fetchJSON<RunOrchestrationStatus>(`/runs/${runId}/orchestration-status`),
+  setRunAutoAdvance: (runId: string, enabled: boolean) =>
+    fetchJSON<{ ok: boolean; run_id: string; auto_advance: boolean }>(`/runs/${runId}/auto-advance`, {
+      method: 'PATCH',
+      headers: { 'X-ModuFlow-Actor': 'human:sponsor' },
+      body: JSON.stringify({ enabled }),
+    }),
+  advanceRun: (runId: string) =>
+    fetchJSON<{ status: string; dispatched: string[]; orchestration: RunOrchestrationStatus }>(
+      `/runs/${runId}/advance`,
+      { method: 'POST' }
+    ),
+  submitModuleForGate: (moduleId: string) =>
+    fetchJSON<{ module_id: string; status: string }>(`/modules/${moduleId}/submit-for-gate`, {
+      method: 'POST',
+      headers: { 'X-ModuFlow-Actor': 'human:sponsor' },
+    }),
+  resolveModuleDispute: (moduleId: string, decision: 'accept_review' | 'override_review', comment = '') =>
+    fetchJSON<{ module_id: string; decision: string; status: string }>(`/modules/${moduleId}/resolve-dispute`, {
+      method: 'POST',
+      headers: { 'X-ModuFlow-Actor': 'human:sponsor' },
+      body: JSON.stringify({ decision, comment }),
+    }),
 
   // Modules
   getModule: (moduleId: string) => fetchJSON<ModuleInstance>(`/modules/${moduleId}`),
@@ -149,6 +190,8 @@ export const api = {
     fetchJSON<Issue>(`/issues/${issueId}`, { method: 'PATCH', body: JSON.stringify(updates) }),
 
   // Executive Cockpit
+  getDecisionInbox: (initiativeId: string) =>
+    fetchJSON<{ initiative_id: string; items: DecisionInboxItem[] }>(`/initiatives/${initiativeId}/decision-inbox`),
   getCockpit: (initiativeId: string, period = 'lifetime') =>
     fetchJSON<ExecutiveCockpitResponse>(`/initiatives/${initiativeId}/cockpit?period=${period}`),
   actOnDecision: (initiativeId: string, decisionId: string, action: 'approve' | 'reject', operator = 'CEO') =>
@@ -170,6 +213,10 @@ export const api = {
 
   // Agent Settings
   getAgentSettings: () => fetchJSON<AgentSettings>('/settings/agent'),
+  listCliModels: (command: string, refresh = false) =>
+    fetchJSON<CliModelList>(
+      `/settings/agent/models?command=${encodeURIComponent(command)}${refresh ? '&refresh=true' : ''}`
+    ),
   updateAgentSettings: (data: Partial<AgentSettings>) =>
     fetchJSON<AgentSettings>('/settings/agent', { method: 'PATCH', body: JSON.stringify(data) }),
   testAgentSettings: () =>

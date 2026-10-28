@@ -121,7 +121,7 @@ async def test_shadow_mode_active_lead_does_not_approve_gate():
         # Crucial check: Gate status must STILL be pending because shadow_mode is True!
         assert eval_gate.status == "pending"
         assert eval_gate.lead_recommendation == "approved"
-        assert "预评估" in eval_gate.lead_rationale
+        assert "建议放行" in eval_gate.lead_rationale
 
         assert shadow_dec.lead_recommendation == "approved"
         assert shadow_dec.human_decision is None
@@ -132,6 +132,45 @@ async def test_shadow_mode_active_lead_does_not_approve_gate():
         assert decisions_dir.exists()
         eval_files = list(decisions_dir.glob("*_lead_gate_evaluation.json"))
         assert len(eval_files) >= 1
+
+
+@pytest.mark.asyncio
+async def test_lead_uses_structured_evidence_instead_of_risk_wording():
+    """A passing sentence containing “阻断” must not be mistaken for a blocker."""
+    uid = uuid.uuid4().hex[:6]
+    async with AsyncSessionLocal() as db:
+        init = StrategicInitiative(id=f"INIT-EVIDENCE-{uid}", name="结构化证据测试")
+        prod = Product(
+            id=f"p-{uid}", initiative_id=init.id, name="EvidenceApp",
+            code=f"EVIDENCE_{uid}", stage="growth", shadow_mode=True,
+        )
+        db.add_all([init, prod])
+        await db.commit()
+        ensure_test_product_authorization(init.id, prod.code)
+        run = await create_workflow_run_from_template(db, prod.id, "fast-iteration", f"Run-{uid}")
+        m05 = (await db.execute(select(ModuleInstance).where(
+            ModuleInstance.run_id == run.id, ModuleInstance.module_code == "05"
+        ))).scalar_one()
+        gate = await create_or_update_gate_application(
+            db=db,
+            module_id=m05.id,
+            recommendation="PRD 封版",
+            evidence=[
+                {"checker": "deliverable_audit", "passed": True},
+                {"checker": "compliance_engine", "status": "passed"},
+            ],
+            risk_assessment="✅ 合规检查通过，未发现阻断性平台政策风险。",
+            submitted_by="agent:pm",
+            context={},
+        )
+        evaluated, _ = await evaluate_gate_by_lead(db, gate.id)
+        assert evaluated.lead_recommendation == "approved"
+
+        gate.evidence = [{"checker": "deliverable_audit", "passed": False}]
+        await db.commit()
+        evaluated, _ = await evaluate_gate_by_lead(db, gate.id)
+        assert evaluated.lead_recommendation == "rejected"
+        assert "建议先别过" in evaluated.lead_rationale
 
 
 @pytest.mark.asyncio

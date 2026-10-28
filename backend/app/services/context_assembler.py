@@ -1,4 +1,4 @@
-from typing import Tuple, Dict, Any, List
+from typing import Tuple, Dict, Any, List, Optional
 from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -10,14 +10,63 @@ from backend.app.models.entities import (
     WorkflowRun,
     Product,
     StrategicInitiative,
-    Artifact
+    Artifact,
+    AgentRoleDefinition,
+    GateApplication,
 )
 from backend.app.services.workspace_sync import sanitize_dirname
+from backend.app.services.agent_roles import render_persona
+
+
+async def _handoff_anchor_lines(
+    db: AsyncSession,
+    module_code: str,
+    all_mods: List[ModuleInstance],
+    baselined_artifacts: List[Dict[str, Any]],
+) -> List[str]:
+    """Contract anchors this stage must build on, plus what upstream reviewers flagged when those stages passed."""
+    import re
+    from backend.app.services.collaboration import HANDOFF_REQUIREMENTS, handoff_anchor_fields
+
+    by_code = {b["module_code"]: b for b in baselined_artifacts}
+    lines: List[str] = []
+    for req in HANDOFF_REQUIREMENTS.get(str(module_code), []):
+        base = by_code.get(req["upstream"])
+        if not base:
+            continue
+        hits = [ln.strip() for ln in (base["content"] or "").splitlines() if re.search(req["pattern"], ln)]
+        lines.append(f"- 工序 {req['upstream']} · {req['anchor']}：" + (" / ".join(hits[:6])[:600] if hits else "未找到"))
+    for code in sorted({r["upstream"] for r in HANDOFF_REQUIREMENTS.get(str(module_code), [])}):
+        base = by_code.get(code)
+        fields = handoff_anchor_fields(base["content"] or "") if base else {}
+        if fields:
+            lines.append(f"- 工序 {code} 结构化字段：" + ", ".join(f"{k}={v}" for k, v in list(fields.items())[:12]))
+
+    upstream_ids = {m.id: m.module_code for m in all_mods if m.module_code in by_code}
+    if upstream_ids:
+        gates = (await db.execute(
+            select(GateApplication).where(GateApplication.module_id.in_(list(upstream_ids)))
+        )).scalars().all()
+        for gate in gates:
+            for ev in gate.evidence or []:
+                if not isinstance(ev, dict) or ev.get("checker") != "collaboration_review":
+                    continue
+                for r in ev.get("results") or []:
+                    if r.get("findings"):
+                        lines.append(
+                            f"- 工序 {upstream_ids[gate.module_id]} 评审备注（{r.get('reviewer')}）："
+                            + "；".join(map(str, r["findings"]))[:300]
+                        )
+                for cr in ev.get("change_requests") or []:
+                    lines.append(f"- 遗留 CR（{cr.get('reviewer')} → 工序 {cr.get('target_stage')}）：{cr.get('summary')}")
+    return lines
+
 
 async def assemble_module_context(
     db: AsyncSession,
     module_id: str,
-    user_instruction: str
+    user_instruction: str,
+    role_override: Optional[str] = None,
 ) -> Tuple[str, Path, Dict[str, Any]]:
     """
     Assembles a complete, multi-layered strategic context for the Agent:
@@ -105,6 +154,14 @@ async def assemble_module_context(
 
     collab_desc = "、".join([f"{c.name} ({c.title})" for c in collab_roles]) if collab_roles else "无"
 
+    if role_override and role_override != primary_role_code:
+        override_role = (await db.execute(
+            select(AgentRoleDefinition).where(AgentRoleDefinition.role_code == role_override)
+        )).scalar_one_or_none()
+        if override_role is not None:
+            collab_desc = f"本次以协作评审身份驻场，主责角色为 {primary_role.name if primary_role else primary_role_code}"
+            primary_role = override_role
+
     # 5. Format multi-layered context
     context_lines = [
         f"# 【ModuFlow 智能体研发上下文】",
@@ -157,6 +214,10 @@ async def assemble_module_context(
     else:
         context_lines.append("- *(当前无前序封版基线交付物，本工序为当前链条首道或前序正在论证中)*")
 
+    handoff_lines = await _handoff_anchor_lines(db, mod.module_code, all_mods, baselined_artifacts)
+    if handoff_lines:
+        context_lines.extend(["", "---", "## 上游交接锚点 (Handoff Anchors)", *handoff_lines])
+
     # Role Persona Injection
     if primary_role:
         context_lines.extend([
@@ -171,7 +232,7 @@ async def assemble_module_context(
             f"- **已挂载专属 MCP 服务**：`{', '.join(arsenal_info['mounted_mcp_servers'])}`（配置：`.agents/mcp_config.json`）",
             "",
             "**专业作业守则与思维准则**：",
-            primary_role.system_persona,
+            render_persona(primary_role.role_code, primary_role.system_persona, prod.platform, prod.client_zero_inference),
         ])
 
     context_lines.extend([
@@ -199,6 +260,8 @@ async def assemble_module_context(
         "product_id": prod.id,
         "product_name": prod.name,
         "product_code": prod.code,
+        "platform": getattr(prod, "platform", "ios") or "ios",
+        "client_zero_inference": True if getattr(prod, "client_zero_inference", True) is None else bool(prod.client_zero_inference),
         "run_id": run.id,
         "run_name": run.name,
         "module_id": mod.id,

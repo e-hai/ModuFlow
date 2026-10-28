@@ -33,6 +33,9 @@ async def override_get_db():
 # Override FastAPI database dependency for all test runs
 app.dependency_overrides[get_db] = override_get_db
 
+# Existing suites drive stages by hand; test_orchestrator.py enables this per test.
+settings.ORCHESTRATOR_ENABLED = False
+
 
 def ensure_test_product_authorization(initiative_id: str, product_code: str, budget: float = 5000.0) -> Path:
     auth_path = get_product_authorization_path(initiative_id, product_code)

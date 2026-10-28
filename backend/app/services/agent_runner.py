@@ -24,6 +24,12 @@ def get_session_lock(session_id: str) -> asyncio.Lock:
         _session_locks[session_id] = asyncio.Lock()
     return _session_locks[session_id]
 
+
+async def release_db_while_waiting(db: AsyncSession) -> None:
+    """结束当前事务，把连接还回连接池。长耗时的 CLI 不能占着 SQLite 连接。"""
+    if db.in_transaction():
+        await db.commit()
+
 async def execute_agent_for_session(
     db: AsyncSession,
     session: CollaborationSession,
@@ -154,6 +160,7 @@ async def execute_agent_for_session(
         task_id = f"task-{uuid.uuid4().hex[:8]}"
 
         # 3. Stream/Execute Adapter Task
+        await release_db_while_waiting(db)
         produced_artifact_content = None
         produced_artifact_event_type = None
         produced_answer_content = None
@@ -185,6 +192,16 @@ async def execute_agent_for_session(
 
         # 4. Handle Explicit Execution Error (当 agent 出错时，绝不伪造正常回答，直接报告失败)
         if error_event:
+            from backend.app.services.security_guard import intercept_agent_write_attempt
+            for violated_path in ((error_event.metadata or {}).get("sandbox_violations") or [])[:5]:
+                await intercept_agent_write_attempt(
+                    violated_path,
+                    actor=f"agent:{role_code}",
+                    actor_role=role_code,
+                    db=db,
+                    initiative_id=(meta or {}).get("initiative_id"),
+                    product_code=(meta or {}).get("product_code"),
+                )
             agent_msg = SessionMessage(
                 session_id=session.id,
                 sender=sender_label,
@@ -330,3 +347,67 @@ async def execute_agent_for_session(
         await db.commit()
         await db.refresh(agent_msg)
         return agent_msg
+
+
+async def execute_collaborator_review(
+    db: AsyncSession,
+    session: CollaborationSession,
+    module: ModuleInstance,
+    spec: Dict[str, Any],
+    artifact: Artifact,
+    adapter_type: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Runs one collaborator review of the primary deliverable; the reviewer writes no files and cannot release gates."""
+    from backend.app.services.collaboration import (
+        REVIEW_MESSAGE_TYPE,
+        build_review_instruction,
+        parse_verdict,
+    )
+
+    reviewer = spec["reviewer"]
+    instruction = build_review_instruction(spec, module.module_code, module.name, artifact.content or "")
+    async with get_session_lock(session.id):
+        system_context, workspace_path, meta = await assemble_module_context(
+            db=db, module_id=module.id, user_instruction=instruction, role_override=reviewer,
+        )
+        meta = {**(meta or {}), "review_spec": spec}
+        adapter = get_agent_adapter(adapter_type)
+        await release_db_while_waiting(db)
+        review_text = ""
+        error_text = None
+        async for event in adapter.execute_task(
+            task_id=f"review-{uuid.uuid4().hex[:8]}",
+            workspace_dir=workspace_path,
+            system_context=system_context,
+            user_instruction=instruction,
+            message_type=REVIEW_MESSAGE_TYPE,
+            metadata=meta,
+        ):
+            if event.event_type in (AgentEventType.ANSWER, AgentEventType.ARTIFACT_DRAFT, AgentEventType.ARTIFACT_REVISED):
+                review_text = event.content or ""
+            elif event.event_type == AgentEventType.ERROR:
+                error_text = event.content
+
+    verdict = parse_verdict(review_text) if not error_text else {
+        "verdict": "request_changes",
+        "findings": [f"评审执行失败：{error_text[:300]}"],
+        "parse_error": True,
+    }
+    result = {
+        "reviewer": reviewer,
+        "kind": "llm",
+        "focus": spec["focus"],
+        "artifact_version": artifact.version,
+        **verdict,
+    }
+    db.add(SessionMessage(
+        session_id=session.id,
+        sender=f"{(meta or {}).get('role_name', reviewer)} (协作评审)",
+        sender_role="agent",
+        role_code=reviewer,
+        message_type=REVIEW_MESSAGE_TYPE,
+        content=review_text or (error_text or "评审未产出内容"),
+        metadata_json={"orchestrator": "review", "review": result},
+    ))
+    await db.commit()
+    return result

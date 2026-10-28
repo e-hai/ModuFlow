@@ -38,6 +38,7 @@ RED_ESCALATION_KEYWORDS = {
     "encryption": ["encryption", "keychain", "keystore", "aes", "rsa", "加密", "密钥存储", "安全凭证"],
     "modify_lead_permissions": ["modify_permissions", "modify_redlines", "lead_permissions", "修改权限", "修改红线", "越权放行"],
     "public_statement": ["public_statement", "press_release", "对外公开表态", "官方声明", "媒体发布"],
+    "high_risk_cr": ["需求变更涉及支付", "需求变更涉及隐私"],
     "compliance_high_risk": ["legal_review", "compliance_violation", "需法务", "合规高风险", "侵权", "商标侵权", "未成年人隐私", "赌博违规", "g5_escalation"],
 }
 
@@ -56,6 +57,16 @@ def get_stage_gate_config(module_code: str, template_id: Optional[str] = None) -
         "conditions": ["符合标准工程规范"],
         "auto_escalate_triggers": []
     }
+
+
+def _flag_is_true(value: Any) -> bool:
+    if value is True:
+        return True
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and value == 1:
+        return True
+    if isinstance(value, str) and value.strip().lower() == "true":
+        return True
+    return False
 
 
 def evaluate_gate_level(
@@ -78,48 +89,51 @@ def evaluate_gate_level(
     effective_approver = base_approver
     is_escalated = False
     escalation_reasons: List[str] = []
+    keyword_hints: List[str] = []
 
     ctx = context or {}
     context_str = json.dumps(ctx, ensure_ascii=False).lower()
 
-    # 1. Check budget exceeded trigger -> 🔴 RED
-    if ctx.get("is_budget_exceeded") or ctx.get("budget_exceeded"):
+    def _raise_red(reason: str) -> None:
+        nonlocal is_escalated, effective_level, effective_approver
         is_escalated = True
         effective_level = "red"
         effective_approver = "human"
-        escalation_reasons.append("触发超预算熔断红线，关口强制升级为 🔴 red (必须人类审批)")
+        escalation_reasons.append(reason)
 
-    # 2. Check keyword-based mandatory red escalation triggers
+    # Structured flags escalate. Free-text keywords are hints only.
+    if _flag_is_true(ctx.get("is_budget_exceeded")) or _flag_is_true(ctx.get("budget_exceeded")):
+        _raise_red("花费已经碰到授权上限，需要您亲自决定是否继续。")
+
+    from backend.app.services.gate_copy import FLAG_NAMES
     for trigger_cat, keywords in RED_ESCALATION_KEYWORDS.items():
-        matched = []
-        if ctx.get(f"is_{trigger_cat}_related") or ctx.get(trigger_cat):
-            matched.append(trigger_cat)
-        else:
-            for kw in keywords:
-                if kw in context_str:
-                    matched.append(kw)
-                    break
-        if matched:
-            is_escalated = True
-            effective_level = "red"
-            effective_approver = "human"
-            escalation_reasons.append(f"检测到涉及【{trigger_cat}】关键敏感事项 (匹配项: {', '.join(matched[:3])})，关口强制升级为 🔴 red (必须人类审批)")
+        structured = (
+            _flag_is_true(ctx.get(f"is_{trigger_cat}_related"))
+            or _flag_is_true(ctx.get(trigger_cat))
+            or _flag_is_true(ctx.get(f"touches_{trigger_cat}"))
+        )
+        if structured:
+            _raise_red(f"这一关涉及{FLAG_NAMES.get(trigger_cat, trigger_cat)}，需要您亲自签字才能过。")
+            continue
+        for kw in keywords:
+            if kw.lower() in context_str:
+                keyword_hints.append(f"文案命中「{kw}」（{trigger_cat}），未设置结构化标记，不单独升红")
+                break
 
-    # 3. Stage 05 specific: data dictionary / schema change -> 🔴 RED
     if module_code == "05":
-        if ctx.get("data_dictionary_schema_change") or "schema_change" in context_str or "数据字典变更" in context_str:
-            is_escalated = True
-            effective_level = "red"
-            effective_approver = "human"
-            escalation_reasons.append("工序 05 涉及核心业务数据字典/实体变更，关口自动升级为 🔴 red (必须人类审批)")
+        if _flag_is_true(ctx.get("data_dictionary_schema_change")):
+            _raise_red("需求里改了业务数据结构，需要您亲自确认。")
+        elif "schema_change" in context_str or "数据字典变更" in context_str:
+            keyword_hints.append("文案疑似数据字典变更，未设置 data_dictionary_schema_change，不单独升红")
 
-    # 4. Stage 11 specific: major version / pivot -> 🟡 YELLOW
     if module_code == "11" and effective_level == "green":
-        if ctx.get("is_major_version") or "major_version" in context_str or "大版本" in context_str:
+        if _flag_is_true(ctx.get("is_major_version")) or _flag_is_true(ctx.get("major_version")):
             is_escalated = True
             effective_level = "yellow"
             effective_approver = "human"
             escalation_reasons.append("工序 11 涉及大版本规划 (Major Version)，关口由 🟢 升级为 🟡 yellow (需人类批量审批)")
+        elif "大版本" in context_str or "major_version" in context_str:
+            keyword_hints.append("文案疑似大版本，未设置 is_major_version，不单独升黄")
 
     from backend.app.services.agent_roles import get_stage_gate_conditions
     dynamic_conditions = get_stage_gate_conditions(
@@ -136,6 +150,7 @@ def evaluate_gate_level(
         "effective_approver": effective_approver,
         "is_escalated": is_escalated,
         "escalation_reasons": escalation_reasons,
+        "keyword_hints": keyword_hints,
         "conditions": dynamic_conditions
     }
 
@@ -248,7 +263,8 @@ async def create_or_update_gate_application(
             gate_human_action = "假门市场外测决议"
         elif "05" in mod.module_code or "prd" in gate_display_name.lower():
             gate_human_action = "产品需求规格审核"
-            if gate.is_escalated and any(k in gate.escalation_reasons for k in ["payment", "user_data", "privacy"]):
+            joined_reasons = " ".join(gate.escalation_reasons or [])
+            if gate.is_escalated and any(k in joined_reasons for k in ["payment", "user_data", "privacy"]):
                 gate_human_action += " (涉及内购支付与隐私)"
         elif "P0" in gate_display_name or "热修" in gate_display_name:
             gate_human_action = "紧急热修上线审批 (P0)"
@@ -265,12 +281,12 @@ async def create_or_update_gate_application(
             title=f"🔴 待您亲自把关：{gate_human_action} · {prod_display}",
             severity="critical",
             description=(
-                f"产品「{prod_display}」在【工序 {mod.module_code}：{mod.name}】达到重大决策节点。"
-                f"{'检测到敏感项触发必须由您亲自签署的条件: ' + '; '.join(gate.escalation_reasons) if gate.is_escalated else '该工序涉及重大对外发布决策，按安全规则必须由人类负责人亲自确认。'}\n"
-                f"项目总控建议: {clean_rec[:120]}"
+                f"「{prod_display}」的{mod.name}到了需要您拍板的节点。"
+                f"{'；'.join(gate.escalation_reasons) if gate.is_escalated else '这一关要对外发布，必须由您亲自确认。'}"
+                f"\n{clean_rec[:180]}"
             ),
             product_code=product_code,
-            action_suggestion="请核对合规审查材料与应急回滚预案后确认放行。",
+            action_suggestion="请看过结论和依据后再决定放行、退回或驳回。",
             is_resolved=False
         )
         db.add(risk)
@@ -298,6 +314,15 @@ async def create_or_update_gate_application(
     await db.commit()
     await db.refresh(gate)
     return gate
+
+
+async def get_designated_approver(db: AsyncSession, gate: GateApplication) -> str:
+    """Approver role named in the stage gate config (lead / qa / human)."""
+    template_id = None
+    if gate.run_id:
+        run_obj = (await db.execute(select(WorkflowRun).where(WorkflowRun.id == gate.run_id))).scalar_one_or_none()
+        template_id = run_obj.template_id if run_obj else None
+    return get_stage_gate_config(gate.module_code, template_id).get("approver", "lead")
 
 
 async def review_gate_application(
@@ -334,10 +359,12 @@ async def review_gate_application(
             f"系统硬约束严禁 Agent (包括 lead) 审批黄级/红级关口。必须由人类负责人 (actor_role='human') 审批。"
         )
 
-    # For green gate: lead, qa (for stage 08), or human can approve
     if gate.effective_level == "green":
-        if actor_role not in ["human", "lead", "qa"]:
-            raise PermissionError(f"❌ 权限拒绝: 角色 '{actor_role}' 无权审批绿级关口。")
+        designated = await get_designated_approver(db, gate)
+        if actor_role not in ("human", designated):
+            raise PermissionError(
+                f"❌ 权限拒绝: 绿级关口「{gate.gate_name}」的审批人是 {designated}，角色 '{actor_role}' 无权审批。"
+            )
 
     now = datetime.now(timezone.utc)
     if action == "approve":
@@ -434,6 +461,17 @@ async def check_stage_gate_passed(db: AsyncSession, module_id: str) -> Tuple[boo
         if gate.reviewer_role != "human":
             return False, "❌ 工序 09 (商店提审发布) 必须由负责人亲自签署，当前审批人非人工账号，无法放行上线。", gate
         return True, "工序 09 人类提审确认记录具备，已放行上线", gate
+
+    if not gate:
+        run_stmt = select(WorkflowRun).where(WorkflowRun.id == mod.run_id)
+        run_res = await db.execute(run_stmt)
+        run_obj = run_res.scalar_one_or_none()
+        template_id = run_obj.template_id if run_obj else None
+        cfg = get_stage_gate_config(mod.module_code, template_id)
+        if cfg.get("level") in ("yellow", "red") or cfg.get("approver") == "human":
+            level_name = "红" if cfg.get("level") == "red" else "黄"
+            return False, f"「{cfg.get('name')}」为{level_name}级关口，须先提交关口申请并由人类审批后方可定稿。", None
+        return True, "绿级关口以交付物检查为准", None
 
     # Other stages
     if gate:

@@ -1,4 +1,7 @@
 import os
+import re
+import json
+import time
 import shutil
 import asyncio
 from typing import AsyncIterator, Optional, Dict, Any, List
@@ -6,6 +9,13 @@ from pathlib import Path
 from backend.app.adapters.base import BaseAgentAdapter, AgentStreamEvent, AgentEventType
 from backend.app.core.config import settings
 from backend.app.services.security_guard import sanitize_agent_environment
+from backend.app.services.workspace_sandbox import (
+    os_sandbox_available,
+    sandbox_layers,
+    take_integrity_snapshot,
+    verify_and_restore,
+    wrap_command,
+)
 
 def get_cli_search_path() -> str:
     """Construct a comprehensive PATH including common CLI install locations on macOS/Linux."""
@@ -24,28 +34,216 @@ def find_cli_binary(command: str) -> Optional[str]:
     search_path = get_cli_search_path()
     return shutil.which(command, path=search_path)
 
-def build_cli_arguments(cmd_path: str, prompt: str) -> List[str]:
+_MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+-]{0,119}$")
+_CLAUDE_MODEL_RE = re.compile(r"\bclaude-(?:opus|sonnet|haiku|fable)-\d+(?:-\d+)?\b")
+_MODEL_LIST_CACHE: Dict[str, tuple] = {}
+_MODEL_LIST_TTL_SECONDS = 120
+
+
+def deliverable_length_guideline(mod_code: str) -> str:
+    """Keep stage 05 a full PRD. Other stages stay inside their own checklist."""
+    if mod_code in {"01", "02", "03", "04"}:
+        return "全文控制在 2,000~3,500 字，用高密度表格写完即止。"
+    if mod_code == "05":
+        return (
+            "这是完整 PRD：覆盖业务流程、逐页交互、五维模块卡、业务数据字典、权益状态机、埋点字典与验收标准，"
+            "篇幅 6,000~12,000 字，不要缩成几行简表。"
+        )
+    return "只写本工序清单中的交付项，全文 1,800~3,500 字。不要扩写成 PRD，不要补写清单以外的章节。"
+
+
+def usable_cli_model(model: Optional[str]) -> Optional[str]:
+    """Return a model id safe to pass as a CLI argument, or None to keep the CLI default."""
+    if model is None:
+        return None
+    text = model.strip()
+    if not text or not _MODEL_ID_RE.match(text):
+        return None
+    return text
+
+
+def build_cli_arguments(cmd_path: str, prompt: str, model: Optional[str] = None) -> List[str]:
     """
     Build non-interactive, permission-bypassing arguments for supported Agent CLIs.
     Supports Claude Code (claude), Google Antigravity (agy), Codex CLI (codex),
-    and general custom CLI runners.
+    and general custom CLI runners. A selected model is passed with the CLI's own --model flag.
     """
     cmd_name = Path(cmd_path).name.lower()
-    if "claude" in cmd_name:
-        return [cmd_path, "-p", prompt, "--dangerously-skip-permissions"]
-    elif "agy" in cmd_name:
-        return [cmd_path, "-p", prompt, "--dangerously-skip-permissions"]
+    chosen = usable_cli_model(model)
+    model_flags = ["--model", chosen] if chosen else []
+    if "claude" in cmd_name or "agy" in cmd_name:
+        return [cmd_path, *model_flags, "-p", prompt, "--dangerously-skip-permissions"]
     elif "codex" in cmd_name:
+        # Under sandbox-exec Codex cannot nest its own seatbelt, so it bypasses it; otherwise use its workspace-write sandbox.
+        sandbox_flags = (
+            ["--dangerously-bypass-approvals-and-sandbox"]
+            if os_sandbox_available()
+            else ["--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true"]
+        )
         return [
             cmd_path,
+            *model_flags,
             "exec",
             "--ephemeral",
             "--skip-git-repo-check",
-            "--dangerously-bypass-approvals-and-sandbox",
+            *sandbox_flags,
             prompt
         ]
     else:
-        return [cmd_path, "-p", prompt]
+        return [cmd_path, *model_flags, "-p", prompt]
+
+
+def parse_agy_model_listing(text: str) -> List[Dict[str, str]]:
+    """Parse `agy models` stdout: one `id<TAB>label` row per model."""
+    models: List[Dict[str, str]] = []
+    seen = set()
+    for raw in text.splitlines():
+        line = raw.strip()
+        if "\t" not in line:
+            continue
+        model_id, label = line.split("\t", 1)
+        model_id = usable_cli_model(model_id)
+        label = label.strip()
+        if not model_id or model_id in seen:
+            continue
+        seen.add(model_id)
+        models.append({"id": model_id, "label": label or model_id})
+    return models
+
+
+def parse_codex_model_catalog(text: str) -> List[Dict[str, str]]:
+    """Parse `codex debug models` JSON down to slug and display name."""
+    start_obj = text.find("{")
+    start_list = text.find("[")
+    starts = [i for i in (start_obj, start_list) if i >= 0]
+    if not starts:
+        return []
+    try:
+        data = json.loads(text[min(starts):])
+    except json.JSONDecodeError:
+        return []
+    rows = data.get("models", []) if isinstance(data, dict) else data
+    if not isinstance(rows, list):
+        return []
+    models: List[Dict[str, str]] = []
+    seen = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if row.get("visibility") not in (None, "list"):
+            continue
+        model_id = usable_cli_model(str(row.get("slug") or row.get("id") or ""))
+        if not model_id or model_id in seen:
+            continue
+        seen.add(model_id)
+        label = str(row.get("display_name") or row.get("name") or model_id).strip() or model_id
+        models.append({"id": model_id, "label": label})
+    return models
+
+
+def parse_claude_model_catalog(text: str) -> List[Dict[str, str]]:
+    """Pull built-in Claude model ids out of CLI help or binary strings."""
+    aliases = [
+        {"id": "fable", "label": "Fable（该系列最新）"},
+        {"id": "opus", "label": "Opus（该系列最新）"},
+        {"id": "sonnet", "label": "Sonnet（该系列最新）"},
+        {"id": "haiku", "label": "Haiku（该系列最新）"},
+    ]
+    family_rank = {"fable": 0, "opus": 1, "sonnet": 2, "haiku": 3}
+    found = []
+    seen = set()
+    for model_id in _CLAUDE_MODEL_RE.findall(text):
+        if model_id in seen:
+            continue
+        seen.add(model_id)
+        family, *version = model_id.removeprefix("claude-").split("-")
+        found.append({
+            "id": model_id,
+            "label": f"Claude {family.capitalize()} {'.'.join(version)}",
+            "_rank": (family_rank.get(family, 9), tuple(-int(part) for part in version)),
+        })
+    found.sort(key=lambda item: item["_rank"])
+    for item in found:
+        item.pop("_rank", None)
+    return aliases + found
+
+
+async def _read_cli_stdout(args: List[str], timeout: float) -> str:
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        raise TimeoutError(f"读取模型列表超时: {' '.join(args[:2])}")
+    return (stdout or b"").decode(errors="replace")
+
+
+async def list_cli_models(command: str, refresh: bool = False) -> Dict[str, Any]:
+    """Ask the installed CLI for the models it can switch to."""
+    command = (command or "").strip()
+    if not command or any(ch in command for ch in "\n\r;&|`$"):
+        return {"command": command, "models": [], "error": "无效的 CLI 命令"}
+    cached = _MODEL_LIST_CACHE.get(command)
+    if cached and not refresh and time.monotonic() - cached[0] < _MODEL_LIST_TTL_SECONDS:
+        return cached[1]
+
+    cmd_path = find_cli_binary(command)
+    if not cmd_path:
+        result = {"command": command, "models": [], "error": "未在 PATH 中找到该 CLI"}
+        return result
+
+    name = Path(cmd_path).name.lower()
+    try:
+        if "agy" in name:
+            text = await _read_cli_stdout([cmd_path, "models"], 20)
+            models = parse_agy_model_listing(text)
+        elif "codex" in name:
+            text = await _read_cli_stdout([cmd_path, "debug", "models"], 15)
+            models = parse_codex_model_catalog(text)
+        elif "claude" in name:
+            help_text = await _read_cli_stdout([cmd_path, "--help"], 8)
+            catalog_text = ""
+            strings_bin = shutil.which("strings")
+            if strings_bin:
+                try:
+                    catalog_text = await _read_cli_stdout([strings_bin, "-n", "12", cmd_path], 12)
+                except Exception:
+                    catalog_text = ""
+            models = parse_claude_model_catalog(help_text + "\n" + catalog_text)
+        else:
+            text = await _read_cli_stdout([cmd_path, "models"], 12)
+            models = parse_agy_model_listing(text)
+    except Exception as exc:
+        result = {"command": command, "models": [], "error": str(exc)}
+        _MODEL_LIST_CACHE[command] = (time.monotonic(), result)
+        return result
+
+    if not models:
+        result = {"command": command, "models": [], "error": "该 CLI 没有返回可切换的模型"}
+    else:
+        result = {"command": command, "models": models, "error": None}
+    _MODEL_LIST_CACHE[command] = (time.monotonic(), result)
+    return result
+
+
+def sandbox_violation_event(snapshot, cli_command: str) -> Optional[AgentStreamEvent]:
+    violations = verify_and_restore(snapshot)
+    if not violations:
+        return None
+    listed = "\n".join(f"- `{v}`" for v in violations[:10])
+    return AgentStreamEvent(
+        event_type=AgentEventType.ERROR,
+        content=(
+            f"❌ 沙箱越权: Agent CLI (`{cli_command}`) 改动了受保护文件，已自动还原，本次交付物作废。\n\n{listed}\n\n"
+            "授权包、决策留痕、已挂载 Skill 与 MCP 配置对 Agent 只读。"
+        ),
+        metadata={"sandbox_violations": violations, "command": cli_command},
+    )
 
 class CliSubprocessAdapter(BaseAgentAdapter):
     """
@@ -92,7 +290,7 @@ class CliSubprocessAdapter(BaseAgentAdapter):
         output_filename = f"交付物_{mod_code}_{mod_name}.md"
 
         # Resolve project profile (platform & client_zero_inference)
-        from backend.app.services.profile_guard import resolve_project_profile
+        from backend.app.services.profile_guard import is_dual_platform, resolve_project_profile
         init_id = (metadata or {}).get("initiative_id")
         prof = resolve_project_profile(
             initiative_id=init_id,
@@ -102,6 +300,12 @@ class CliSubprocessAdapter(BaseAgentAdapter):
         )
         target_platform = prof["platform"]
         target_zero_inf = prof["client_zero_inference"]
+        if is_dual_platform(target_platform):
+            stage05_platform_guard = "iOS HIG（灵动岛顶部安全区 ≥71pt、触控热区 ≥44pt、Apple 4.3）与 Android Material 3（状态栏/挖孔 ≥24dp、触控热区 ≥48dp、Google Play 政策）都要写进验收"
+        elif target_platform == "android":
+            stage05_platform_guard = "Android Material 3 规范与 Google Play 政策合规业务护栏（触控热区 ≥48dp）"
+        else:
+            stage05_platform_guard = "iOS HIG 灵动岛安全区 ≥71pt 与 Apple 4.3 审核合规业务护栏"
 
         # Ensure exclusive role Skills and MCP config are mounted into workspace_dir
         from backend.app.services.skill_mcp_mounter import mount_role_skills_and_mcp
@@ -123,6 +327,11 @@ class CliSubprocessAdapter(BaseAgentAdapter):
             metadata=arsenal_info
         )
 
+        yield AgentStreamEvent(
+            event_type=AgentEventType.LOG,
+            content=f"[Sandbox] 文件系统防护：{sandbox_layers()}；仅允许写入 `{workspace_dir.name}`",
+        )
+
         cmd_path = find_cli_binary(self.cli_command)
         if not cmd_path:
             yield AgentStreamEvent(
@@ -135,13 +344,21 @@ class CliSubprocessAdapter(BaseAgentAdapter):
         # =========================================================================
         # Case A: User asked a QUESTION (疑问讨论)
         # =========================================================================
-        if message_type == "question":
+        if message_type in ("question", "review"):
             yield AgentStreamEvent(
                 event_type=AgentEventType.THINKING,
-                content=f"已读取工作区战略底稿，正在启动 `{self.cli_command}` 推演业务问题: '{user_instruction}'..."
+                content=(
+                    f"已读取工作区战略底稿，正在启动 `{self.cli_command}` 以 `{role_code}` 身份做协作评审..."
+                    if message_type == "review" else
+                    f"已读取工作区战略底稿，正在启动 `{self.cli_command}` 推演业务问题: '{user_instruction}'..."
+                )
             )
 
             prompt_for_cli = (
+                f"请先阅读工作区战略底稿与前序基线 `.moduflow_agent_context.md`。\n\n"
+                f"{user_instruction}\n\n"
+                f"直接在控制台标准输出 (stdout) 中输出评审意见与末尾的 json 结论，不要创建或修改任何文件。"
+            ) if message_type == "review" else (
                 f"【当前战略工程与单品上下文】\n"
                 f"- 所属战略工程：{init_name}\n"
                 f"- 目标单品：{prod_name} ({prod_code})\n"
@@ -155,7 +372,7 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                 f"2. 直接在控制台标准输出 (stdout) 中输出解答全文，无需创建或修改交付物文件。"
             )
 
-            args = build_cli_arguments(cmd_path, prompt_for_cli)
+            args = build_cli_arguments(cmd_path, prompt_for_cli, settings.AGENT_CLI_MODEL)
             search_path = get_cli_search_path()
             sanitized_env = sanitize_agent_environment(dict(os.environ))
             env = {
@@ -166,6 +383,8 @@ class CliSubprocessAdapter(BaseAgentAdapter):
 
             stdout_lines: List[str] = []
             stderr_lines: List[str] = []
+            args, _profile = wrap_command(args, workspace_dir)
+            snapshot = take_integrity_snapshot(workspace_dir)
 
             try:
                 proc = await asyncio.create_subprocess_exec(
@@ -201,6 +420,10 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                         proc.kill()
                     except Exception:
                         pass
+                    violation = sandbox_violation_event(snapshot, self.cli_command)
+                    if violation:
+                        yield violation
+                        return
                     # Check if there is already partial stdout before timeout
                     partial_stdout = "\n".join(stdout_lines).strip()
                     if partial_stdout and len(partial_stdout) > 50 and "API Error:" not in partial_stdout:
@@ -225,6 +448,11 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                         ),
                         metadata={"command": self.cli_command, "timeout": self.timeout}
                     )
+                    return
+
+                violation = sandbox_violation_event(snapshot, self.cli_command)
+                if violation:
+                    yield violation
                     return
 
                 full_stdout = "\n".join(stdout_lines).strip()
@@ -258,6 +486,10 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                 return
 
             except Exception as e:
+                violation = sandbox_violation_event(snapshot, self.cli_command)
+                if violation:
+                    yield violation
+                    return
                 yield AgentStreamEvent(
                     event_type=AgentEventType.ERROR,
                     content=f"Agent CLI (`{self.cli_command}`) 子进程启动或执行异常: {str(e)}",
@@ -325,10 +557,19 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                 f"  - 第四章：商业化计费与权限业务规则（Mermaid StateDiagram 权益状态机、SKU 定价阶梯映射表、免费 vs 付费特权矩阵、付费门槛触发时机、网络超时或未支付时的用户端友好降级体验规则、防刷与风控业务规则）；\n"
                 f"  - 第五章：核心业务数据字典与本地存储业务策略（纯业务视角，严禁代码/SQL/JSON Schema：①核心业务实体清单与业务关系说明、②逐实体业务数据字典表【字段名、业务含义、业务类型、是否必填、取值范围/枚举值、默认值、校验失败提示文案】、③用户数据存储与隐私分级业务策略【离线持久化诉求、敏感隐私保护诉求、缓存自动清理业务诉求与生命周期】）；\n"
                 f"  - 第六章：全链路数据埋点规范（`E-01~E-12` 核心事件埋点总表、转化漏斗与留存计算公式）；\n"
-                f"  - 第七章：端到端验收用例与体验质量需求（结构化 `AC-01~AC-08` Gherkin 验收矩阵表包含用例ID/场景/Given/When/Then、用户感知级性能要求【如冷启首屏、导出等待感知】、{'Android Material 3 规范与 Google Play 政策合规业务护栏（触控热区 ≥48dp）' if target_platform == 'android' else 'iOS HIG 灵动岛安全区 ≥71pt 与 Apple 4.3 审核合规业务护栏'}）。\n"
+                f"  - 第七章：端到端验收用例与体验质量需求（结构化 `AC-01~AC-08` Gherkin 验收矩阵表包含用例ID/场景/Given/When/Then、用户感知级性能要求【如冷启首屏、导出等待感知】、{stage05_platform_guard}）。\n"
             )
         elif mod_code == "06":
-            if target_platform == "android":
+            if is_dual_platform(target_platform):
+                extra_methodology = (
+                    f"\n【工序 06（设计实现）专项作业红线 —— iOS 与 Android 两端都要交付】\n"
+                    f"- 同一份交付物必须同时给出两端实测值，缺一端不能放行。\n"
+                    f"- iOS：灵动岛顶部 ≥71pt、底部 ≥34pt、触控热区 ≥44×44pt。json 字段 `top_safe_padding_pt`、`bottom_safe_padding_pt`、`min_touch_target_pt`。\n"
+                    f"- Android：状态栏/挖孔顶部 ≥24dp、触控热区 ≥48×48dp。json 字段 `status_bar_safe_dp`、`min_touch_target_dp`。\n"
+                    f"- 覆盖工序 05 的全部视图，每个视图给出 Default/Loading/Empty/Error。\n"
+                    f"- 工作区同时保留 `check_hig.py` 与 `check_material.py`。体验冲突向工序 05 提 CR，不私自改业务流程。\n"
+                )
+            elif target_platform == "android":
                 extra_methodology = (
                     f"\n【工序 06（设计实现）专项作业红线 —— Google Material 3 规范文档 + Sketch/Figma 级全画板 HTML 标注包与资产库】\n"
                     f"- 1. 交付物规范文档（`{output_filename}`）：完整输出全局 Material 3 Design Tokens（色彩/字阶/圆角/间距及 Compose/Tailwind 代码契约）、Android 状态栏/挖孔避让安全区（顶部 ≥ 24~48dp、底部导航栏避让、最小触控热区 48×48dp）合规矩阵、工序 05 封版的全部核心视图（V-01 ~ V-05）逐页面图层树与四态（Default/Loading/Empty/Error）交互规范。\n"
@@ -396,11 +637,7 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                 f"- 【硬性禁区】：严禁越界修改线上代码或基线；严禁把个别用户极端吐槽当作 P0 伪需求；严禁跳过工序 05 直接开工。\n"
             )
 
-        length_guideline = (
-            "工序 01~04（立项前精益探索期）全文总篇幅控制在 2,000~3,500 字高密度表格内。"
-            if mod_code in ("01", "02", "03", "04")
-            else "工序 05（完整产品规格说明书 PRD）及后续工程工序必须完整输出全部业务流程、逐页面交互规格、五维模块卡、业务数据字典、权益状态机、埋点字典与业务验收标准，严禁将功能模块缩水为几行简表（完整 PRD 篇幅通常为 6,000~12,000 字）。"
-        )
+        length_guideline = deliverable_length_guideline(mod_code)
 
         prompt_for_cli = (
             f"【当前战略工程与单品上下文】\n"
@@ -410,17 +647,18 @@ class CliSubprocessAdapter(BaseAgentAdapter):
             f"- 当前工序环节：{mod_name} (编号: {mod_code})\n"
             f"- 当前工作区已挂载独有 Skill：`{', '.join(arsenal_info['mounted_skills'])}` (位于 `.agents/skills/`)\n"
             f"- 当前工作区已挂载专属 MCP：`{', '.join(arsenal_info['mounted_mcp_servers'])}` (位于 `.agents/mcp_config.json`)\n\n"
-            f"请仔细阅读当前工作区下的战略底稿与前序工序基线文件 `.moduflow_agent_context.md`，并优先激活工作区 `.agents/skills/` 下的专属技能与 MCP 工具辅助推演。\n\n"
+            f"本目录的 `.moduflow_agent_context.md` 已包含前序基线。直接依据它和下面的清单写交付物。\n"
+            f"不要阅读本工序目录以外的文件，忽略上级目录的 AGENTS.md。不要先搜索仓库，不要启动与清单无关的技能、MCP 或终端命令。\n\n"
             f"【本次工序任务要求】\n"
             f"{user_instruction}\n"
             f"{extra_methodology}\n"
             f"【双层分层与反冗余交付要求（强制执行）】\n"
             f"1. 第一层（置顶首屏给人类负责人拍板）：文档标题下方第一章必须固定为 `## 负责人 30 秒拍板摘要卡 (Executive Gate)`（控制在 300 字内，含：3条核心量化结论 + 需负责人拍板的 2~3 个开关/选项 + 下游传参锚点）。\n"
             f"2. 第二层（给下游 AI 传参的执行干货）：严禁重复抄写前序工序已定稿的用户画像、竞品常识或价格表（直接写“继承工序 XX 基线”），剔除废话；{length_guideline}\n"
-            f"3. 请将本次生成的交付物全文完整保存至当前工作区的 `{output_filename}` 文件中，并在控制台标准输出 (stdout) 中打印出交付物全文内容。"
+            f"3. 把交付物一次写入当前工作区的 `{output_filename}`，写完就结束。不要把全文再打印到 stdout，不要为了核对而重读或改写这个文件。"
         )
 
-        args = build_cli_arguments(cmd_path, prompt_for_cli)
+        args = build_cli_arguments(cmd_path, prompt_for_cli, settings.AGENT_CLI_MODEL)
         search_path = get_cli_search_path()
         sanitized_env = sanitize_agent_environment(dict(os.environ))
         env = {
@@ -431,6 +669,8 @@ class CliSubprocessAdapter(BaseAgentAdapter):
 
         stdout_lines = []
         stderr_lines = []
+        args, _profile = wrap_command(args, workspace_dir)
+        snapshot = take_integrity_snapshot(workspace_dir)
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -466,6 +706,10 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                     proc.kill()
                 except Exception:
                     pass
+                violation = sandbox_violation_event(snapshot, self.cli_command)
+                if violation:
+                    yield violation
+                    return
 
                 # Graceful recovery: Check if artifact file was already written to disk before timeout
                 artifact_file = workspace_dir / output_filename
@@ -491,12 +735,17 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                     content=(
                         f"Agent CLI (`{self.cli_command}`) 执行超时 (已耗时 {self.timeout}秒)。交付物未能按时生成，子进程已安全终止。\n\n"
                         f"【优化排查建议】：\n"
-                        f"1. 交付物全量生成涉及多工序约束与万字级文档编排，通常需要 150~240 秒思考与检索；\n"
+                        f"1. 交付物应按本工序清单一次写入文件；若仍在反复检索，通常是模型在跑多余的工具回合；\n"
                         f"2. 系统全局超时时限已默认调整为 300 秒（可在右上角设置中灵活配置）；\n"
                         f"3. 如需毫秒级即时测算与无缝演示，亦可在右上角设置中切换为「内置模拟器 (Simulator)」模式。"
                     ),
                     metadata={"command": self.cli_command, "timeout": self.timeout}
                 )
+                return
+
+            violation = sandbox_violation_event(snapshot, self.cli_command)
+            if violation:
+                yield violation
                 return
 
             full_stdout = "\n".join(stdout_lines).strip()
@@ -548,6 +797,10 @@ class CliSubprocessAdapter(BaseAgentAdapter):
             return
 
         except Exception as e:
+            violation = sandbox_violation_event(snapshot, self.cli_command)
+            if violation:
+                yield violation
+                return
             yield AgentStreamEvent(
                 event_type=AgentEventType.ERROR,
                 content=f"Agent CLI (`{self.cli_command}`) 子进程启动或通信异常: {str(e)}",

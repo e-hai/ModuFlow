@@ -171,6 +171,29 @@ async def create_workflow_run_from_template(
     await db.refresh(run)
     return run
 
+async def load_price_baseline(db: AsyncSession, mod: ModuleInstance) -> List[float]:
+    """Price points of the stage 02 (ba) baseline: this run first, else the product's latest one."""
+    from backend.app.services.deliverable_audit import extract_price_points
+
+    run_obj = (await db.execute(select(WorkflowRun).where(WorkflowRun.id == mod.run_id))).scalar_one_or_none()
+    stmt = (
+        select(Artifact, ModuleInstance.run_id)
+        .join(ModuleInstance, ModuleInstance.baseline_artifact_id == Artifact.id)
+        .join(WorkflowRun, WorkflowRun.id == ModuleInstance.run_id)
+        .where(ModuleInstance.module_code == "02")
+    )
+    if run_obj and run_obj.product_id:
+        stmt = stmt.where(WorkflowRun.product_id == run_obj.product_id)
+    else:
+        stmt = stmt.where(ModuleInstance.run_id == mod.run_id)
+    rows = (await db.execute(stmt.order_by(Artifact.created_at.desc()))).all()
+    if not rows:
+        return []
+    same_run = [art for art, run_id in rows if run_id == mod.run_id]
+    baseline = same_run[0] if same_run else rows[0][0]
+    return extract_price_points(baseline.content or "")
+
+
 async def can_baseline_module(db: AsyncSession, module_id: str) -> Tuple[bool, str]:
     """Check if a module can transition to 'baselined'."""
     # 0. Check product-level deterministic authorization & stop-loss guardrails
@@ -250,7 +273,7 @@ async def can_baseline_module(db: AsyncSession, module_id: str) -> Tuple[bool, s
 
     # 1. Check Human Gate Application & Approval status (Phase 2)
     from backend.app.services.gate_keeper import check_stage_gate_passed
-    gate_ok, gate_reason, _ = await check_stage_gate_passed(db, module_id)
+    gate_ok, gate_reason, gate = await check_stage_gate_passed(db, module_id)
     if not gate_ok:
         return False, gate_reason
 
@@ -272,6 +295,66 @@ async def can_baseline_module(db: AsyncSession, module_id: str) -> Tuple[bool, s
     artifacts = art_res.scalars().all()
     if not artifacts:
         return False, "模块尚未产出任何可作为基线的交付物 (Artifact)"
+
+    from sqlalchemy.orm.attributes import flag_modified
+    from backend.app.services.deliverable_audit import audit_stage
+
+    platform = "ios"
+    zero_inf = True
+    product = None
+    module_code = mod.module_code if mod else ""
+    if mod is not None:
+        run_stmt = select(WorkflowRun).where(WorkflowRun.id == mod.run_id)
+        run_res = await db.execute(run_stmt)
+        run_obj = run_res.scalar_one_or_none()
+        if run_obj and run_obj.product_id:
+            p_stmt = select(Product).where(Product.id == run_obj.product_id)
+            p_res = await db.execute(p_stmt)
+            product = p_res.scalar_one_or_none()
+            if product:
+                platform = product.platform or "ios"
+                zero_inf = True if product.client_zero_inference is None else bool(product.client_zero_inference)
+
+    audit = audit_stage(
+        module_code,
+        [artifact.content or "" for artifact in artifacts],
+        platform=platform,
+        client_zero_inference=zero_inf,
+        price_baseline=await load_price_baseline(db, mod) if mod is not None else None,
+    )
+    human_signed = gate is not None and gate.status == "approved" and gate.reviewer_role == "human"
+    if audit.get("red_flags") and not human_signed:
+        return False, "交付物含红级标记，须人类审批后才能定稿: " + ", ".join(audit["red_flags"])
+    if not audit.get("passed"):
+        reasons = audit.get("reasons") or ["交付物检查未通过"]
+        return False, "交付物检查未通过: " + "; ".join(str(reason) for reason in reasons[:5])
+
+    from backend.app.services.compliance_engine import audit_module_compliance, compliance_failed_items
+    latest_artifact = max(artifacts, key=lambda a: a.version or 0)
+    compliance = await audit_module_compliance(db, module_code, product, latest_artifact.content or "")
+    if compliance and compliance["status"] != "passed" and not human_signed:
+        items = compliance_failed_items(compliance)
+        return False, f"合规风控 (cmp) 结论为 {compliance['status']}，须整改或由人类签字: " + "; ".join(items[:3])
+
+    if gate is not None:
+        evidence = list(gate.evidence or [])
+        evidence.append({
+            "checker": "deliverable_audit",
+            "passed": True,
+            "module_code": audit.get("module_code"),
+            "score": audit.get("score"),
+        })
+        if compliance:
+            evidence.append({
+                "checker": "compliance_engine",
+                "status": compliance["status"],
+                "risk_level": compliance["risk_level"],
+                "summary": compliance["summary"],
+            })
+        gate.evidence = evidence
+        flag_modified(gate, "evidence")
+        db.add(gate)
+        await db.commit()
 
     return True, ""
 

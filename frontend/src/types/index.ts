@@ -19,6 +19,8 @@ export interface Product {
   name: string;
   code: string;
   description?: string;
+  platform?: string;
+  shadow_mode?: boolean;
   created_at: string;
   updated_at: string;
   active_runs_count?: number;
@@ -90,9 +92,42 @@ export interface WorkflowRun {
   template_id: string;
   name: string;
   status: string;
+  auto_advance?: boolean;
   created_at: string;
   updated_at: string;
   modules: ModuleInstance[];
+}
+
+export type OrchestrationStageState =
+  | 'running'
+  | 'paused'
+  | 'revision_failed'
+  | 'in_review'
+  | 'dispute'
+  | 'handoff_incomplete'
+  | 'awaiting_human_gate'
+  | 'gate_returned'
+  | 'awaiting_human_confirm'
+  | 'ready';
+
+export interface OrchestrationStage {
+  module_id: string;
+  module_code: string;
+  name: string;
+  execution_mode: string;
+  state: OrchestrationStageState;
+  detail: string;
+  gate_id?: string | null;
+}
+
+export interface RunOrchestrationStatus {
+  run_id: string;
+  found: boolean;
+  auto_advance: boolean;
+  orchestrator_enabled: boolean;
+  run_block_reason?: string | null;
+  current_stage?: OrchestrationStage | null;
+  active_stages: OrchestrationStage[];
 }
 
 export interface SessionMessage {
@@ -101,7 +136,7 @@ export interface SessionMessage {
   sender: string;
   sender_role: string;
   role_code?: string;
-  message_type: 'instruction' | 'feedback' | 'draft_artifact' | 'revised_artifact' | 'question' | 'answer' | 'error' | 'issue' | 'approve' | 'reject';
+  message_type: 'instruction' | 'feedback' | 'draft_artifact' | 'revised_artifact' | 'question' | 'answer' | 'error' | 'issue' | 'approve' | 'reject' | 'review';
   content: string;
   artifact_ref_id?: string;
   issue_ref_id?: string;
@@ -270,6 +305,16 @@ export interface OperationsCockpitData {
   funnel: Array<{ stage: string; count: number; conversion_rate: number }>;
 }
 
+export interface DecisionInboxItem {
+  kind: 'dispute' | 'stuck' | 'handoff_gap';
+  risk_id?: string | null;
+  module_id: string;
+  module_code: string;
+  product_code: string;
+  title: string;
+  detail: string;
+}
+
 export interface ExecutiveRiskItem {
   id: string;
   rule_code: string;
@@ -345,9 +390,21 @@ export interface AgentPresetItem {
   install_guide?: string;
 }
 
+export interface CliModelItem {
+  id: string;
+  label: string;
+}
+
+export interface CliModelList {
+  command: string;
+  models: CliModelItem[];
+  error?: string | null;
+}
+
 export interface AgentSettings {
   adapter_type: 'cli' | 'simulator';
   cli_command: string;
+  cli_model?: string | null;
   timeout: number;
   available_presets: AgentPresetItem[];
   is_current_installed?: boolean;
@@ -408,6 +465,8 @@ export interface ShadowStats {
   product_id: string;
   product_code?: string;
   shadow_mode_enabled: boolean;
+  ready_to_disable?: boolean;
+  readiness_reason?: string;
   total_evaluated: number;
   consistent_count: number;
   divergent_count: number;
@@ -499,5 +558,20 @@ export interface ProjectDailyDigest {
     urgency: string;
   }>;
   lead_assessment: string;
+  shadow_mode_active?: boolean;
+  shadow_consistency?: {
+    consistency_rate: string;
+    total_evaluated: number;
+    ready_to_disable: boolean;
+    readiness_reason: string;
+  };
+  collaboration?: {
+    reviews_today: number;
+    review_requests_changes_today: number;
+    disputes_pending: number;
+    dispute_stages: string[];
+    carried_over_crs: number;
+    handoff_gaps_open: number;
+  };
 }
 

@@ -1,7 +1,8 @@
+import asyncio
 import json
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Header, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, UploadFile, File, Form, Header, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
@@ -38,7 +39,7 @@ from backend.app.schemas.all_schemas import (
     ExecutiveCockpitResponse, DecisionActionRequest, ExecutiveDecisionItem,
     FinancialMetrics, FocusAlert, PortfolioProductItem, MarketingCockpitData, MarketingCategoryItem, MarketingSubChannelItem,
     OperationsCockpitData, ExecutiveRiskItem,
-    AgentSettingsOut, AgentSettingsUpdate, AgentPresetItem,
+    AgentSettingsOut, AgentSettingsUpdate, AgentPresetItem, CliModelListOut,
     AgentRoleDefinitionOut, ModuleRoleBundleOut,
     ChangeReviewOut, ChangeReviewAction
 )
@@ -70,7 +71,31 @@ from backend.app.services.gate_keeper import (
     get_stage_gate_config
 )
 
+from backend.app.services import orchestrator
+
 api_router = APIRouter()
+
+
+_orchestration_tasks: set[asyncio.Task] = set()
+
+
+def _schedule_orchestration(background_tasks: BackgroundTasks, func, *args) -> None:
+    """排队编排，但不在当前请求里跑完。
+
+    Starlette 会在请求的数据库会话关闭之前执行 BackgroundTasks。
+    若把 CLI 放进这个任务，会话会占着连接直到工序跑完（最长数分钟），
+    刷新页面时工程列表读不出来，看起来像工程被删了。
+    这里只负责挂上一个独立任务，当前请求马上结束并放开连接。
+    """
+    if not orchestrator.orchestration_enabled():
+        return
+
+    async def _kick() -> None:
+        task = asyncio.create_task(orchestrator.run_in_fresh_session(func, *args))
+        _orchestration_tasks.add(task)
+        task.add_done_callback(_orchestration_tasks.discard)
+
+    background_tasks.add_task(_kick)
 
 # --- Strategic Initiatives ---
 @api_router.get("/initiatives", response_model=List[StrategicInitiativeOut])
@@ -571,7 +596,7 @@ async def create_product(data: ProductCreate, db: AsyncSession = Depends(get_db)
             product_code=data.code,
             product_name=data.name,
             budget_allocated=data.budget_allocated or 5000.0,
-            platform=data.platform or "ios",
+            platform=data.platform or "cross_platform",
             client_zero_inference=True if data.client_zero_inference is None else data.client_zero_inference
         )
 
@@ -583,14 +608,14 @@ async def create_product(data: ProductCreate, db: AsyncSession = Depends(get_db)
                 detail={"message": "非法授权包被拒", "errors": errors}
             )
 
-    target_platform = "ios"
+    target_platform = "cross_platform"
     target_zero_inf = True
     if auth_pkg and isinstance(auth_pkg, dict):
         prof = auth_pkg.get("profile", {})
-        target_platform = prof.get("platform", data.platform or "ios")
+        target_platform = prof.get("platform", data.platform or "cross_platform")
         target_zero_inf = prof.get("client_zero_inference", True if data.client_zero_inference is None else data.client_zero_inference)
     else:
-        target_platform = data.platform or "ios"
+        target_platform = data.platform or "cross_platform"
         target_zero_inf = True if data.client_zero_inference is None else data.client_zero_inference
 
     prod = Product(
@@ -869,7 +894,7 @@ async def list_runs(product_id: Optional[str] = None, db: AsyncSession = Depends
     return runs
 
 @api_router.post("/runs", response_model=WorkflowRunOut)
-async def create_run(data: WorkflowRunCreate, db: AsyncSession = Depends(get_db)):
+async def create_run(data: WorkflowRunCreate, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     # 核心约束：单产品迭代周期不允许并行，必须唯一活跃
     active_stmt = select(WorkflowRun).where(
         WorkflowRun.product_id == data.product_id,
@@ -893,9 +918,11 @@ async def create_run(data: WorkflowRunCreate, db: AsyncSession = Depends(get_db)
         # re-fetch with modules
         stmt = select(WorkflowRun).options(selectinload(WorkflowRun.modules)).where(WorkflowRun.id == run.id)
         res = await db.execute(stmt)
-        return res.scalar_one()
+        created = res.scalar_one()
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    _schedule_orchestration(background_tasks, orchestrator.advance_run, created.id)
+    return created
 
 @api_router.patch("/runs/{run_id}", response_model=WorkflowRunOut)
 async def update_run(
@@ -930,6 +957,86 @@ async def update_run(
     await db.commit()
     await db.refresh(run)
     return run
+
+@api_router.post("/runs/{run_id}/advance")
+async def advance_run_endpoint(run_id: str, db: AsyncSession = Depends(get_db)):
+    """Manually kicks the orchestrator for a run; gate rules are unchanged."""
+    run = (await db.execute(select(WorkflowRun).where(WorkflowRun.id == run_id))).scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    result = await orchestrator.advance_run(db, run_id)
+    result["orchestration"] = await orchestrator.get_run_orchestration_status(db, run_id)
+    return result
+
+@api_router.patch("/runs/{run_id}/auto-advance")
+async def toggle_run_auto_advance(
+    run_id: str,
+    payload: dict,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
+    from backend.app.services.security_guard import parse_actor_identity
+    actor_type, _role_code, actor = parse_actor_identity(request.headers.get("X-ModuFlow-Actor"))
+    if actor_type != "human":
+        raise HTTPException(status_code=403, detail="❌ 只有人类负责人可以开关自动编排。")
+    run = (await db.execute(select(WorkflowRun).where(WorkflowRun.id == run_id))).scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    run.auto_advance = bool(payload.get("enabled", True))
+    run.updated_at = datetime.utcnow()
+    await db.commit()
+    if run.auto_advance:
+        _schedule_orchestration(background_tasks, orchestrator.advance_run, run_id)
+    return {"ok": True, "run_id": run_id, "auto_advance": run.auto_advance, "actor": actor}
+
+@api_router.get("/runs/{run_id}/orchestration-status")
+async def get_run_orchestration_status_endpoint(run_id: str, db: AsyncSession = Depends(get_db)):
+    status_data = await orchestrator.get_run_orchestration_status(db, run_id)
+    if not status_data.get("found"):
+        raise HTTPException(status_code=404, detail="Run not found")
+    return status_data
+
+@api_router.post("/modules/{module_id}/submit-for-gate")
+async def submit_module_for_gate(
+    module_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Human confirms the current deliverable (needed for human_driven stages) and sends it to checks and gate."""
+    from backend.app.services.security_guard import parse_actor_identity
+    actor_type, _role_code, _actor = parse_actor_identity(request.headers.get("X-ModuFlow-Actor"))
+    if actor_type != "human":
+        raise HTTPException(status_code=403, detail="❌ 只有人类负责人可以确认提交真人主导工序的交付物。")
+    mod = (await db.execute(select(ModuleInstance).where(ModuleInstance.id == module_id))).scalar_one_or_none()
+    if not mod:
+        raise HTTPException(status_code=404, detail="Module not found")
+    result = await orchestrator.on_artifact_created(db, module_id, origin="human_confirmed")
+    return {"module_id": module_id, "status": result}
+
+@api_router.post("/modules/{module_id}/resolve-dispute")
+async def resolve_module_dispute(
+    module_id: str,
+    payload: dict,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Human rules on a primary-vs-reviewer disagreement: accept_review or override_review."""
+    from backend.app.services.security_guard import parse_actor_identity
+    actor_type, _role_code, actor = parse_actor_identity(request.headers.get("X-ModuFlow-Actor"))
+    if actor_type != "human":
+        raise HTTPException(status_code=403, detail="❌ 协作评审分歧只能由人类负责人裁决。")
+    decision = payload.get("decision")
+    if decision not in ("accept_review", "override_review"):
+        raise HTTPException(status_code=400, detail="decision 必须是 accept_review 或 override_review")
+    result = await orchestrator.resolve_dispute(
+        db, module_id, decision, actor or "human", str(payload.get("comment") or "")
+    )
+    if result == "module_not_found":
+        raise HTTPException(status_code=404, detail="Module not found")
+    if result == "no_dispute":
+        raise HTTPException(status_code=409, detail="本工序没有待裁决的协作评审分歧")
+    return {"module_id": module_id, "decision": decision, "status": result}
 
 @api_router.get("/runs/{run_id}", response_model=WorkflowRunOut)
 async def get_run(run_id: str, db: AsyncSession = Depends(get_db)):
@@ -1060,7 +1167,12 @@ async def get_module(module_id: str, db: AsyncSession = Depends(get_db)):
     return dto
 
 @api_router.patch("/modules/{module_id}/phase", response_model=ModuleInstanceOut)
-async def update_module_phase(module_id: str, data: ModulePhaseUpdate, db: AsyncSession = Depends(get_db)):
+async def update_module_phase(
+    module_id: str,
+    data: ModulePhaseUpdate,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
     stmt = select(ModuleInstance).where(ModuleInstance.id == module_id)
     res = await db.execute(stmt)
     mod = res.scalar_one_or_none()
@@ -1091,6 +1203,7 @@ async def update_module_phase(module_id: str, data: ModulePhaseUpdate, db: Async
         await db.commit()
         # Unlock downstream
         await unlock_downstream_modules(db, mod.run_id)
+        _schedule_orchestration(background_tasks, orchestrator.advance_run, mod.run_id)
     else:
         mod.phase = new_phase
         if new_phase != "baselined":
@@ -1231,6 +1344,7 @@ async def list_pending_gates_for_batch(
 async def review_gate(
     gate_id: str,
     data: GateApplicationReview,
+    background_tasks: BackgroundTasks,
     x_moduflow_actor: Optional[str] = Header(None, alias="X-ModuFlow-Actor"),
     db: AsyncSession = Depends(get_db)
 ):
@@ -1258,6 +1372,7 @@ async def review_gate(
             actor=actor,
             actor_role=actor_role
         )
+        _schedule_orchestration(background_tasks, orchestrator.on_gate_reviewed, updated_gate.id)
         return updated_gate
     except PermissionError as pe:
         raise HTTPException(status_code=403, detail=str(pe))
@@ -1341,6 +1456,12 @@ async def get_project_daily_digest_endpoint(
     from backend.app.services.lead_service import generate_project_daily_digest
     return await generate_project_daily_digest(db=db, product_id=product_id)
 
+@api_router.get("/initiatives/{initiative_id}/decision-inbox")
+async def get_decision_inbox_endpoint(initiative_id: str, db: AsyncSession = Depends(get_db)):
+    """Human review queue: disputes, exhausted revisions, and handoff gaps for one initiative."""
+    from backend.app.services.lead_service import get_decision_inbox
+    return await get_decision_inbox(db, initiative_id)
+
 @api_router.post("/issues/{issue_id}/lead/arbitrate-cr")
 async def arbitrate_cr_endpoint(
     issue_id: str,
@@ -1401,6 +1522,7 @@ async def get_or_create_module_session(module_id: str, db: AsyncSession = Depend
 async def post_message(
     session_id: str,
     data: SessionMessageCreate,
+    background_tasks: BackgroundTasks,
     trigger_agent: bool = True,
     db: AsyncSession = Depends(get_db)
 ):
@@ -1431,6 +1553,10 @@ async def post_message(
         agent_msg = await execute_agent_for_session(db, session, user_msg)
         if agent_msg:
             result_messages.append(agent_msg)
+            if agent_msg.artifact_ref_id:
+                _schedule_orchestration(
+                    background_tasks, orchestrator.on_artifact_created, session.module_id, "human_session"
+                )
 
     return result_messages
 
@@ -1453,6 +1579,7 @@ async def get_artifact(artifact_id: str, db: AsyncSession = Depends(get_db)):
 @api_router.post("/modules/{module_id}/artifacts/upload")
 async def upload_module_artifact(
     module_id: str,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     change_summary: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db)
@@ -1478,6 +1605,7 @@ async def upload_module_artifact(
         file_bytes=file_bytes,
         change_summary=change_summary
     )
+    _schedule_orchestration(background_tasks, orchestrator.on_artifact_created, module_id, "human_confirmed")
 
     return {
         "artifact": ArtifactOut.model_validate(artifact),
@@ -1550,6 +1678,7 @@ async def get_change_review(review_id: str, db: AsyncSession = Depends(get_db)):
 @api_router.post("/change-reviews/{review_id}/approve", response_model=ChangeReviewOut)
 async def approve_change_review(
     review_id: str,
+    background_tasks: BackgroundTasks,
     action: Optional[ChangeReviewAction] = None,
     db: AsyncSession = Depends(get_db)
 ):
@@ -1568,6 +1697,14 @@ async def approve_change_review(
         raise HTTPException(status_code=404, detail="Change review not found")
 
     approver_name = action.approver if (action and action.approver) else "负责人"
+
+    if review.module_id:
+        from backend.app.services.workflow_engine import can_baseline_module
+        can_baseline, reason = await can_baseline_module(db, review.module_id)
+        if not can_baseline:
+            raise HTTPException(status_code=400, detail=reason)
+        await db.refresh(review)
+
     review.status = "approved"
     review.approver = approver_name
     review.approved_at = datetime.utcnow()
@@ -1603,6 +1740,7 @@ async def approve_change_review(
             await sync_run_workspace(db, mod.run_id)
         except Exception:
             pass
+        _schedule_orchestration(background_tasks, orchestrator.advance_run, mod.run_id)
 
     return review
 
@@ -1832,11 +1970,20 @@ async def get_agent_settings(db: AsyncSession = Depends(get_db)):
     return AgentSettingsOut(
         adapter_type=setting_row.adapter_type,
         cli_command=setting_row.cli_command,
+        cli_model=setting_row.cli_model,
         timeout=setting_row.timeout,
         available_presets=presets,
         is_current_installed=current_installed,
         any_installed=any_installed
     )
+
+
+@api_router.get("/settings/agent/models", response_model=CliModelListOut)
+async def get_agent_cli_models(command: str, refresh: bool = False):
+    """List models published by the selected CLI so the settings page can switch them."""
+    from backend.app.adapters.cli_adapter import list_cli_models
+    listed = await list_cli_models(command, refresh=refresh)
+    return CliModelListOut(**listed)
 
 @api_router.patch("/settings/agent", response_model=AgentSettingsOut)
 async def update_agent_settings(data: AgentSettingsUpdate, db: AsyncSession = Depends(get_db)):
@@ -1853,6 +2000,13 @@ async def update_agent_settings(data: AgentSettingsUpdate, db: AsyncSession = De
     if data.cli_command is not None:
         setting_row.cli_command = data.cli_command
         settings.AGENT_CLI_COMMAND = data.cli_command
+    if "cli_model" in data.model_fields_set:
+        from backend.app.adapters.cli_adapter import usable_cli_model
+        chosen = usable_cli_model(data.cli_model)
+        if data.cli_model and not chosen:
+            raise HTTPException(status_code=400, detail="模型 ID 无效")
+        setting_row.cli_model = chosen
+        settings.AGENT_CLI_MODEL = chosen or ""
     if data.timeout is not None:
         setting_row.timeout = data.timeout
         settings.AGENT_CLI_TIMEOUT = data.timeout
@@ -1970,7 +2124,13 @@ async def get_product_profile_endpoint(product_id: str, db: AsyncSession = Depen
         fallback_platform=product.platform or "ios",
         fallback_zero_inference=product.client_zero_inference if product.client_zero_inference is not None else True
     )
-    ruleset = "Google Material Design 3 (M3)" if prof["platform"] == "android" else "iOS Human Interface Guidelines (HIG)"
+    from backend.app.services.profile_guard import covers_android, covers_ios, is_dual_platform
+    if is_dual_platform(prof["platform"]):
+        ruleset = "iOS Human Interface Guidelines (HIG) + Google Material Design 3 (M3)"
+    elif covers_android(prof["platform"]) and not covers_ios(prof["platform"]):
+        ruleset = "Google Material Design 3 (M3)"
+    else:
+        ruleset = "iOS Human Interface Guidelines (HIG)"
     return {
         "product_id": product.id,
         "product_code": product.code,
@@ -2017,6 +2177,12 @@ async def audit_module_design_system(
     )
 
     args = payload or {}
+    if "top_safe_value" not in args or "min_touch_value" not in args:
+        return {
+            "passed": False,
+            "platform": prof["platform"],
+            "errors": ["缺少实测安全区与触控热区，缺省值不能放行"],
+        }
     top_val = args.get("top_safe_value")
     touch_val = args.get("min_touch_value")
     content = args.get("content")
@@ -2067,6 +2233,12 @@ async def audit_module_zero_inference(
     )
 
     args = payload or {}
+    if "client_realtime_ai_calls" not in args:
+        return {
+            "passed": False,
+            "enforce_zero_inference": prof["client_zero_inference"],
+            "errors": ["缺少客户端推理次数实测，缺省 0 不能放行"],
+        }
     ai_calls = int(args.get("client_realtime_ai_calls", 0))
     bw_mb = float(args.get("avg_cdn_bandwidth_mb", 15.0))
 

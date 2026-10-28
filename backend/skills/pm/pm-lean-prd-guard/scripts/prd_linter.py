@@ -2,11 +2,7 @@
 import sys, os, re, json
 from pathlib import Path
 
-def lint_prd(target_path: Path):
-    if not target_path.exists():
-        return {'status': 'error', 'file': str(target_path), 'score': 0, 'errors': [f'File {target_path} does not exist']}
-
-    content = target_path.read_text(encoding='utf-8', errors='replace')
+def lint_text(content: str, file_name: str = "PRD.md"):
     has_executive_gate = bool(re.search(r'##\s*负责人\s*30\s*秒拍板摘要卡', content))
 
     expected_chapters = [
@@ -72,9 +68,11 @@ def lint_prd(target_path: Path):
         warnings.append('PRD contains engineer-role implementation technical leakages: ' + ', '.join(leak_details) + '. Stage 05 must strictly remain a pure Product Manager role.')
 
     score = max(0, score)
+    passed = score == 100
     return {
-        'status': 'ok' if score >= 80 else ('warning' if score >= 60 else 'failed'),
-        'file': target_path.name,
+        'status': 'ok' if passed else ('warning' if score >= 60 else 'failed'),
+        'passed': passed,
+        'file': file_name,
         'executive_gate': has_executive_gate,
         'chapters_detected': detected_chapters,
         'missing_chapters': missing_chapters,
@@ -88,6 +86,19 @@ def lint_prd(target_path: Path):
         'suggestions': suggestions,
         'score': score
     }
+
+
+def lint_prd(target_path: Path):
+    if not target_path.exists():
+        return {
+            'status': 'error',
+            'passed': False,
+            'file': str(target_path),
+            'score': 0,
+            'errors': [f'File {target_path} does not exist'],
+            'warnings': [f'File {target_path} does not exist'],
+        }
+    return lint_text(target_path.read_text(encoding='utf-8', errors='replace'), target_path.name)
 
 if __name__ == '__main__':
     target = Path(sys.argv[1]) if len(sys.argv) > 1 else (list(Path('.').glob('*.md'))[0] if list(Path('.').glob('*.md')) else Path('PRD.md'))

@@ -15,7 +15,13 @@ class Settings(BaseSettings):
     # Agent Adapter Configuration
     AGENT_ADAPTER_TYPE: str = "cli"        # "cli" | "api"
     AGENT_CLI_COMMAND: str = "agy"         # Default CLI tool: e.g. "agy", "claude", or custom script
+    AGENT_CLI_MODEL: str = ""             # Empty keeps the CLI's own selected model
     AGENT_CLI_TIMEOUT: int = 300          # Max execution seconds for a single CLI invocation (5 minutes for LLM reasoning & tools)
+
+    # Global kill switch for automatic orchestration triggers; per-run control lives on WorkflowRun.auto_advance
+    ORCHESTRATOR_ENABLED: bool = True
+    COLLAB_REVIEW_MODE: str = "full"      # "full": cross-checks + collaborator Agent reviews; "deterministic"; "off"
+    AGENT_FS_SANDBOX: str = "auto"        # "auto": macOS sandbox-exec when available; "off": integrity check only
     
     model_config = SettingsConfigDict(case_sensitive=True)
 

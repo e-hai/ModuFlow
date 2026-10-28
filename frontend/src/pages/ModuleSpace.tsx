@@ -424,7 +424,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
     // 关口审批硬拦截：若关口为黄级或红级且尚未获批，弹出关口一页纸申请单供人类签字
     const effectiveLevel = moduleGateApp?.effective_level || moduleGateConfig?.level || 'green';
     if ((effectiveLevel === 'yellow' || effectiveLevel === 'red') && moduleGateApp?.status !== 'approved') {
-      alert(`【${moduleGateConfig?.name || '当前工序关口'}】为 ${effectiveLevel === 'red' ? '🔴 红级关口 (人类即时必批)' : '🟡 黄级关口 (人类批量审批)'}。\n系统已强制阻断自动放行，请在打开的一页纸申请单中由人类战略层签署审批意见。`);
+      alert('这一阶段需要您确认后才能继续。请在打开的确认单里签字。');
       setIsGateModalOpen(true);
       return;
     }
@@ -437,7 +437,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
       onModuleUpdated();
       await loadSessionAndArtifacts();
     } catch (e: any) {
-      alert(`定稿检查未通过: ${e.message}\n请检查关口申请单与准入条件。`);
+      alert(`还不能定稿: ${e.message}`);
       setIsGateModalOpen(true);
     }
   };
@@ -478,14 +478,14 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
             {moduleGateApp ? (
               <GateBadge
                 level={moduleGateApp.effective_level}
-                gateName={moduleGateApp.gate_name}
                 isEscalated={moduleGateApp.is_escalated}
+                resolved={moduleState.phase === 'baselined' || moduleGateApp.status === 'approved'}
                 size="sm"
               />
             ) : moduleGateConfig ? (
               <GateBadge
                 level={moduleGateConfig.level}
-                gateName={moduleGateConfig.name}
+                resolved={moduleState.phase === 'baselined'}
                 size="sm"
               />
             ) : null}
@@ -807,6 +807,36 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                           </div>
                         )}
                       </div>
+                    </div>
+                  );
+                }
+
+                if (msg.message_type === 'review') {
+                  const review = msg.metadata_json?.review || {};
+                  const verdictStyle: Record<string, { text: string; cls: string }> = {
+                    approve: { text: '评审通过', cls: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
+                    request_changes: { text: '要求修订', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
+                    raise_cr: { text: '提出需求变更', cls: 'bg-indigo-50 text-indigo-800 border-indigo-200' },
+                  };
+                  const v = verdictStyle[review.verdict] || { text: review.verdict || '评审', cls: 'bg-slate-100 text-slate-700 border-slate-200' };
+                  return (
+                    <div key={msg.id} className="p-3 rounded-xl border border-indigo-200 bg-indigo-50/40">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-xs font-bold text-slate-900">{msg.sender}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold ${v.cls}`}>{v.text}</span>
+                          {review.focus && <span className="text-[11px] text-slate-500 truncate">{review.focus}</span>}
+                        </div>
+                        <span className="text-[10px] text-slate-400">{new Date(msg.created_at).toLocaleTimeString()}</span>
+                      </div>
+                      {Array.isArray(review.findings) && review.findings.length > 0 ? (
+                        <ul className="text-xs text-slate-700 list-disc pl-4 space-y-0.5">
+                          {review.findings.map((f: string, i: number) => <li key={i}>{f}</li>)}
+                        </ul>
+                      ) : (
+                        <p className="text-xs text-slate-500">无评审意见</p>
+                      )}
+                      <p className="mt-1.5 text-[11px] text-slate-500">协作评审只能要求修订或提变更，不能代替您放行。</p>
                     </div>
                   );
                 }

@@ -21,14 +21,6 @@ ROLE_EXCLUSIVE_ARSENAL: Dict[str, Dict[str, Any]] = {
             "3. **深挖 1-2 星差评软肋**：调用 `analyze_competitor_weakness_matrix` 建立 Top 5 竞品差评与截胡刀法矩阵。\n"
         ),
         "script_name": "som_calc.py",
-        "script_code": (
-            "#!/usr/bin/env python3\n"
-            "import sys, json\n"
-            "vol = int(sys.argv[1]) if len(sys.argv) > 1 else 120000\n"
-            "rate = float(sys.argv[2]) if len(sys.argv) > 2 else 0.035\n"
-            "arpu = float(sys.argv[3]) if len(sys.argv) > 3 else 1.85\n"
-            "print(json.dumps({'annual_installs': int(vol*12*rate), 'som_usd': round(vol*12*rate*arpu, 2)}))\n"
-        )
     },
     "ba": {
         "skill_name": "ba-unit-economics-calculator",
@@ -41,11 +33,6 @@ ROLE_EXCLUSIVE_ARSENAL: Dict[str, Dict[str, Any]] = {
             "2. **混合变现护栏设计**：明确免费引流层、`24h Ad-Pass` 激励视频通行证、反周卡年费与终身买断的价格锚点。\n"
         ),
         "script_name": "ue_sim.py",
-        "script_code": (
-            "#!/usr/bin/env python3\n"
-            "import json\n"
-            "print(json.dumps({'blended_cac': 0.21, 'ltv_180d': 1.85, 'ltv_cac_ratio': 8.81}))\n"
-        )
     },
     "pm": {
         "skill_name": "pm-lean-prd-guard",
@@ -65,98 +52,9 @@ ROLE_EXCLUSIVE_ARSENAL: Dict[str, Dict[str, Any]] = {
             "   - **第五章**：核心业务数据字典与本地存储策略（纯业务视角，严禁代码/SQL/JSON Schema：①核心业务实体清单与业务关系说明、②逐实体业务数据字典表【字段名、业务含义、业务类型、是否必填、取值范围/枚举值、默认值、校验失败提示文案】、③用户数据存储与隐私分级业务策略【离线持久化诉求、敏感隐私保护诉求、缓存自动清理业务诉求与生命周期】）；\n"
             "   - **第六章**：全链路数据埋点规范（`E-01~E-12` 核心事件埋点总表、转化漏斗与留存计算公式）；\n"
             "   - **第七章**：端到端验收用例与体验质量需求（结构化 `AC-01~AC-08` Gherkin 验收矩阵表包含用例ID/场景/Given/When/Then、用户感知级性能要求【如冷启首屏、导出等待感知】、iOS HIG 灵动岛安全区 ≥71pt 与 Apple 4.3 审核合规业务护栏）。\n"
-            "   - **自动化合规校验**：生成交付物后调用 `lint_stage_deliverable` 或运行 `[prd_linter.py](./scripts/prd_linter.py)` 校验合规性与去工程化检查。\n"
+            "   - **自动化合规校验**：生成交付物后调用 `lint_stage_deliverable` 或运行 `[prd_linter.py](./scripts/prd_linter.py)`。放行线为 100 分。\n"
         ),
         "script_name": "prd_linter.py",
-        "script_code": (
-            "#!/usr/bin/env python3\n"
-            "import sys, os, re, json\n"
-            "from pathlib import Path\n\n"
-            "def lint_prd(target_path: Path):\n"
-            "    if not target_path.exists():\n"
-            "        return {'status': 'error', 'file': str(target_path), 'score': 0, 'errors': [f'File {target_path} does not exist']}\n\n"
-            "    content = target_path.read_text(encoding='utf-8', errors='replace')\n"
-            "    has_executive_gate = bool(re.search(r'##\\s*负责人\\s*30\\s*秒拍板摘要卡', content))\n\n"
-            "    expected_chapters = [\n"
-            "        ('Ch0', r'第\\s*0\\s*章[：:].*元信息|第\\s*零\\s*章'),\n"
-            "        ('Ch1', r'第一章[：:].*范围|第\\s*1\\s*章'),\n"
-            "        ('Ch2', r'第二章[：:].*信息架构|第\\s*2\\s*章'),\n"
-            "        ('Ch3', r'第三章[：:].*详细规格|第\\s*3\\s*章'),\n"
-            "        ('Ch4', r'第四章[：:].*商业|第\\s*4\\s*章'),\n"
-            "        ('Ch5', r'第五章[：:].*数据|第\\s*5\\s*章'),\n"
-            "        ('Ch6', r'第六章[：:].*埋点|第\\s*6\\s*章'),\n"
-            "        ('Ch7', r'第七章[：:].*验收|第\\s*7\\s*章'),\n"
-            "    ]\n"
-            "    detected_chapters = []\n"
-            "    missing_chapters = []\n"
-            "    for code, pattern in expected_chapters:\n"
-            "        if re.search(pattern, content):\n"
-            "            detected_chapters.append(code)\n"
-            "        else:\n"
-            "            missing_chapters.append(code)\n\n"
-            "    views_detected = sorted(list(set(re.findall(r'V-0[1-9]', content))))\n"
-            "    modules_detected = sorted(list(set(re.findall(r'\\bM[1-9]\\b', content))))\n"
-            "    table_count = len(re.findall(r'\\|(?:\\s*[-:]+\\s*\\|)+', content))\n"
-            "    mermaid_diagrams = len(re.findall(r'```mermaid', content))\n"
-            "    has_banned_smoke_test = bool(re.search(r'工序\\s*04\\s*假门测试|Smoke\\s*Test\\s*待回填|Go/Pivot/Kill\\s*裁决', content))\n\n"
-            "    has_sql_ddl = bool(re.search(r'^\\s*CREATE\\s+(?:TABLE|INDEX)\\b', content, re.IGNORECASE | re.MULTILINE))\n"
-            "    has_raw_json_schema = bool(re.search(r'\"type\"\\s*:\\s*\"(?:object|string|number)\"', content))\n"
-            "    has_engineering_leakage = has_sql_ddl or has_raw_json_schema\n\n"
-            "    score = 100\n"
-            "    warnings = []\n"
-            "    suggestions = []\n\n"
-            "    if not has_executive_gate:\n"
-            "        score -= 15\n"
-            "        warnings.append('Missing Executive Gate (负责人 30 秒拍板摘要卡)')\n"
-            "    if missing_chapters:\n"
-            "        score -= min(40, len(missing_chapters) * 8)\n"
-            "        warnings.append('Missing chapters: ' + ', '.join(missing_chapters))\n"
-            "    if not views_detected:\n"
-            "        score -= 10\n"
-            "        warnings.append('No full-site View IDs (e.g. V-01~V-05) detected in IA/Matrix')\n"
-            "    if len(modules_detected) < 3:\n"
-            "        score -= 10\n"
-            "        warnings.append('Less than 3 functional modules (M1~Mx) detected')\n"
-            "    if table_count < 5:\n"
-            "        score -= 10\n"
-            "        warnings.append(f'Low structured table count ({table_count}); PRD should be concrete and structured')\n"
-            "    if mermaid_diagrams < 1:\n"
-            "        score -= 5\n"
-            "        suggestions.append('Consider adding Mermaid diagrams for visual flow & state machines')\n"
-            "    if has_banned_smoke_test:\n"
-            "        score -= 20\n"
-            "        warnings.append('PRD contains leftover Stage 04 smoke test tables or Go/Pivot/Kill audit rules')\n"
-            "    if has_engineering_leakage:\n"
-            "        score -= 25\n"
-            "        leak_details = []\n"
-            "        if has_sql_ddl:\n"
-            "            leak_details.append('SQL DDL (CREATE TABLE/INDEX)')\n"
-            "        if has_raw_json_schema:\n"
-            "            leak_details.append('raw JSON Schema')\n"
-            "        warnings.append('PRD contains engineer-role implementation technical leakages: ' + ', '.join(leak_details) + '. Stage 05 must strictly remain a pure Product Manager role.')\n\n"
-            "    score = max(0, score)\n"
-            "    return {\n"
-            "        'status': 'ok' if score >= 80 else ('warning' if score >= 60 else 'failed'),\n"
-            "        'file': target_path.name,\n"
-            "        'executive_gate': has_executive_gate,\n"
-            "        'chapters_detected': detected_chapters,\n"
-            "        'missing_chapters': missing_chapters,\n"
-            "        'views_detected': views_detected,\n"
-            "        'modules_detected': modules_detected,\n"
-            "        'table_count': table_count,\n"
-            "        'mermaid_diagrams': mermaid_diagrams,\n"
-            "        'has_banned_smoke_test_table': has_banned_smoke_test,\n"
-            "        'has_engineering_leakage': has_engineering_leakage,\n"
-            "        'warnings': warnings,\n"
-            "        'suggestions': suggestions,\n"
-            "        'score': score\n"
-            "    }\n\n"
-            "if __name__ == '__main__':\n"
-            "    target = Path(sys.argv[1]) if len(sys.argv) > 1 else (list(Path('.').glob('*.md'))[0] if list(Path('.').glob('*.md')) else Path('PRD.md'))\n"
-            "    result = lint_prd(target)\n"
-            "    print(json.dumps(result, ensure_ascii=False, indent=2))\n"
-            "    sys.exit(0 if result['status'] == 'ok' else 1)\n"
-        )
     },
     "mkt": {
         "skill_name": "mkt-fakedoor-h5-generator",
@@ -169,13 +67,6 @@ ROLE_EXCLUSIVE_ARSENAL: Dict[str, Dict[str, Any]] = {
             "2. **自检验证**：生成后调用专属 MCP 工具 `verify_fakedoor_h5_bundle` 或运行 `[verify_h5.py](./scripts/verify_h5.py)` 确认 `index.html` 完整性。\n"
         ),
         "script_name": "verify_h5.py",
-        "script_code": (
-            "#!/usr/bin/env python3\n"
-            "from pathlib import Path\n"
-            "import json\n"
-            "p = Path('index.html')\n"
-            "print(json.dumps({'exists': p.exists(), 'size': p.stat().st_size if p.exists() else 0}))\n"
-        )
     },
     "ux": {
         "skill_name": "ux-hig-prototype-spec",
@@ -190,11 +81,6 @@ ROLE_EXCLUSIVE_ARSENAL: Dict[str, Dict[str, Any]] = {
             "   - 在工作区同步生成 `index.html`（覆盖全部 PRD 核心视图 V-01~V-05 画板切换、点选组件检视尺寸/间距/色号并一键复制 SwiftUI 与 Tailwind 代码、安全区标尺开关）以及 `assets/icons/*.svg`、`assets/fonts/`、`assets/tokens/design_tokens.json` 与全量打包 `.zip`。\n"
         ),
         "script_name": "check_hig.py",
-        "script_code": (
-            "#!/usr/bin/env python3\n"
-            "import json\n"
-            "print(json.dumps({'dynamic_island_safe_pt': 74, 'min_touch_pt': 44, 'multi_artboard_bundle': True, 'passed': True}))\n"
-        )
     },
     "eng": {
         "skill_name": "eng-lean-architecture-coder",
@@ -207,11 +93,6 @@ ROLE_EXCLUSIVE_ARSENAL: Dict[str, Dict[str, Any]] = {
             "2. **代码与契约实现**：内聚输出轻量技术选型、数据存储实现与单元测试覆盖率报告。\n"
         ),
         "script_name": "cost_audit.py",
-        "script_code": (
-            "#!/usr/bin/env python3\n"
-            "import json\n"
-            "print(json.dumps({'client_ai_cost': 0.0, 'cdn_r2_cost_per_mau': 0.0008, 'passed': True}))\n"
-        )
     },
     "qa": {
         "skill_name": "qa-release-gatekeeper",
@@ -224,11 +105,6 @@ ROLE_EXCLUSIVE_ARSENAL: Dict[str, Dict[str, Any]] = {
             "2. **端到端验收矩阵**：逐条核验工序 05 冻结的 Gherkin 验收标准与弱网/低端机表现。\n"
         ),
         "script_name": "gate_check.py",
-        "script_code": (
-            "#!/usr/bin/env python3\n"
-            "import json\n"
-            "print(json.dumps({'remote_config_ready': True, 'blocking_issues': 0, 'gate_passed': True}))\n"
-        )
     },
     "ops": {
         "skill_name": "ops-cohort-funnel-analyzer",
@@ -241,11 +117,6 @@ ROLE_EXCLUSIVE_ARSENAL: Dict[str, Dict[str, Any]] = {
             "2. **数据驱动 V1.1 立项**：结合埋点转化率与用户反馈热词，输出量化的下一阶段迭代路线图。\n"
         ),
         "script_name": "funnel_diag.py",
-        "script_code": (
-            "#!/usr/bin/env python3\n"
-            "import json\n"
-            "print(json.dumps({'d1': 42.0, 'd7': 24.5, 'd30': 11.2, 'status': 'healthy'}))\n"
-        )
     }
 }
 
@@ -270,8 +141,17 @@ def ensure_canonical_skills_library() -> Path:
         skill_md_path.write_text(skill_md_content, encoding="utf-8")
 
         script_path = scripts_dir / spec["script_name"]
-        script_path.write_text(spec["script_code"], encoding="utf-8")
-        script_path.chmod(0o755)
+        # Disk scripts are the only checker implementation. Do not overwrite them
+        # with the legacy embedded copies.
+        if not script_path.exists():
+            script_path.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, sys\n"
+                "print(json.dumps({'passed': False, 'error': 'canonical checker script missing'}))\n"
+                "sys.exit(1)\n",
+                encoding="utf-8",
+            )
+            script_path.chmod(0o755)
 
     return SKILLS_LIBRARY_ROOT
 
@@ -359,21 +239,20 @@ def mount_role_skills_and_mcp(
             scripts_dir.mkdir(parents=True, exist_ok=True)
 
             if r_code == "ux":
-                if target_platform == "android":
-                    # For Android: Mount check_material.py, remove check_hig.py
+                from backend.app.services.profile_guard import is_dual_platform
+                if is_dual_platform(target_platform):
+                    pass
+                elif target_platform == "android":
+                    # For Android: keep the disk Material checker, remove the iOS checker.
                     hig_script = scripts_dir / "check_hig.py"
                     if hig_script.exists():
                         hig_script.unlink()
                     mat_script = scripts_dir / "check_material.py"
-                    mat_script.write_text(
-                        "#!/usr/bin/env python3\n"
-                        "import json\n"
-                        "print(json.dumps({'platform': 'android', 'material_version': 'Material 3', "
-                        "'status_bar_cutout_safe_dp': 48, 'min_touch_target_dp': 48, "
-                        "'multi_artboard_bundle': True, 'passed': True}))\n",
-                        encoding="utf-8"
-                    )
-                    mat_script.chmod(0o755)
+                    if not mat_script.exists():
+                        canonical_material = SKILLS_LIBRARY_ROOT / "ux" / spec["skill_name"] / "scripts" / "check_material.py"
+                        if canonical_material.exists():
+                            mat_script.write_text(canonical_material.read_text(encoding="utf-8"), encoding="utf-8")
+                            mat_script.chmod(0o755)
 
                     # Update SKILL.md instructions for Android
                     skill_md_file = dst_skill_dir / "SKILL.md"
@@ -391,33 +270,14 @@ def mount_role_skills_and_mcp(
                         encoding="utf-8"
                     )
                 else:
-                    # For iOS / default: Ensure check_hig.py is mounted
-                    hig_script = scripts_dir / "check_hig.py"
-                    hig_script.write_text(spec["script_code"], encoding="utf-8")
-                    hig_script.chmod(0o755)
+                    # For iOS / default: keep the disk HIG checker, drop Material.
                     mat_script = scripts_dir / "check_material.py"
                     if mat_script.exists():
                         mat_script.unlink()
 
             elif r_code == "eng":
-                cost_script = scripts_dir / "cost_audit.py"
-                if not target_zero_inf:
-                    cost_script.write_text(
-                        "#!/usr/bin/env python3\n"
-                        "import json\n"
-                        "print(json.dumps({'client_ai_cost': 0.002, 'cdn_r2_cost_per_mau': 0.0008, "
-                        "'zero_inference_enforced': False, 'edge_ai_allowed': True, 'passed': True}))\n",
-                        encoding="utf-8"
-                    )
-                else:
-                    cost_script.write_text(
-                        "#!/usr/bin/env python3\n"
-                        "import json\n"
-                        "print(json.dumps({'client_ai_cost': 0.0, 'cdn_r2_cost_per_mau': 0.0008, "
-                        "'zero_inference_enforced': True, 'edge_ai_allowed': False, 'passed': True}))\n",
-                        encoding="utf-8"
-                    )
-                cost_script.chmod(0o755)
+                # cost_audit.py reads MODUFLOW_ZERO_INFERENCE from the MCP env.
+                pass
 
         # 2. Configure role-exclusive MCP Server (Primary role gets primary MCP server; collaborators added)
         mcp_name = spec["mcp_server_name"]

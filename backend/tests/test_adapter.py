@@ -91,7 +91,10 @@ async def test_context_assembler():
         assert ws_path.exists()
         assert meta["module_code"] == first_mod.module_code
 
-def test_cli_argument_builders():
+def test_cli_argument_builders(monkeypatch):
+    import backend.app.adapters.cli_adapter as cli_module
+    monkeypatch.setattr(cli_module, "os_sandbox_available", lambda: True)
+
     # Claude syntax
     claude_args = build_cli_arguments("/usr/local/bin/claude", "test prompt")
     assert claude_args == ["/usr/local/bin/claude", "-p", "test prompt", "--dangerously-skip-permissions"]
@@ -111,9 +114,55 @@ def test_cli_argument_builders():
         "test prompt"
     ]
 
+    # Without an outer OS sandbox Codex keeps its own workspace-write sandbox
+    monkeypatch.setattr(cli_module, "os_sandbox_available", lambda: False)
+    codex_own = build_cli_arguments("/opt/homebrew/bin/codex", "test prompt")
+    assert codex_own[4:6] == ["--sandbox", "workspace-write"]
+    assert "--dangerously-bypass-approvals-and-sandbox" not in codex_own
+
     # custom syntax
     custom_args = build_cli_arguments("/usr/bin/custom-cli", "test prompt")
     assert custom_args == ["/usr/bin/custom-cli", "-p", "test prompt"]
+
+    agy_model = build_cli_arguments("/Users/a/.local/bin/agy", "test prompt", "gemini-4-argon-low")
+    assert agy_model[:3] == ["/Users/a/.local/bin/agy", "--model", "gemini-4-argon-low"]
+    codex_model = build_cli_arguments("/opt/homebrew/bin/codex", "test prompt", "glm")
+    assert codex_model[:3] == ["/opt/homebrew/bin/codex", "--model", "glm"]
+    assert "exec" in codex_model
+
+
+def test_cli_model_listing_parsers():
+    from backend.app.adapters.cli_adapter import (
+        parse_agy_model_listing,
+        parse_codex_model_catalog,
+        parse_claude_model_catalog,
+        usable_cli_model,
+    )
+
+    agy = parse_agy_model_listing(
+        "Fetching available models...\n"
+        "gemini-4-argon-medium\tGemini 4 Argon (Medium)\n"
+        "gemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n"
+    )
+    assert [item["id"] for item in agy] == ["gemini-4-argon-medium", "gemini-3.8-flash-low"]
+    assert agy[0]["label"] == "Gemini 4 Argon (Medium)"
+
+    codex = parse_codex_model_catalog(
+        'warning\n{"models":[{"slug":"glm","display_name":"GLM","visibility":"list"},'
+        '{"slug":"hidden","display_name":"Hidden","visibility":"hidden"}]}'
+    )
+    assert codex == [{"id": "glm", "label": "GLM"}]
+
+    claude = parse_claude_model_catalog("use claude-opus-4-8 or claude-sonnet-5")
+    assert claude[0]["id"] == "fable"
+    assert any(item["id"] == "claude-opus-4-8" for item in claude)
+    assert usable_cli_model("bad model") is None
+    assert usable_cli_model("opus") == "opus"
+
+    from backend.app.adapters.cli_adapter import deliverable_length_guideline
+    assert "6,000~12,000" in deliverable_length_guideline("05")
+    assert "1,800~3,500" in deliverable_length_guideline("10")
+    assert "2,000~3,500" in deliverable_length_guideline("01")
 
 @pytest.mark.asyncio
 async def test_cli_adapter_missing_binary_reports_error(tmp_path: Path):

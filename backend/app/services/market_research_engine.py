@@ -1,4 +1,5 @@
 from typing import Dict, Any, List, Optional
+import json
 import math
 
 # ==============================================================================
@@ -356,6 +357,14 @@ def generate_comprehensive_market_report(
     personas = cat["personas"]
     wedge = cat["wedge_strategy"]
 
+    capture_rate = 0.04
+    som_inputs = {
+        "monthly_search_volume": max(1, round(mkt_model["som_base_users"] / (12 * capture_rate))),
+        "target_capture_rate": capture_rate,
+        "blended_arpu_usd": round(float(mkt_model["arpu_annual"]), 2),
+        "source": "区域设备基数 × 品类渗透率推算的基准情景，假设/待验证",
+    }
+
     # 1. Competitors Table
     comp_rows = []
     for c in competitors:
@@ -413,7 +422,12 @@ def generate_comprehensive_market_report(
 - **单客年度有效贡献 (Blended ARPU)**：设定为 **${mkt_model['arpu_annual']:.2f} USD /年**（基于混合免费增值订阅与去广告买断的加权平均值）。
 - **目标区域有效设备基数**：{mkt_model['region_label']} 内具备付费及高频美化习惯的目标用户群体约为 **{mkt_model['sam_users_formatted']}**。
 
-### 2. 发展情景预测表 (Scenario Projections)
+### 2. 可复核 SOM 测算输入 (假设/待验证)
+```json
+{json.dumps(som_inputs, ensure_ascii=False, indent=2)}
+```
+
+### 3. 发展情景预测表 (Scenario Projections)
 | 发展情景 | 目标付费/活跃用户 | 预期年度贡献 (USD) | 测算实现路径与核心依赖 |
 | :--- | :--- | :--- | :--- |
 | **保守情景 (Conservative)** | {mkt_model['scenarios']['conservative']['users']:,} | ${mkt_model['scenarios']['conservative']['revenue_usd']:,} | {mkt_model['scenarios']['conservative']['note']} |
@@ -471,8 +485,9 @@ def generate_comprehensive_market_report(
 为确保工序间的穿透性，本报告向下游工序提供直接的决策事实输入：
 
 1. **对工序 02【商业模式分析】的输入**：
-   - 坚决放弃容易导致 1 星差评的纯强硬周扣费模型，推荐采用 **“免费优质图库 + 激励视频免广告体验” + “$14.99/年订阅解锁全量 4K 景深及双屏配套” + “$29.99 极客买断”** 的复合变现结构。
-2. **对工序 03【产品方向决策】与 06【PRD】的输入**：
+   - 市场事实：强硬周扣费是竞品 1~2 星差评的主要来源；竞品现行价格带见上方竞品矩阵「定价与变现梯队」列，画像付费意愿见第三章。
+   - 变现方向线索：免费层 + 去广告权益 + 订阅/买断混合的方向值得测算；**具体价格档位与订阅阶梯由工序 02 (ba) 设定，本报告不给定价**。
+2. **对工序 03【产品方向决策】与 05【PRD】的输入**：
    - MVP 范围坚决减法：第一版不搞复杂的社交、评论或多级嵌套，把资源全部集中在**“iOS 锁屏景深专区”**与**“双屏柔焦一键配套工具”**两大王牌体验上。
 3. **对工序 04【低成本市场验证】的输入**：
    - 建议以 3 组 TikTok/Reels 桌面改造前后对比短视频进行假门测试，监控点击率 (CTR) 与落地页转化意向，验证获客成本能否压制在 $1.20 USD 以内。

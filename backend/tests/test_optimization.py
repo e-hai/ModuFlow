@@ -11,6 +11,7 @@ from backend.app.services.agent_roles import seed_agent_roles_if_empty
 from backend.app.models.entities import StrategicInitiative, Product, ModuleInstance, Artifact, ChangeReview, AgentSettingsModel
 from backend.app.core.config import settings
 from sqlalchemy import select
+from backend.tests.test_gate_system import _PASSING_PRD
 
 @pytest_asyncio.fixture(autouse=True)
 async def init_test_db():
@@ -64,7 +65,11 @@ async def test_bundle_upload_and_preview_flow():
         # 3. Create a zip archive simulating a design prototype bundle
         zip_buf = io.BytesIO()
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("index.html", "<!DOCTYPE html><html><body><h1>Prototype v1</h1><div class='nav'>Home</div></body></html>")
+            zf.writestr(
+                "index.html",
+                "top_safe_padding_pt: 74\nmin_touch_target_pt: 44\nstatus_bar_safe_dp: 32\nmin_touch_target_dp: 48\n"
+                "<!DOCTYPE html><html><body><h1>Prototype v1</h1><div class='nav'>Home</div></body></html>",
+            )
             zf.writestr("assets/style.css", "body { background: #fafafa; }")
             zf.writestr("preview/screen1.png", b"fake-png-bytes")
         zip_bytes = zip_buf.getvalue()
@@ -137,7 +142,7 @@ async def test_upstream_stale_detection_and_ack_flow():
         m07 = next(m for m in run_data["modules"] if m["module_code"] == "07") # Dev
 
         # 1. Upload PRD v1 to module 05
-        prd_v1 = "# PRD v1\n- Feature A: User login with phone OTP\n- Feature B: Basic dashboard"
+        prd_v1 = _PASSING_PRD + "\n- Feature A: User login with phone OTP\n- Feature B: Basic dashboard"
         up_v1_res = await client.post(
             f"/api/v1/modules/{m05['id']}/artifacts/upload",
             files={"file": ("prd_v1.md", prd_v1.encode("utf-8"), "text/markdown")},
@@ -162,7 +167,7 @@ async def test_upstream_stale_detection_and_ack_flow():
         assert m07_check.json()["is_upstream_stale"] is False
 
         # 2. Upload PRD v2 to module 05 with scope change
-        prd_v2 = "# PRD v2\n- Feature A: User login with OAuth (Google/Apple)\n- Feature B: Basic dashboard\n- Feature C: Multi-currency wallet"
+        prd_v2 = _PASSING_PRD + "\n- Feature A: User login with OAuth (Google/Apple)\n- Feature B: Basic dashboard\n- Feature C: Multi-currency wallet"
         up_v2_res = await client.post(
             f"/api/v1/modules/{m05['id']}/artifacts/upload",
             files={"file": ("prd_v2.md", prd_v2.encode("utf-8"), "text/markdown")},
@@ -211,18 +216,28 @@ async def test_agent_settings_persistence():
         update_res = await client.patch("/api/v1/settings/agent", json={
             "adapter_type": "cli",
             "cli_command": "agy",
+            "cli_model": "gemini-4-argon-low",
             "timeout": 180
         })
         assert update_res.status_code == 200
         assert update_res.json()["adapter_type"] == "cli"
         assert update_res.json()["cli_command"] == "agy"
+        assert update_res.json()["cli_model"] == "gemini-4-argon-low"
         assert update_res.json()["timeout"] == 180
+
+        cleared = await client.patch("/api/v1/settings/agent", json={"cli_model": ""})
+        assert cleared.status_code == 200
+        assert cleared.json()["cli_model"] in (None, "")
+
+        invalid = await client.patch("/api/v1/settings/agent", json={"cli_model": "bad model"})
+        assert invalid.status_code == 400
 
         # Verify DB directly
         async with AsyncSessionLocal() as db:
             row = (await db.execute(select(AgentSettingsModel).where(AgentSettingsModel.id == "default"))).scalar_one()
             assert row.adapter_type == "cli"
             assert row.cli_command == "agy"
+            assert row.cli_model in (None, "")
             assert row.timeout == 180
 
 @pytest.mark.asyncio
@@ -246,7 +261,10 @@ async def test_requirement_cr_feedback_loop_and_prd_revision():
         m06 = next(m for m in run_data["modules"] if m["module_code"] == "06")
 
         # 2. Stage 05 uploads & baselines PRD v1
-        prd_v1 = "# PRD v1\n- Feature: Double-column paginated view with fixed page sizes"
+        prd_v1 = (
+            "# PRD v1\n- Feature: Double-column paginated view with fixed page sizes\n"
+            + _PASSING_PRD
+        )
         up_v1_res = await client.post(
             f"/api/v1/modules/{m05['id']}/artifacts/upload",
             files={"file": ("prd_v1.md", prd_v1.encode("utf-8"), "text/markdown")},

@@ -27,6 +27,8 @@ PROTECTED_FILE_NAMES = [
     "authorization.json",
     "AGENTS.md",
     "agent_roles.py",
+    ".mcp.json",
+    "mcp_config.json",
 ]
 
 PROTECTED_DIR_PATTERNS = [

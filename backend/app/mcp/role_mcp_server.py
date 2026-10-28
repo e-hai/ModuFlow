@@ -4,6 +4,7 @@ ModuFlow Role-Exclusive MCP Server (Stdio JSON-RPC 2.0)
 Dynamically exposes role-specific domain tools based on `--role <role_code>`.
 """
 import sys
+import os
 import json
 import argparse
 from pathlib import Path
@@ -166,132 +167,114 @@ ROLE_MCP_TOOLS: Dict[str, List[Dict[str, Any]]] = {
 }
 
 
-def execute_role_tool(role_code: str, workspace_dir: Path, tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
-    if tool_name == "calculate_bottom_up_som":
-        vol = int(args.get("monthly_search_volume", 100000))
-        rate = float(args.get("target_capture_rate", 0.03))
-        arpu = float(args.get("blended_arpu_usd", 1.5))
-        annual_installs = int(vol * 12 * rate)
-        som_usd = round(annual_installs * arpu, 2)
+PLATFORM_ONLY_TOOLS = {
+    "audit_hig_safe_area": "ios",
+    "audit_material_spec": "android",
+}
+COLLABORATOR_NOTE = "（协作角色调用：结果仅供参考，不作为本工序关口证据）"
+
+
+def visible_tools(role_code: str, platform: str = "ios", is_primary: bool = True) -> List[Dict[str, Any]]:
+    """Tools of this role, filtered to the project platform; collaborator copies are labelled advisory."""
+    from backend.app.services.profile_guard import covers_android, covers_ios
+
+    targets = set()
+    if covers_ios(platform):
+        targets.add("ios")
+    if covers_android(platform):
+        targets.add("android")
+    tools = []
+    for tool in ROLE_MCP_TOOLS.get(role_code, []):
+        only = PLATFORM_ONLY_TOOLS.get(tool["name"])
+        if only and only not in targets:
+            continue
+        entry = dict(tool)
+        if not is_primary:
+            entry["description"] = entry["description"] + COLLABORATOR_NOTE
+        tools.append(entry)
+    return tools
+
+
+def call_tool(
+    role_code: str,
+    workspace_dir: Path,
+    tool_name: str,
+    args: Dict[str, Any],
+    platform: str = "ios",
+    is_primary: bool = True,
+) -> Dict[str, Any]:
+    allowed = {tool["name"] for tool in visible_tools(role_code, platform, is_primary)}
+    if tool_name not in allowed:
         return {
-            "annual_target_installs": annual_installs,
-            "first_year_som_usd": som_usd,
-            "verdict": "GO (具备高利润截胡价值)" if som_usd >= 100000 else "CAUTION (盘子偏小，需控研发成本)"
+            "passed": False,
+            "error": f"工具 {tool_name} 不属于角色 {role_code}（平台 {platform}）的工具箱，已拒绝执行",
         }
+    output = execute_role_tool(role_code, workspace_dir, tool_name, args)
+    output["caller_role"] = role_code
+    output["caller_is_primary"] = is_primary
+    if not is_primary:
+        output["advisory_only"] = True
+    return output
+
+
+def _deliverable_audit():
+    root = Path(__file__).resolve().parents[3]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from backend.app.services import deliverable_audit
+    return deliverable_audit
+
+
+def execute_role_tool(role_code: str, workspace_dir: Path, tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Run a role tool against workspace files. Caller arguments are claims only."""
+    audit = _deliverable_audit()
+    claimed = dict(args or {})
+    if tool_name == "calculate_bottom_up_som":
+        return audit.audit_som_workspace(workspace_dir, claimed=claimed)
     elif tool_name == "analyze_competitor_weakness_matrix":
+        texts = audit.collect_workspace_texts(workspace_dir)
+        evidence = bool(texts)
         return {
-            "category": args.get("category", ""),
-            "competitors": args.get("competitors", []),
+            "category": claimed.get("category", ""),
+            "competitors": claimed.get("competitors", []),
+            "passed": evidence,
+            "evidence_found": evidence,
+            "reasons": [] if evidence else ["工作区没有竞品材料，调用方名单不能单独放行"],
             "mandatory_dimensions": [
                 "近3个月 App Store / Google Play 1-2星高频差评原话",
                 "TikTok / Reels / Reddit 前3秒跨文化视觉钩子 (Visual Hook)",
                 "订阅价格陷阱 vs 我们的单点破局刀法 (Wedge)"
-            ]
+            ],
         }
     elif tool_name == "simulate_unit_economics":
-        org = float(args.get("organic_share", 0.7))
-        cpi = float(args.get("paid_cpi_usd", 0.7))
-        ad_arpu = float(args.get("ad_arpu_usd", 1.15))
-        iap_cr = float(args.get("iap_conversion_rate", 0.03))
-        iap_arppu = float(args.get("iap_net_arppu_usd", 7.0))
-        blended_cac = round((1.0 - org) * cpi, 3)
-        ltv = round(ad_arpu + iap_cr * iap_arppu, 3)
-        ratio = round(ltv / blended_cac, 2) if blended_cac > 0 else 99.9
-        return {
-            "blended_cac_usd": blended_cac,
-            "ltv_180d_usd": ltv,
-            "ltv_cac_ratio": ratio,
-            "healthy": ratio >= 3.0
-        }
+        return audit.audit_unit_economics_workspace(workspace_dir, claimed=claimed)
     elif tool_name == "lint_stage_deliverable":
-        stage = args.get("stage_code", "03")
-        content = args.get("markdown_content", "")
-        issues = []
-        if "负责人 30 秒拍板摘要卡" not in content:
-            issues.append("缺少顶层『## 负责人 30 秒拍板摘要卡 (Executive Gate)』")
-        if stage == "03" and ("CREATE TABLE" in content or "interface " in content):
-            issues.append("违反工序03红线：严禁在方向决策阶段提前编写代码级 Schema")
-        if stage == "05" and "Given" not in content:
-            issues.append("工序05缺少 Gherkin (Given/When/Then) 验收标准")
-        return {"passed": len(issues) == 0, "issues": issues}
+        content = claimed.get("markdown_content") or ""
+        if not str(content).strip():
+            return {"passed": False, "score": 0, "reasons": ["没有 PRD 正文"]}
+        result = audit.lint_markdown(str(content))
+        result["reasons"] = list(result.get("warnings") or [])
+        if not result.get("passed"):
+            result["reasons"].insert(0, f"PRD 得分 {result.get('score')}，放行线为 100")
+        return result
     elif tool_name == "verify_fakedoor_h5_bundle":
-        fname = args.get("html_filename", "index.html")
-        target = workspace_dir / fname
-        if not target.exists():
-            return {"exists": False, "passed": False, "error": f"未在工作区找到 {fname}，工序04强制要求生成可交互H5假门网页"}
-        html = target.read_text(encoding="utf-8", errors="ignore")
-        has_script = "<script" in html.lower()
-        return {
-            "exists": True,
-            "size_bytes": len(html),
-            "has_interactive_script": has_script,
-            "passed": len(html) > 500 and has_script
-        }
+        return audit.audit_fakedoor_workspace(workspace_dir, claimed=claimed)
     elif tool_name == "audit_hig_safe_area":
-        top_pt = int(args.get("top_safe_padding_pt", 71))
-        touch_pt = int(args.get("min_touch_target_pt", 44))
-        return {
-            "platform": "ios",
-            "ruleset": "iOS Human Interface Guidelines (HIG)",
-            "dynamic_island_safe": top_pt >= 71,
-            "touch_target_safe": touch_pt >= 44,
-            "passed": top_pt >= 71 and touch_pt >= 44
-        }
+        return audit.audit_design_workspace(workspace_dir, platform="ios", claimed=claimed)
     elif tool_name == "audit_material_spec":
-        status_bar_dp = int(args.get("status_bar_safe_dp", 48))
-        touch_dp = int(args.get("min_touch_target_dp", 48))
-        return {
-            "platform": "android",
-            "ruleset": "Google Material Design 3 (M3)",
-            "material_version": "Material 3",
-            "status_bar_cutout_safe": status_bar_dp >= 24,
-            "touch_target_safe": touch_dp >= 48,
-            "passed": status_bar_dp >= 24 and touch_dp >= 48
-        }
+        return audit.audit_design_workspace(workspace_dir, platform="android", claimed=claimed)
     elif tool_name in ["estimate_cloud_marginal_cost", "audit_client_zero_inference"]:
-        ai_calls = int(args.get("client_realtime_ai_calls", 0))
-        bw_mb = float(args.get("avg_cdn_bandwidth_mb", 15.0))
-        enforce_default = os.getenv("MODUFLOW_ZERO_INFERENCE", "true").lower() == "true"
-        enforce_zero = bool(args.get("enforce_zero_inference", enforce_default))
-        cost = round(ai_calls * 0.015 + bw_mb * 0.00005, 5)
-
-        if enforce_zero:
-            compliant = (ai_calls == 0)
-            passed = compliant and (cost <= 0.005)
-            return {
-                "estimated_cost_per_mau_usd": cost,
-                "zero_client_ai_compliant": compliant,
-                "enforce_zero_inference": True,
-                "edge_ai_permitted": False,
-                "passed": passed,
-                "mode": "strict_zero_client_inference"
-            }
-        else:
-            return {
-                "estimated_cost_per_mau_usd": cost,
-                "zero_client_ai_compliant": True,
-                "enforce_zero_inference": False,
-                "edge_ai_permitted": True,
-                "passed": cost <= 0.05,
-                "mode": "edge_ai_permitted"
-            }
+        enforce_zero = os.getenv("MODUFLOW_ZERO_INFERENCE", "true").lower() != "false"
+        result = audit.audit_inference_workspace(workspace_dir, claimed=claimed, enforce_zero=enforce_zero)
+        calls = int(result.get("client_realtime_ai_calls") or 0)
+        result["estimated_cost_per_mau_usd"] = round(calls * 0.015, 5)
+        result["mode"] = "strict_zero_client_inference" if enforce_zero else "edge_ai_permitted"
+        return result
     elif tool_name == "audit_app_store_compliance":
-        has_rc = bool(args.get("has_remote_config_fallback", True))
-        bugs = int(args.get("open_critical_issues", 0))
-        return {
-            "passed": has_rc and bugs == 0,
-            "blocking_reason": None if (has_rc and bugs == 0) else "存在未关闭阻断性缺陷或缺少 Remote Config 提审降级保护开关"
-        }
+        return audit.audit_qa_workspace(workspace_dir, claimed=claimed, require_remote_config=True)
     elif tool_name == "diagnose_retention_funnel":
-        d1 = float(args.get("d1_retention", 40.0))
-        d7 = float(args.get("d7_retention", 20.0))
-        d30 = float(args.get("d30_retention", 10.0))
-        return {
-            "d1_d7_drop_ratio": round((d1 - d7) / max(d1, 1.0), 2),
-            "d30_healthy": d30 >= 8.0,
-            "focus_recommendation": "优化首屏 10 秒 Aha 激活路径" if d1 < 35.0 else "强化周期性内容更新与桌面小组件召回"
-        }
-    return {"error": f"Unknown tool: {tool_name}"}
+        return audit.audit_retention_workspace(workspace_dir, claimed=claimed)
+    return {"error": f"Unknown tool: {tool_name}", "passed": False}
 
 
 def main():
@@ -302,7 +285,9 @@ def main():
 
     role_code = args.role.lower()
     workspace_dir = Path(args.workspace).resolve()
-    tools = ROLE_MCP_TOOLS.get(role_code, [])
+    platform = os.getenv("MODUFLOW_PLATFORM", "ios")
+    is_primary = os.getenv("MODUFLOW_IS_PRIMARY", "true").lower() != "false"
+    tools = visible_tools(role_code, platform, is_primary)
 
     for line in sys.stdin:
         line = line.strip()
@@ -345,7 +330,7 @@ def main():
         elif method == "tools/call":
             t_name = params.get("name", "")
             t_args = params.get("arguments") or {}
-            output = execute_role_tool(role_code, workspace_dir, t_name, t_args)
+            output = call_tool(role_code, workspace_dir, t_name, t_args, platform, is_primary)
             resp = {
                 "jsonrpc": "2.0",
                 "id": req_id,

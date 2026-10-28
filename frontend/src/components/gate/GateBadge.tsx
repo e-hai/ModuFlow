@@ -6,6 +6,7 @@ interface GateBadgeProps {
   level: GateLevel | string;
   gateName?: string;
   isEscalated?: boolean;
+  resolved?: boolean;
   size?: 'sm' | 'md';
 }
 
@@ -13,6 +14,7 @@ export const GateBadge: React.FC<GateBadgeProps> = ({
   level,
   gateName,
   isEscalated,
+  resolved = false,
   size = 'md',
 }) => {
   const normLevel = (level || 'green').toLowerCase();
@@ -22,7 +24,12 @@ export const GateBadge: React.FC<GateBadgeProps> = ({
   let label = '🟢 自动核验';
   let tooltip = '常规阶段：系统与AI主管自动核验，指标达标自动放行，事后可随时查阅';
 
-  if (normLevel === 'yellow') {
+  if (resolved && normLevel !== 'green') {
+    colorClass = 'bg-emerald-50 text-emerald-800 border-emerald-200';
+    dotClass = 'bg-emerald-500';
+    label = '已通过';
+    tooltip = '这一关已经放行';
+  } else if (normLevel === 'yellow') {
     colorClass = 'bg-amber-50 text-amber-800 border-amber-300';
     dotClass = 'bg-amber-500';
     label = '🟡 待您确认';

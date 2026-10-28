@@ -3,6 +3,15 @@ import { GateApplication, GateConfig } from '../../types';
 import { api } from '../../services/api';
 import { GateBadge } from './GateBadge';
 import {
+  STAGE_QUESTIONS,
+  STAGE_TITLES,
+  evidenceLines,
+  leadActionLabel,
+  plainLeadRationale,
+  roleLabel,
+  ruleRequirement,
+} from './gateCopy';
+import {
   X,
   ShieldCheck,
   AlertCircle,
@@ -70,7 +79,7 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
         setGateApp(app.value);
       } else {
         setGateApp(null);
-        setNewRecommendation(`本阶段【${moduleCode} ${moduleName}】成果已交付，各项检查已就绪，建议准予通过进入下个环节。`);
+        setNewRecommendation('这一阶段的成果已经写好，检查也过了，建议进入下一阶段。');
         setNewRiskAssessment('经合规与功能自检，未发现阻塞性缺陷与违规项，风险可控。');
       }
     } catch (err: any) {
@@ -155,25 +164,22 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-mono text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-bold">
-                  工序 {moduleCode}
-                </span>
-                <h3 className="font-bold text-slate-900 text-base">
-                  {gateConfig?.name ? `${gateConfig.name} · 阶段把关确认单` : `阶段把关确认单`}
+                <h3 className="font-bold text-slate-900 text-base leading-snug">
+                  {gateApp?.recommendation?.split('\n')[0]?.trim()
+                    || `${STAGE_TITLES[moduleCode] || moduleName} · 请您确认`}
                 </h3>
                 {gateApp ? (
                   <GateBadge
                     level={gateApp.effective_level}
-                    gateName={gateApp.gate_name}
                     isEscalated={gateApp.is_escalated}
                     size="sm"
                   />
                 ) : gateConfig ? (
-                  <GateBadge level={gateConfig.level} gateName={gateConfig.name} size="sm" />
+                  <GateBadge level={gateConfig.level} size="sm" />
                 ) : null}
               </div>
               <p className="text-xs text-slate-600 mt-0.5">
-                所属环节：<strong>{moduleName}</strong> · 汇总关键成果与数据依据，供您快速查阅并确认放行
+                {STAGE_QUESTIONS[moduleCode] || '看这一关的结论和依据，确认要不要放行。'}
               </p>
             </div>
           </div>
@@ -248,17 +254,13 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                 <div>
                   <span className="text-slate-400 block text-[11px]">把关规则要求</span>
                   <span className="font-bold text-slate-900 mt-0.5 block">
-                    {gateApp.effective_level === 'red'
-                      ? '必须负责人签字'
-                      : gateApp.effective_level === 'yellow'
-                      ? '负责人把关确认'
-                      : '系统自动核验'}
+                    {ruleRequirement(gateApp.effective_level, gateApp.status)}
                   </span>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[11px]">提报人 / 角色</span>
-                  <span className="font-mono text-slate-700 mt-0.5 block truncate">
-                    {gateApp.submitted_by.replace('agent:', 'AI智能体:').replace('human:', '人工:')}
+                  <span className="text-slate-700 mt-0.5 block truncate">
+                    {roleLabel(gateApp.submitted_by)}
                   </span>
                 </div>
                 <div>
@@ -273,7 +275,7 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                   <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-800 text-[10px] flex items-center justify-center font-bold">
                     1
                   </span>
-                  阶段交付结论与建议
+                  您在确认的事
                 </h4>
                 <div className="p-3 bg-slate-50 rounded-lg text-slate-800 leading-relaxed font-medium">
                   {gateApp.recommendation}
@@ -286,34 +288,34 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                   <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-800 text-[10px] flex items-center justify-center font-bold">
                     2
                   </span>
-                  核验依据清单（数据、测试与规范）
+                  依据
                 </h4>
                 <ul className="space-y-1 pl-1">
-                  {Array.isArray(gateApp.evidence) ? (
-                    gateApp.evidence.map((item, idx) => (
+                  {(Array.isArray(gateApp.evidence) ? gateApp.evidence : [gateApp.evidence])
+                    .flatMap((item) => evidenceLines(item))
+                    .map((line, idx) => (
                       <li key={idx} className="flex items-start gap-2 text-slate-700">
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                        <span>{typeof item === 'string' ? item : JSON.stringify(item)}</span>
+                        <span>{line}</span>
                       </li>
-                    ))
-                  ) : (
-                    <li className="text-slate-600">{String(gateApp.evidence)}</li>
-                  )}
+                    ))}
                 </ul>
               </div>
 
               {/* 3. 风险排查与对策 */}
+              {gateApp.risk_assessment?.trim() && (
               <div className="space-y-1.5 bg-white border border-slate-200 p-4 rounded-xl shadow-2xs">
                 <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
                   <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-800 text-[10px] flex items-center justify-center font-bold">
                     3
                   </span>
-                  潜在风险排查与应对方案
+                  {gateApp.risk_assessment.trim().startsWith('请您选') ? '要您选的项' : '需要知道的边界'}
                 </h4>
-                <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-lg text-amber-950 leading-relaxed">
-                  {gateApp.risk_assessment}
+                <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-lg text-amber-950 leading-relaxed whitespace-pre-line">
+                  {gateApp.risk_assessment.replace(/^请您选：\n?/, '')}
                 </div>
               </div>
+              )}
 
               {/* AI 项目主管预审建议 */}
               {gateApp.lead_recommendation && (
@@ -321,7 +323,7 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                   <div className="flex items-center justify-between">
                     <h5 className="font-bold text-purple-950 text-xs flex items-center gap-1.5">
                       <Bot className="w-4 h-4 text-purple-600" />
-                      项目总控预审研判
+                      项目总控怎么看
                     </h5>
                     {gateApp.is_consistent !== null && gateApp.is_consistent !== undefined && (
                       <span
@@ -335,9 +337,9 @@ export const GateApplicationModal: React.FC<GateApplicationModalProps> = ({
                       </span>
                     )}
                   </div>
-                  <p className="text-purple-950 font-medium">建议动作：{gateApp.lead_recommendation}</p>
+                  <p className="text-purple-950 font-medium">{leadActionLabel(gateApp.lead_recommendation)}</p>
                   {gateApp.lead_rationale && (
-                    <p className="text-[11px] text-purple-800">{gateApp.lead_rationale}</p>
+                    <p className="text-[11px] text-purple-800">{plainLeadRationale(gateApp.lead_rationale)}</p>
                   )}
                 </div>
               )}

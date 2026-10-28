@@ -38,3 +38,4 @@ data/*.db
 data/*.db*
 data/backup/
 data/workspaces/
+data/sandbox_profiles/

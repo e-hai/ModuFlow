@@ -1,6 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../services/api';
-import { Product, WorkflowRun, ModuleInstance, WorkflowTemplate, ShadowStats, GateConfig } from '../types';
+import {
+  Product,
+  WorkflowRun,
+  ModuleInstance,
+  WorkflowTemplate,
+  ShadowStats,
+  GateConfig,
+  RunOrchestrationStatus,
+  OrchestrationStage,
+  OrchestrationStageState
+} from '../types';
 import { PhaseBadge } from '../components/StatusBadge';
 import { GateBadge } from '../components/gate/GateBadge';
 import { LeadDailyDigestModal } from '../components/lead/LeadDailyDigestModal';
@@ -37,6 +47,165 @@ interface WorkflowViewProps {
   onSelectProduct: (p: Product) => void;
   onSelectModule: (module: ModuleInstance, allModules: ModuleInstance[]) => void;
   onBackToDashboard: () => void;
+  onOpenDecisionCenter?: () => void;
+}
+
+type NextActionKind = 'seal' | 'decisions' | 'advance' | 'enable-auto' | 'confirm' | 'accept' | 'override';
+
+interface NextStepAction {
+  label: string;
+  kind: NextActionKind;
+  moduleId?: string;
+}
+
+interface NextStep {
+  tone: 'act' | 'wait' | 'alert';
+  title: string;
+  body: string;
+  primary?: NextStepAction;
+  secondary?: NextStepAction;
+}
+
+function stageTitle(stage: OrchestrationStage): string {
+  return `工序 ${stage.module_code} ${stage.name}`;
+}
+
+function humanizeDetail(detail: string): string {
+  return detail
+    .replace(/（yellow）/g, '（黄级）')
+    .replace(/（red）/g, '（红级）')
+    .replace(/（green）/g, '（绿级）');
+}
+
+function buildNextStep(
+  readyToSeal: boolean,
+  baselinedCount: number,
+  orchestration: RunOrchestrationStatus | null,
+): NextStep | null {
+  const stages = orchestration?.active_stages ?? [];
+  const pick = (state: OrchestrationStageState) => stages.find((stage) => stage.state === state);
+
+  if (orchestration?.run_block_reason === 'paused' || pick('paused')) {
+    const paused = pick('paused');
+    const detail = paused ? humanizeDetail(paused.detail) : '项目已熔断暂停';
+    return {
+      tone: 'alert',
+      title: '项目已暂停',
+      body: `${detail}。到决策中心看熔断原因，处理之后流水线才会继续派活。`,
+      primary: { label: '去决策中心', kind: 'decisions' },
+    };
+  }
+
+  const dispute = pick('dispute');
+  if (dispute) {
+    return {
+      tone: 'alert',
+      title: `${stageTitle(dispute)} 需要你裁决`,
+      body: '评审意见和当前交付物不一致。采纳评审意见会发回主责修订；按当前交付物继续，则会带着现稿进入检查。',
+      primary: { label: '采纳评审意见', kind: 'accept', moduleId: dispute.module_id },
+      secondary: { label: '按当前交付物继续', kind: 'override', moduleId: dispute.module_id },
+    };
+  }
+
+  const gates = stages.filter((stage) => stage.state === 'awaiting_human_gate');
+  if (gates.length > 0) {
+    const names = gates.map(stageTitle).join('、');
+    return {
+      tone: 'act',
+      title: gates.length === 1 ? `${names} 在等你审批` : `${gates.length} 个阶段在等你审批`,
+      body: gates.length === 1
+        ? `${humanizeDetail(gates[0].detail)}。打开决策中心签字，通过后后面的工序会继续。`
+        : `${names}。到决策中心逐个签字，通过后后面的工序会继续。`,
+      primary: { label: '去决策中心审批', kind: 'decisions' },
+    };
+  }
+
+  const confirm = pick('awaiting_human_confirm');
+  if (confirm) {
+    return {
+      tone: 'act',
+      title: `${stageTitle(confirm)} 等你确认交付物`,
+      body: `${humanizeDetail(confirm.detail)}。确认后系统会跑检查，通过就继续往后走。`,
+      primary: { label: '确认并提交检查', kind: 'confirm', moduleId: confirm.module_id },
+    };
+  }
+
+  const stuck = pick('revision_failed');
+  if (stuck) {
+    return {
+      tone: 'alert',
+      title: `${stageTitle(stuck)} 修订没有通过`,
+      body: `${humanizeDetail(stuck.detail)}。这项已经进了决策中心，在那里看原因并决定是否重新检查。`,
+      primary: { label: '去决策中心', kind: 'decisions' },
+    };
+  }
+
+  const returned = pick('gate_returned');
+  if (returned) {
+    return {
+      tone: 'wait',
+      title: `${stageTitle(returned)} 已打回修订`,
+      body: `${humanizeDetail(returned.detail)}。修订通过检查后，会再次送到决策中心等你审批。`,
+    };
+  }
+
+  const gap = pick('handoff_incomplete');
+  if (gap) {
+    return {
+      tone: 'wait',
+      title: `${stageTitle(gap)} 在等上游补交接`,
+      body: `${humanizeDetail(gap.detail)}。系统会把缺的内容发回上游补写，补上后这道工序自动开工。`,
+    };
+  }
+
+  const running = pick('running') || pick('in_review');
+  if (running) {
+    return {
+      tone: 'wait',
+      title: `系统正在推进${stageTitle(running)}`,
+      body: running.state === 'in_review'
+        ? '协作角色正在评审这份交付物。方向、外测、发布和买量仍会送到决策中心等你批。'
+        : 'Agent 正在写交付物。方向、外测、发布和买量仍会送到决策中心等你批。',
+    };
+  }
+
+  if (readyToSeal) {
+    return {
+      tone: 'act',
+      title: '这一期可以收口了',
+      body: `${baselinedCount} 道工序都已定稿。点「完成并封版」，这一期归档为只读记录，随后可以开启下一期。`,
+      primary: { label: '完成并封版', kind: 'seal' },
+    };
+  }
+
+  const ready = pick('ready');
+  if (ready && orchestration && !orchestration.auto_advance) {
+    return {
+      tone: 'act',
+      title: `${stageTitle(ready)} 还没派活`,
+      body: '自动编排当前是关的。开启之后，系统会从这道工序继续派活和检查。',
+      primary: { label: '开启自动编排', kind: 'enable-auto' },
+    };
+  }
+
+  if (ready) {
+    return {
+      tone: 'wait',
+      title: `即将派活：${stageTitle(ready)}`,
+      body: '自动编排会继续检查并派发。需要你出面的是方向、外测、发布、买量，以及决策中心里的分歧和卡点。',
+    };
+  }
+
+  if (orchestration?.run_block_reason === 'auto_advance_off') {
+    return {
+      tone: 'act',
+      title: '自动编排已关闭',
+      body: '开启之后，系统会继续派活和检查。方向、花钱和发布仍会送到决策中心等你确认。',
+      primary: { label: '开启自动编排', kind: 'enable-auto' },
+    };
+  }
+
+  return null;
 }
 
 export const WorkflowView: React.FC<WorkflowViewProps> = ({
@@ -45,7 +214,8 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
   initialRunId,
   onSelectProduct,
   onSelectModule,
-  onBackToDashboard
+  onBackToDashboard,
+  onOpenDecisionCenter,
 }) => {
   const [productRuns, setProductRuns] = useState<WorkflowRun[]>([]);
   const [selectedRun, setSelectedRun] = useState<WorkflowRun | null>(null);
@@ -66,6 +236,8 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
   const [shadowStats, setShadowStats] = useState<ShadowStats | null>(null);
   const [showDigestModal, setShowDigestModal] = useState(false);
   const [gateConfigs, setGateConfigs] = useState<Record<string, GateConfig>>({});
+  const [orchestration, setOrchestration] = useState<RunOrchestrationStatus | null>(null);
+  const [orchestrationBusy, setOrchestrationBusy] = useState(false);
 
   const activeProduct = currentProduct || allProducts[0];
 
@@ -123,6 +295,121 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
     } finally {
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    if (selectedRun?.id && selectedRun.status === 'in_progress') {
+      loadOrchestration(selectedRun.id);
+    } else {
+      setOrchestration(null);
+    }
+  }, [selectedRun?.id, selectedRun?.status]);
+
+  const loadOrchestration = async (runId: string) => {
+    try {
+      setOrchestration(await api.getRunOrchestrationStatus(runId));
+    } catch (e) {
+      console.error('Failed to load orchestration status:', e);
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedRun?.id || selectedRun.status !== 'in_progress') return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const [status, run] = await Promise.all([
+          api.getRunOrchestrationStatus(selectedRun.id),
+          api.getRun(selectedRun.id),
+        ]);
+        if (!cancelled) {
+          setOrchestration(status);
+          setSelectedRun(run);
+        }
+      } catch (e) {
+        if (!cancelled) console.error('Failed to refresh orchestration progress:', e);
+      }
+    };
+    const timer = window.setInterval(poll, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [selectedRun?.id, selectedRun?.status]);
+
+  const handleToggleAutoAdvance = async () => {
+    if (!selectedRun || !orchestration) return;
+    try {
+      setOrchestrationBusy(true);
+      await api.setRunAutoAdvance(selectedRun.id, !orchestration.auto_advance);
+      await loadOrchestration(selectedRun.id);
+    } catch (err: any) {
+      alert(`切换自动编排失败: ${err.message}`);
+    } finally {
+      setOrchestrationBusy(false);
+    }
+  };
+
+  const handleAdvanceNow = async () => {
+    if (!selectedRun) return;
+    try {
+      setOrchestrationBusy(true);
+      const res = await api.advanceRun(selectedRun.id);
+      setOrchestration(res.orchestration);
+      const detailedRun = await api.getRun(selectedRun.id);
+      setSelectedRun(detailedRun);
+    } catch (err: any) {
+      alert(`推进失败: ${err.message}`);
+    } finally {
+      setOrchestrationBusy(false);
+    }
+  };
+
+  const handleSubmitForGate = async (moduleId: string) => {
+    if (!selectedRun) return;
+    try {
+      setOrchestrationBusy(true);
+      await api.submitModuleForGate(moduleId);
+      await loadOrchestration(selectedRun.id);
+      setSelectedRun(await api.getRun(selectedRun.id));
+    } catch (err: any) {
+      alert(`提交检查失败: ${err.message}`);
+    } finally {
+      setOrchestrationBusy(false);
+    }
+  };
+
+  const handleResolveDispute = async (moduleId: string, decision: 'accept_review' | 'override_review') => {
+    if (!selectedRun) return;
+    try {
+      setOrchestrationBusy(true);
+      await api.resolveModuleDispute(moduleId, decision);
+      await loadOrchestration(selectedRun.id);
+      setSelectedRun(await api.getRun(selectedRun.id));
+    } catch (err: any) {
+      alert(`裁决失败: ${err.message}`);
+    } finally {
+      setOrchestrationBusy(false);
+    }
+  };
+
+  const stageStateLabel: Record<OrchestrationStageState, { text: string; cls: string }> = {
+    running: { text: 'Agent 执行中', cls: 'bg-sky-50 text-sky-800 border-sky-200' },
+    paused: { text: '已熔断暂停', cls: 'bg-rose-50 text-rose-800 border-rose-200' },
+    revision_failed: { text: '自动修订未通过', cls: 'bg-orange-50 text-orange-800 border-orange-200' },
+    in_review: { text: '协作评审中', cls: 'bg-indigo-50 text-indigo-800 border-indigo-200' },
+    dispute: { text: '评审分歧待裁决', cls: 'bg-rose-50 text-rose-800 border-rose-200' },
+    handoff_incomplete: { text: '上游交接缺口', cls: 'bg-orange-50 text-orange-800 border-orange-200' },
+    awaiting_human_gate: { text: '等待人类审批', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
+    gate_returned: { text: '被退回修改', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
+    awaiting_human_confirm: { text: '等待人工确认交付物', cls: 'bg-violet-50 text-violet-800 border-violet-200' },
+    ready: { text: '待推进', cls: 'bg-slate-50 text-slate-700 border-slate-200' },
+  };
+
+  const runBlockLabel: Record<string, string> = {
+    paused: '项目已熔断暂停，自动编排停止派活',
+    auto_advance_off: '自动编排已关闭',
+    run_not_active: '迭代已归档',
   };
 
   const handleToggleShadowMode = async () => {
@@ -252,6 +539,35 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
   const baselinedCount = selectedRun?.modules?.filter(m => m.phase === 'baselined').length || 0;
   const totalModules = selectedRun?.modules?.length || 1;
   const progressPercent = Math.round((baselinedCount / totalModules) * 100);
+  const moduleCount = selectedRun?.modules?.length || 0;
+  const readyToSeal = Boolean(
+    isActiveRunSelected && moduleCount > 0 && baselinedCount === moduleCount
+  );
+  const nextStep = isActiveRunSelected ? buildNextStep(readyToSeal, baselinedCount, orchestration) : null;
+
+  const runNextStep = (action: NextStepAction) => {
+    if (action.kind === 'seal') {
+      handleCompleteRun();
+    } else if (action.kind === 'decisions') {
+      onOpenDecisionCenter?.();
+    } else if (action.kind === 'advance') {
+      handleAdvanceNow();
+    } else if (action.kind === 'enable-auto') {
+      if (orchestration && !orchestration.auto_advance) handleToggleAutoAdvance();
+    } else if (action.kind === 'confirm' && action.moduleId) {
+      handleSubmitForGate(action.moduleId);
+    } else if (action.kind === 'accept' && action.moduleId) {
+      handleResolveDispute(action.moduleId, 'accept_review');
+    } else if (action.kind === 'override' && action.moduleId) {
+      handleResolveDispute(action.moduleId, 'override_review');
+    }
+  };
+
+  const nextStepTone = nextStep?.tone === 'alert'
+    ? 'bg-amber-50 border-amber-300'
+    : nextStep?.tone === 'wait'
+    ? 'bg-sky-50 border-sky-200'
+    : 'bg-emerald-50 border-emerald-300';
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
@@ -332,13 +648,50 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
         </div>
       </div>
 
+      {nextStep && (
+        <div className={`border rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${nextStepTone}`}>
+          <div className="space-y-1 min-w-0">
+            <p className="text-[11px] font-bold text-slate-500">你现在要做的</p>
+            <h2 className="text-base font-bold text-slate-900">{nextStep.title}</h2>
+            <p className="text-sm text-slate-600 leading-relaxed">{nextStep.body}</p>
+          </div>
+          {(nextStep.primary || nextStep.secondary) && (
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              {nextStep.secondary && (
+                <button
+                  onClick={() => runNextStep(nextStep.secondary!)}
+                  disabled={actionLoading || orchestrationBusy}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 transition cursor-pointer disabled:opacity-50"
+                >
+                  {nextStep.secondary.label}
+                </button>
+              )}
+              {nextStep.primary && (
+                <button
+                  onClick={() => runNextStep(nextStep.primary!)}
+                  disabled={actionLoading || orchestrationBusy}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  {nextStep.primary.label}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 迭代周期主控条：单一活跃迭代 + 生命周期操作 + 历史归档回溯 */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-3 border-b border-slate-100">
           {/* 左侧：当前查看的迭代标题、状态标签、编辑重命名 */}
           <div className="space-y-1.5">
             <div className="flex items-center gap-2.5">
-              {isActiveRunSelected ? (
+              {readyToSeal ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-900 border border-amber-300">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-amber-600" />
+                  待封版
+                </span>
+              ) : isActiveRunSelected ? (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                   进行中迭代
@@ -451,13 +804,121 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
                 <div className="bg-emerald-500 h-2 transition-all duration-500" style={{ width: `${progressPercent}%` }} />
               </div>
               <button
-                onClick={() => handleSelectRunTab(selectedRun.id)}
+                onClick={() => {
+                  handleSelectRunTab(selectedRun.id);
+                  if (isActiveRunSelected) loadOrchestration(selectedRun.id);
+                }}
                 className="p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100 transition cursor-pointer"
                 title="刷新"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
               </button>
             </div>
+          </div>
+        )}
+
+        {/* 自动编排状态：当前工序与卡点原因 */}
+        {isActiveRunSelected && orchestration && (
+          <div className="pt-3 border-t border-slate-100 space-y-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs">
+                <Bot className="w-4 h-4 text-emerald-600" />
+                <span className="font-bold text-slate-900">自动编排</span>
+                <span
+                  className={`px-2 py-0.5 rounded-full border font-semibold ${
+                    orchestration.auto_advance && orchestration.orchestrator_enabled
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      : 'bg-slate-100 text-slate-600 border-slate-200'
+                  }`}
+                >
+                  {orchestration.auto_advance && orchestration.orchestrator_enabled ? '已开启' : '已关闭'}
+                </span>
+                <span className="text-slate-500">
+                  每 3 秒自动刷新
+                </span>
+                {orchestration.run_block_reason && (
+                  <span className="text-rose-700 font-medium">
+                    {runBlockLabel[orchestration.run_block_reason] || orchestration.run_block_reason}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleAdvanceNow}
+                  disabled={orchestrationBusy || !orchestration.auto_advance || readyToSeal}
+                  className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 transition cursor-pointer disabled:opacity-50"
+                  title={readyToSeal ? '工序已全部定稿，下一步是完成并封版' : '立即扫描并派发可推进的工序'}
+                >
+                  <Play className="w-3.5 h-3.5 text-emerald-600" />
+                  立即推进
+                </button>
+                <button
+                  onClick={handleToggleAutoAdvance}
+                  disabled={orchestrationBusy}
+                  className="px-3 py-1 rounded-lg text-xs font-semibold text-emerald-700 hover:text-emerald-900 underline cursor-pointer disabled:opacity-50"
+                  title="自动编排负责派活、检查和协作评审。影子模式开启时，检查通过的阶段也要等您确认。"
+                >
+                  {orchestration.auto_advance ? '关闭自动编排' : '开启自动编排'}
+                </button>
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              自动编排负责持续派活与检查。影子模式开启时，检查通过的阶段也要等您确认；关闭后，普通阶段会自动继续。方向、花钱和发布始终由您确认。
+            </p>
+
+            {orchestration.active_stages.length > 0 ? (
+              <div className="space-y-1.5">
+                {orchestration.active_stages.map((stage) => {
+                  const label = stageStateLabel[stage.state] || stageStateLabel.ready;
+                  return (
+                    <div
+                      key={stage.module_id}
+                      className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-mono font-bold text-slate-700 shrink-0">工序 {stage.module_code}</span>
+                        <span className="font-semibold text-slate-900 shrink-0">{stage.name}</span>
+                        <span className={`px-2 py-0.5 rounded-full border font-semibold shrink-0 ${label.cls}`}>
+                          {label.text}
+                        </span>
+                        <span className="text-slate-500 truncate">{stage.detail}</span>
+                      </div>
+                      {(stage.state === 'awaiting_human_confirm' || stage.state === 'revision_failed') && (
+                        <button
+                          onClick={() => handleSubmitForGate(stage.module_id)}
+                          disabled={orchestrationBusy}
+                          className="shrink-0 px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition cursor-pointer disabled:opacity-50"
+                        >
+                          确认并提交检查
+                        </button>
+                      )}
+                      {stage.state === 'dispute' && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            onClick={() => handleResolveDispute(stage.module_id, 'accept_review')}
+                            disabled={orchestrationBusy}
+                            title="把评审意见发回主责 Agent 修订"
+                            className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition cursor-pointer disabled:opacity-50"
+                          >
+                            采纳评审意见
+                          </button>
+                          <button
+                            onClick={() => handleResolveDispute(stage.module_id, 'override_review')}
+                            disabled={orchestrationBusy}
+                            title="不采纳评审意见，按当前交付物继续检查"
+                            className="px-3 py-1 rounded-lg bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-semibold transition cursor-pointer disabled:opacity-50"
+                          >
+                            按当前交付物继续
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : readyToSeal ? null : (
+              <p className="text-xs text-slate-400">当前没有进行中的工序。</p>
+            )}
           </div>
         )}
       </div>
@@ -503,7 +964,7 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {selectedRun.modules.map(mod => {
-              const isLocked = !mod.is_unlocked;
+              const isLocked = !mod.is_unlocked && mod.phase !== 'baselined';
               const hasBlockingIssues = (mod.blocking_issues_count || 0) > 0;
               const hasOpenIssues = (mod.open_issues_count || 0) > 0;
               const isBaselined = mod.phase === 'baselined';
@@ -544,7 +1005,7 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
                         {gateConfigs[mod.id] && (
                           <GateBadge
                             level={gateConfigs[mod.id].level}
-                            gateName={gateConfigs[mod.id].name}
+                            resolved={isBaselined}
                             size="sm"
                           />
                         )}

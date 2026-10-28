@@ -12,13 +12,14 @@ Enforces:
 """
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 
 from backend.app.core.config import settings
 from backend.app.models.entities import (
@@ -28,7 +29,9 @@ from backend.app.models.entities import (
     GateApplication,
     LeadShadowDecision,
     Issue,
-    ExecutiveRisk
+    ExecutiveRisk,
+    CollaborationSession,
+    SessionMessage,
 )
 from backend.app.services.gate_keeper import (
     evaluate_gate_level,
@@ -55,6 +58,58 @@ def _normalize_decision(decision_str: Optional[str]) -> str:
     elif d in ["adjust", "adjusted", "needs_adjustment", "pivot"]:
         return "adjusted"
     return d
+
+
+def _plain_compliance_findings(findings: Any) -> List[str]:
+    lines: List[str] = []
+    for raw in findings or []:
+        text = str(raw).strip()
+        text = re.sub(r"^\[cmp [^\]]+\]\s*", "", text)
+        text = text.replace("高敏感系统权限申请: ", "用到了")
+        if text:
+            lines.append(text)
+    return lines[:3]
+
+
+def compose_lead_rationale(
+    *,
+    escalated: bool,
+    escalation_reasons: Optional[List[str]],
+    blocking_findings: List[str],
+) -> tuple:
+    """项目总控对负责人的口头汇报。结论只复述已经写明的事实，不另编一套空话。"""
+    if escalated:
+        reasons = "、".join(escalation_reasons or []) or "敏感事项"
+        return "adjusted", f"我看完了。这件事必须您亲自签：{reasons}。我不能代签。"
+    if blocking_findings:
+        stuck = "；".join(item.rstrip("。") for item in blocking_findings[:3])
+        return "rejected", f"我看完了，建议先别过。卡在：{stuck}。改完再请您看。"
+    return "approved", "我看完了，建议放行。上面要确认的事，材料和依据是齐的。"
+
+
+def _gate_blocking_findings(evidence: Any) -> List[str]:
+    """Returns only explicit machine-readable failures; prose must never decide a gate."""
+    findings: List[str] = []
+    for item in evidence or []:
+        if not isinstance(item, dict):
+            continue
+        checker = str(item.get("checker") or "")
+        if item.get("passed") is False:
+            findings.append("交付物核对没有通过" if checker == "deliverable_audit" else "这一项核对没有通过")
+        if checker == "compliance_engine" and item.get("status") in ("needs_fix", "legal_review"):
+            lines = _plain_compliance_findings(item.get("findings"))
+            if lines:
+                findings.extend(lines)
+            elif item.get("status") == "needs_fix":
+                findings.append("合规初筛还有要改的地方")
+            else:
+                findings.append("合规认为需要法务看过才能继续")
+        if checker == "collaboration_review":
+            for review in item.get("results") or []:
+                if isinstance(review, dict) and review.get("verdict") == "request_changes":
+                    who = {"mr": "市场研究", "ba": "商业分析", "pm": "产品", "mkt": "增长", "ux": "设计", "eng": "研发", "qa": "测试", "ops": "运营", "cmp": "合规"}.get(str(review.get("reviewer") or ""), "同事")
+                    findings.append(f"{who}要求再改一版")
+    return findings
 
 
 async def evaluate_gate_by_lead(
@@ -90,28 +145,26 @@ async def evaluate_gate_by_lead(
 
     shadow_mode_enabled = product.shadow_mode if product else True
     effective_level = gate.effective_level
+    blocking_findings = _gate_blocking_findings(gate.evidence)
 
-    # 1. Lead assesses recommendation
-    # If escalated or high risk triggers, recommend adjustment or reject
-    if gate.is_escalated and any(t in ["payment", "privacy"] for t in gate.escalation_reasons):
-        lead_recommendation = "adjusted"
-        lead_rationale = (
-            f"【Lead 预评估】检测到关口触发高敏感升级 ({', '.join(gate.escalation_reasons)})。"
-            "依系统硬红线，Lead 严禁放行支付/隐私相关事项，建议人类负责人重点审查并要求补充合规凭证。"
-        )
-    elif "阻断" in gate.risk_assessment or "Critical" in gate.risk_assessment:
-        lead_recommendation = "rejected"
-        lead_rationale = f"【Lead 预评估】存在阻断性风险: {gate.risk_assessment}，建议打回重修。"
-    else:
-        lead_recommendation = "approved"
-        lead_rationale = (
-            f"【Lead 预评估】工序 {gate.module_code} 交付物与事实依据完备 ({len(gate.evidence)} 项佐证)，"
-            "风险已建立应对预案，建议放行。"
-        )
+    # 1. Lead assesses recommendation from structured fields/evidence only.
+    lead_recommendation, lead_rationale = compose_lead_rationale(
+        escalated=bool(gate.is_escalated),
+        escalation_reasons=list(gate.escalation_reasons or []),
+        blocking_findings=blocking_findings,
+    )
 
     # 2. Apply shadow mode rules
+    from backend.app.services.gate_keeper import get_designated_approver
+    designated_approver = await get_designated_approver(db, gate)
+
     now = datetime.now(timezone.utc)
-    if effective_level == "green" and not shadow_mode_enabled:
+    if (
+        effective_level == "green"
+        and not shadow_mode_enabled
+        and designated_approver == "lead"
+        and lead_recommendation == "approved"
+    ):
         # Autonomous mode: lead can self-approve green gate
         gate.status = "approved"
         gate.reviewed_by = lead_actor
@@ -120,7 +173,7 @@ async def evaluate_gate_by_lead(
         gate.decision_action = "approve"
         gate.review_comment = f"[Lead 自主放行] {lead_rationale}"
     else:
-        # Shadow mode (or Yellow/Red gate): lead does NOT approve, remains pending
+        # Shadow mode, Yellow/Red gate, or a gate owned by another approver (e.g. qa for G3): lead only advises
         gate.lead_recommendation = lead_recommendation
         gate.lead_rationale = lead_rationale
 
@@ -229,6 +282,29 @@ async def sync_shadow_decision_upon_human_review(
     return None
 
 
+SHADOW_READY_MIN_RESOLVED = 10
+SHADOW_READY_MIN_RATE = 0.9
+SHADOW_READY_RECENT_WINDOW = 5
+
+
+def shadow_readiness(resolved_decisions: List[LeadShadowDecision]) -> Tuple[bool, str]:
+    """Only a suggestion for the human; shadow mode is never switched off automatically."""
+    total = len(resolved_decisions)
+    if total < SHADOW_READY_MIN_RESOLVED:
+        return False, f"人类已裁决 {total} 次，至少需要 {SHADOW_READY_MIN_RESOLVED} 次才能评估"
+    consistent = sum(1 for d in resolved_decisions if d.is_consistent is True)
+    rate = consistent / total
+    if rate < SHADOW_READY_MIN_RATE:
+        return False, f"一致率 {rate * 100:.1f}%，低于 {SHADOW_READY_MIN_RATE * 100:.0f}%"
+    recent = resolved_decisions[-SHADOW_READY_RECENT_WINDOW:]
+    if any(d.is_consistent is not True for d in recent):
+        return False, f"最近 {SHADOW_READY_RECENT_WINDOW} 次裁决中有分歧"
+    return True, (
+        f"人类已裁决 {total} 次，一致率 {rate * 100:.1f}%，最近 {SHADOW_READY_RECENT_WINDOW} 次全部一致，"
+        "可以考虑关闭影子模式，让 lead 自行放行绿级关口"
+    )
+
+
 async def get_shadow_mode_stats(db: AsyncSession, product_id: str) -> Dict[str, Any]:
     """
     Calculates consistency metrics for a product under Shadow Mode:
@@ -237,7 +313,7 @@ async def get_shadow_mode_stats(db: AsyncSession, product_id: str) -> Dict[str, 
     stmt = select(LeadShadowDecision).where(
         LeadShadowDecision.product_id == product_id,
         LeadShadowDecision.human_decision.isnot(None)
-    )
+    ).order_by(LeadShadowDecision.resolved_at.asc(), LeadShadowDecision.created_at.asc())
     res = await db.execute(stmt)
     resolved_decisions = res.scalars().all()
 
@@ -254,8 +330,23 @@ async def get_shadow_mode_stats(db: AsyncSession, product_id: str) -> Dict[str, 
     pending_res = await db.execute(pending_stmt)
     pending_count = pending_res.scalar() or 0
 
+    ready_to_disable, readiness_reason = shadow_readiness(resolved_decisions)
+    product = (await db.execute(select(Product).where(Product.id == product_id))).scalar_one_or_none()
+    shadow_enabled = True if product is None or product.shadow_mode is None else bool(product.shadow_mode)
+    if not shadow_enabled:
+        ready_to_disable, readiness_reason = False, "影子模式已关闭"
+
     return {
         "product_id": product_id,
+        "product_code": product.code if product else None,
+        "shadow_mode_enabled": shadow_enabled,
+        "ready_to_disable": ready_to_disable,
+        "readiness_reason": readiness_reason,
+        "readiness_thresholds": {
+            "min_resolved": SHADOW_READY_MIN_RESOLVED,
+            "min_consistency_rate": SHADOW_READY_MIN_RATE,
+            "recent_window": SHADOW_READY_RECENT_WINDOW,
+        },
         "total_evaluated": total,
         "consistent_count": consistent_count,
         "divergent_count": divergent_count,
@@ -416,6 +507,8 @@ async def generate_project_daily_digest(
     allocated = product.budget_allocated
     burn_rate_pct = f"{(spent / allocated * 100):.1f}%" if allocated > 0 else "0.0%"
 
+    collaboration = await _collaboration_digest(db, product, active_run)
+
     digest = {
         "report_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "product_name": product.name,
@@ -445,12 +538,178 @@ async def generate_project_daily_digest(
         ],
         "shadow_consistency": {
             "consistency_rate": shadow_stats["consistency_percentage"],
-            "total_evaluated": shadow_stats["total_evaluated"]
+            "total_evaluated": shadow_stats["total_evaluated"],
+            "ready_to_disable": bool(product.shadow_mode and shadow_stats["ready_to_disable"]),
+            "readiness_reason": shadow_stats["readiness_reason"]
         },
+        "active_run_auto_advance": bool(active_run.auto_advance) if active_run else None,
+        "collaboration": collaboration,
         "lead_dispatch_recommendation": (
             "存在待审批关口，建议负责人先行处置" if pending_gates
+            else "存在协作评审分歧，需负责人裁决" if collaboration["disputes_pending"]
             else f"当前项目处于【{product.stage}】阶段，各工序运转正常，按计划推进。"
         )
     }
 
+    run_modules = []
+    if active_run:
+        run_modules = (await db.execute(
+            select(ModuleInstance).where(ModuleInstance.run_id == active_run.id)
+        )).scalars().all()
+    baselined = sum(1 for m in run_modules if m.phase == "baselined")
+    pending_items = [
+        {
+            "item_type": "关口审批",
+            "title": f"工序 {g.module_code} {g.gate_name}（{g.effective_level}）",
+            "urgency": "high" if g.effective_level == "red" else "medium",
+        }
+        for g in pending_gates
+    ] + [
+        {"item_type": "评审分歧", "title": f"工序 {code} 主责与评审方意见未收敛，待您裁决", "urgency": "high"}
+        for code in collaboration["dispute_stages"]
+    ]
+    if collaboration["handoff_gaps_open"]:
+        pending_items.append({
+            "item_type": "交接缺口",
+            "title": f"{collaboration['handoff_gaps_open']} 个上游基线缺少下游所需锚点",
+            "urgency": "medium",
+        })
+    digest.update({
+        "date": digest["report_date"],
+        "author": "lead",
+        "active_run_id": active_run.id if active_run else None,
+        "active_run_name": active_run.name if active_run else None,
+        "template_id": active_run.template_id if active_run else None,
+        "stage_progress": {
+            "baselined_modules": baselined,
+            "total_modules": len(run_modules),
+            "completion_rate_percent": round(baselined / len(run_modules) * 100) if run_modules else 0,
+        },
+        "budget_status": {
+            "spent": spent,
+            "budget": allocated,
+            "burn_percent": round(spent / allocated * 100, 1) if allocated > 0 else 0,
+        },
+        "today_events": [],
+        "pending_items": pending_items,
+        "lead_assessment": digest["lead_dispatch_recommendation"],
+    })
     return digest
+
+
+async def _collaboration_digest(
+    db: AsyncSession, product: Product, active_run: Optional[WorkflowRun]
+) -> Dict[str, Any]:
+    disputes = (await db.execute(select(ExecutiveRisk).where(
+        ExecutiveRisk.product_code == product.code,
+        ExecutiveRisk.rule_code.like("ORCH_DISPUTE_%"),
+        ExecutiveRisk.is_resolved == False,  # noqa: E712
+    ))).scalars().all()
+    summary: Dict[str, Any] = {
+        "reviews_today": 0,
+        "review_requests_changes_today": 0,
+        "disputes_pending": len(disputes),
+        "dispute_stages": sorted(r.rule_code.replace("ORCH_DISPUTE_", "") for r in disputes),
+        "carried_over_crs": 0,
+        "handoff_gaps_open": 0,
+    }
+    if not active_run:
+        return summary
+    module_ids = (await db.execute(
+        select(ModuleInstance.id).where(ModuleInstance.run_id == active_run.id)
+    )).scalars().all()
+    if not module_ids:
+        return summary
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
+    reviews = (await db.execute(
+        select(SessionMessage)
+        .join(CollaborationSession, CollaborationSession.id == SessionMessage.session_id)
+        .where(
+            CollaborationSession.module_id.in_(module_ids),
+            SessionMessage.message_type == "review",
+            SessionMessage.created_at >= today,
+        )
+    )).scalars().all()
+    summary["reviews_today"] = len(reviews)
+    summary["review_requests_changes_today"] = sum(
+        1 for m in reviews if ((m.metadata_json or {}).get("review") or {}).get("verdict") == "request_changes"
+    )
+    open_statuses = ["open", "investigating", "fixing", "verifying"]
+    for category, key in (("requirement_cr", "carried_over_crs"), ("handoff_gap", "handoff_gaps_open")):
+        summary[key] = (await db.execute(select(func.count(Issue.id)).where(
+            Issue.target_module_id.in_(module_ids),
+            Issue.category == category,
+            Issue.status.in_(open_statuses),
+        ))).scalar() or 0
+    return summary
+
+
+_OPEN_ISSUE_STATUSES = ["open", "investigating", "fixing", "verifying"]
+
+
+async def _inbox_module(db: AsyncSession, product_id: str, module_code: str) -> Optional[ModuleInstance]:
+    run = (await db.execute(select(WorkflowRun).where(
+        WorkflowRun.product_id == product_id,
+        WorkflowRun.status == "in_progress",
+    ).order_by(WorkflowRun.created_at.desc()))).scalars().first()
+    if run is None:
+        return None
+    return (await db.execute(select(ModuleInstance).where(
+        ModuleInstance.run_id == run.id,
+        ModuleInstance.module_code == module_code,
+    ))).scalar_one_or_none()
+
+
+async def get_decision_inbox(db: AsyncSession, initiative_id: str) -> Dict[str, Any]:
+    """The single human queue: review disputes, exhausted revisions, and missing handoff anchors."""
+    products = (await db.execute(select(Product).where(Product.initiative_id == initiative_id))).scalars().all()
+    by_code = {p.code: p for p in products}
+    items: List[Dict[str, Any]] = []
+    risks = (await db.execute(select(ExecutiveRisk).where(
+        ExecutiveRisk.initiative_id == initiative_id,
+        ExecutiveRisk.is_resolved == False,  # noqa: E712
+        or_(
+            ExecutiveRisk.rule_code.like("ORCH_DISPUTE_%"),
+            ExecutiveRisk.rule_code.like("ORCH_STUCK_%"),
+        ),
+    ).order_by(ExecutiveRisk.created_at.asc()))).scalars().all()
+    for risk in risks:
+        kind = "dispute" if risk.rule_code.startswith("ORCH_DISPUTE_") else "stuck"
+        stage = risk.rule_code.removeprefix("ORCH_DISPUTE_").removeprefix("ORCH_STUCK_")
+        product = by_code.get(risk.product_code or "")
+        module = await _inbox_module(db, product.id, stage) if product else None
+        if module is None:
+            continue
+        items.append({
+            "kind": kind,
+            "risk_id": risk.id,
+            "module_id": module.id,
+            "module_code": module.module_code,
+            "product_code": risk.product_code,
+            "title": risk.title,
+            "detail": risk.description,
+        })
+    if products:
+        rows = (await db.execute(
+            select(Issue, ModuleInstance, Product)
+            .join(ModuleInstance, ModuleInstance.id == Issue.source_module_id)
+            .join(WorkflowRun, WorkflowRun.id == ModuleInstance.run_id)
+            .join(Product, Product.id == WorkflowRun.product_id)
+            .where(
+                Product.id.in_([p.id for p in products]),
+                Issue.category == "handoff_gap",
+                Issue.status.in_(_OPEN_ISSUE_STATUSES),
+            )
+        )).all()
+        for issue, module, product in rows:
+            summary = issue.description.get("summary") if isinstance(issue.description, dict) else ""
+            items.append({
+                "kind": "handoff_gap",
+                "risk_id": None,
+                "module_id": module.id,
+                "module_code": module.module_code,
+                "product_code": product.code,
+                "title": issue.title,
+                "detail": summary or issue.title,
+            })
+    return {"initiative_id": initiative_id, "items": items}

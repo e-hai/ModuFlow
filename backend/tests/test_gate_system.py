@@ -16,7 +16,8 @@ from backend.app.models.entities import (
     WorkflowRun,
     ModuleInstance,
     GateApplication,
-    ExecutiveRisk
+    ExecutiveRisk,
+    Artifact
 )
 from backend.app.services.workflow_engine import seed_templates_if_empty, create_workflow_run_from_template, can_baseline_module
 from backend.app.services.agent_roles import seed_agent_roles_if_empty, STAGE_ROLE_CONFIGS, HOTFIX_GATE_CONFIG
@@ -76,20 +77,30 @@ def test_auto_escalation_rules():
     assert res_normal["effective_level"] == "green"
     assert not res_normal["is_escalated"]
 
-    # 2. Payment trigger -> 🔴 RED
-    res_pay = evaluate_gate_level("05", {"content": "新增 24h 通行证与 Stripe IAP 支付通道"})
+    # 2. Payment trigger -> 🔴 RED only when the structured flag is set
+    res_pay = evaluate_gate_level("05", {"is_payment_related": True})
     assert res_pay["effective_level"] == "red"
     assert res_pay["effective_approver"] == "human"
     assert res_pay["is_escalated"]
-    assert any("payment" in r for r in res_pay["escalation_reasons"])
+    assert any("payment" in r or "收款" in r or "支付" in r for r in res_pay["escalation_reasons"])
+
+    res_pay_text = evaluate_gate_level("05", {"content": "新增 24h 通行证与 Stripe IAP 支付通道"})
+    assert res_pay_text["effective_level"] == "green"
+    assert not res_pay_text["is_escalated"]
+    assert res_pay_text["keyword_hints"]
+
+    res_pricing = evaluate_gate_level("02", {"content": "混合变现阶梯、定价阶梯与 LTV/CAC"})
+    assert res_pricing["effective_level"] == "yellow"
+    assert not res_pricing["is_escalated"]
+    assert res_pricing["keyword_hints"]
 
     # 3. Privacy trigger -> 🔴 RED
-    res_priv = evaluate_gate_level("03", {"content": "请求收集用户精准位置与通讯录好友列表"})
+    res_priv = evaluate_gate_level("03", {"is_privacy_related": True})
     assert res_priv["effective_level"] == "red"
     assert res_priv["is_escalated"]
 
     # 4. Encryption trigger -> 🔴 RED
-    res_enc = evaluate_gate_level("07", {"content": "物理存储采用 Keychain AES-256 加密"})
+    res_enc = evaluate_gate_level("07", {"is_encryption_related": True})
     assert res_enc["effective_level"] == "red"
     assert res_enc["is_escalated"]
 
@@ -131,7 +142,7 @@ async def test_one_page_gate_application_creation_and_red_notification():
             evidence=["PRD Linter 100/100", "8 项 Gherkin 验收用例通过"],
             risk_assessment="涉及苹果 IAP 扣款回调，需在工序 07 研发实现双向对账",
             submitted_by="agent:lead",
-            context={"content": "涉及支付和 IAP 结算流程"}
+            context={"is_payment_related": True}
         )
 
         assert gate.effective_level == "red"
@@ -449,3 +460,119 @@ async def test_gate_rejection_and_adjustment_flow():
         passed2, reason2, _ = await check_stage_gate_passed(db, m05.id)
         assert not passed2
         assert "已被驳回" in reason2
+
+
+_PASSING_PRD = """
+## 负责人 30 秒拍板摘要卡
+干。
+
+第 0 章：元信息
+第 1 章：范围封版
+第 2 章：信息架构
+V-01 V-02 V-03
+第 3 章：详细规格
+M1 M2 M3
+第 4 章：商业规则
+第 5 章：数据字典
+第 6 章：埋点
+第 7 章：验收
+Given 用户打开应用 When 点击主按钮 Then 进入结果页
+
+| a | b |
+| --- | --- |
+| 1 | 2 |
+
+| a | b |
+| --- | --- |
+| 1 | 2 |
+
+| a | b |
+| --- | --- |
+| 1 | 2 |
+
+| a | b |
+| --- | --- |
+| 1 | 2 |
+
+| a | b |
+| --- | --- |
+| 1 | 2 |
+
+```mermaid
+flowchart LR
+  A --> B
+```
+"""
+
+_HEALTHY_UE = """
+```json
+{"organic_share": 0.2, "paid_cpi_usd": 1.0, "ad_arpu_usd": 2.0, "iap_conversion_rate": 0.1, "iap_net_arppu_usd": 20}
+```
+"""
+
+_WEAK_UE = """
+```json
+{"organic_share": 0.0, "paid_cpi_usd": 2.0, "ad_arpu_usd": 0.5, "iap_conversion_rate": 0.01, "iap_net_arppu_usd": 10}
+```
+"""
+
+
+@pytest.mark.asyncio
+async def test_baseline_runs_deliverable_checker_and_blocks_yellow_without_gate():
+    """Green stages still need a passing artifact check. Yellow stages need a human gate first."""
+    async with AsyncSessionLocal() as db:
+        init = StrategicInitiative(id="gate-init-audit", name="交付物检查")
+        prod = Product(id="gate-p-audit", initiative_id=init.id, name="检查产品", code="G-AUDIT", stage="growth")
+        db.add_all([init, prod])
+        await db.commit()
+        ensure_test_product_authorization("gate-init-audit", "G-AUDIT")
+
+        run = await create_workflow_run_from_template(db, prod.id, "full-product-launch", "Sprint-Audit")
+        m05 = (await db.execute(select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "05"))).scalar_one()
+        m02 = (await db.execute(select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "02"))).scalar_one()
+
+        db.add(Artifact(
+            module_id=m05.id, title="thin.md", version=1, artifact_type="markdown",
+            content="只有一句说明", content_hash="thin", is_baseline=False,
+        ))
+        await db.commit()
+        blocked, reason = await can_baseline_module(db, m05.id)
+        assert not blocked
+        assert "交付物检查未通过" in reason
+
+        db.add(Artifact(
+            module_id=m05.id, title="prd.md", version=2, artifact_type="markdown",
+            content=_PASSING_PRD, content_hash="prd", is_baseline=False,
+        ))
+        await db.commit()
+        allowed, reason_ok = await can_baseline_module(db, m05.id)
+        assert allowed, reason_ok
+
+        db.add(Artifact(
+            module_id=m02.id, title="ue.md", version=1, artifact_type="markdown",
+            content=_HEALTHY_UE, content_hash="ue", is_baseline=False,
+        ))
+        await db.commit()
+        yellow_blocked, yellow_reason = await can_baseline_module(db, m02.id)
+        assert not yellow_blocked
+        assert "须先提交关口申请" in yellow_reason
+
+        gate = await create_or_update_gate_application(
+            db=db, module_id=m02.id, recommendation="单位经济待审",
+            evidence=["见交付物"], risk_assessment="无", submitted_by="agent:ba",
+        )
+        await review_gate_application(
+            db=db, gate_id=gate.id, action="approve", comment="先看数字",
+            actor="human:sponsor", actor_role="human",
+        )
+        weak = (await db.execute(select(Artifact).where(Artifact.module_id == m02.id))).scalar_one()
+        weak.content = _WEAK_UE
+        await db.commit()
+        ratio_blocked, ratio_reason = await can_baseline_module(db, m02.id)
+        assert not ratio_blocked
+        assert "交付物检查未通过" in ratio_reason
+
+        weak.content = _HEALTHY_UE
+        await db.commit()
+        ratio_ok, ratio_ok_reason = await can_baseline_module(db, m02.id)
+        assert ratio_ok, ratio_ok_reason

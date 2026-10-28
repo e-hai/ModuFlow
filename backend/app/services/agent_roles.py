@@ -2,6 +2,13 @@ from typing import Dict, Any, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from backend.app.models.entities import AgentRoleDefinition, ModuleInstance
+from backend.app.mcp.role_mcp_server import ROLE_MCP_TOOLS
+
+
+def _mcp_tool_names(role_code: str) -> List[str]:
+    """lead / cmp have no MCP server; their checks live in lead_service / compliance_engine."""
+    return [tool["name"] for tool in ROLE_MCP_TOOLS.get(role_code, [])]
+
 
 # ==============================================================================
 # Agent Roles for ModuFlow (Lead + 8 Stage Specialists)
@@ -34,13 +41,7 @@ DEFAULT_AGENT_ROLES: List[Dict[str, Any]] = [
             "   - ❌ 严禁提交应用商店提审。\n"
             "4. 【所有决策留痕】：你的所有调度建议、CR 仲裁与关口评估，必须落盘记录至物理工作区 `decisions/` 目录。"
         ),
-        "allowed_tools": [
-            "schedule_tracker",
-            "handover_validator",
-            "gate_application_compiler",
-            "cr_arbitrator",
-            "daily_digest_builder"
-        ],
+        "allowed_tools": _mcp_tool_names("lead"),
         "preferred_executor": "cli"
     },
     {
@@ -64,14 +65,7 @@ DEFAULT_AGENT_ROLES: List[Dict[str, Any]] = [
             "   - 严禁越界定价：严禁设计具体产品价格套餐与订阅阶梯（严格归属于商业分析 ba）；\n"
             "   - 严禁越界设计功能：严禁直接输出产品线框图、功能规格或 PRD（严格归属于产品经理 pm 与设计 ux）。"
         ),
-        "allowed_tools": [
-            "tam_sam_som_calculator",
-            "competitor_matrix_analyzer",
-            "app_store_review_miner",
-            "user_persona_builder",
-            "wedge_strategy_synthesizer",
-            "web_search"
-        ],
+        "allowed_tools": _mcp_tool_names("mr"),
         "preferred_executor": "cli"
     },
     {
@@ -95,7 +89,7 @@ DEFAULT_AGENT_ROLES: List[Dict[str, Any]] = [
             "   - 严禁越界界面设计：严禁设计具体弹窗交互、按钮位置与视觉版式（严格归属于 pm 与 ux）；\n"
             "   - 严禁编写技术实现：严禁涉及支付 API 接入、StoreKit 2 / Stripe 代码或 Webhook（严格归属于研发架构 eng）。"
         ),
-        "allowed_tools": ["financial_calc", "market_pricing", "unit_economics"],
+        "allowed_tools": _mcp_tool_names("ba"),
         "preferred_executor": "cli"
     },
     {
@@ -122,7 +116,7 @@ DEFAULT_AGENT_ROLES: List[Dict[str, Any]] = [
             "   - 严禁越界立项：立项决策已在前序工序 04 闭环，工序 05 严禁出现“假门测试待回填审计表”或“Go/Pivot/Kill 门禁”；\n"
             "   - 响应下游 CR 闭环：向下接收工序 06/07 提出的需求变更单 (CR) 评审修订新基线，绝不暴力清空基线。"
         ),
-        "allowed_tools": ["prd_generator", "user_story_mapping", "backlog_manager"],
+        "allowed_tools": _mcp_tool_names("pm"),
         "preferred_executor": "cli"
     },
     {
@@ -147,7 +141,7 @@ DEFAULT_AGENT_ROLES: List[Dict[str, Any]] = [
             "   - 标准输出契约：全球多语种 ASO 优化词表、社媒冷启动方案、KOL 推广排期、买量素材分镜与渠道 eCAC 熔断监控线；\n"
             "   - 严格禁区：严格执行获客成本 (eCAC) 监控，超标立即熔断，严禁未经 ROI 验证盲目扩量。"
         ),
-        "allowed_tools": ["growth_funnel", "aso_analyzer", "ad_creative_builder"],
+        "allowed_tools": _mcp_tool_names("mkt"),
         "preferred_executor": "cli"
     },
     {
@@ -162,18 +156,18 @@ DEFAULT_AGENT_ROLES: List[Dict[str, Any]] = [
             "Sketch 级高保真 HTML 画板标注包 (index.html) 与独立 SVG 图标资产库交付、向工序 05 提出体验层需求变更单 (CR)。"
         ),
         "system_persona": (
-            "你是一名兼具美学品味与严密平台 HIG 规范的资深 UX/UI 设计总监 (ux)。你的核心使命是交付可工程落地的设计规范与交互原型：\n"
+            "你是一名兼具美学品味与严密平台设计规范 (Apple HIG / Material 3) 的资深 UX/UI 设计总监 (ux)。你的核心使命是交付可工程落地的设计规范与交互原型：\n"
             "1. 【标准输入契约】：工序 05 封版的纯业务 PRD（全站视图索引 `V-01~V-05`、组件清单 `C-01~C-xx`、交互状态流转、错误文案字典）。\n"
             "2. 【标准输出契约】：\n"
-            "   - 交付物规范文档：全局 Design Tokens（色彩/字阶/圆角/间距及代码契约）、iOS 灵动岛安全区（顶部 ≥71pt、底部 ≥34pt、触控热区 ≥44×44pt）合规矩阵、逐视图四态规范（Default/Loading/Empty/Error）；\n"
+            "   - 交付物规范文档：全局 Design Tokens（色彩/字阶/圆角/间距及代码契约）、按项目 Profile 平台的安全区与触控热区合规矩阵、逐视图四态规范（Default/Loading/Empty/Error）；\n"
             "   - 生产级资产包：`index.html`（多画板标注与代码复制工作台）、`assets/icons/*.svg`、`assets/tokens/design_tokens.json`。\n"
             "3. 【允许的核心能力】：生成 UI 规范与视觉契约、打包 SVG 图标与字阶配置、向工序 05 发起需求变更单 (CR)。\n"
             "4. 【严格能力边界与禁区 (Redlines)】：\n"
             "   - 严禁私自增删改业务逻辑：如果发现交互割裂或流程繁琐，必须向工序 05 提【需求变更单 (CR)】驱动 PRD 修订，严禁擅自修改业务分支；\n"
             "   - 严禁编写生产业务代码：只输出前端交互原型与样式规范，严禁编写生产级状态机、网络请求与数据持久化代码（归属于 eng）；\n"
-            "   - 严禁违背平台合规红线：严禁侵入灵动岛安全区（顶部留白必须 ≥71pt），触控热区不得小于 44×44pt。"
+            "   - 严禁违背平台合规红线：安全区与触控热区以下方【本项目 Profile 红线】为准，不得套用其他平台的规范。"
         ),
-        "allowed_tools": ["design_token_engine", "ia_builder", "usability_tester"],
+        "allowed_tools": _mcp_tool_names("ux"),
         "preferred_executor": "cli"
     },
     {
@@ -184,8 +178,8 @@ DEFAULT_AGENT_ROLES: List[Dict[str, Any]] = [
         "avatar_icon": "Cpu",
         "color": "cyan",
         "responsibilities": (
-            "负责技术栈选型与核心模块划分、物理数据模型设计与存储实现(SQLite DDL/ORM/Keychain)、"
-            "客户端零推理成本把控、核心业务逻辑源码交付与单元测试覆盖率报告(≥80%)、向工序 05 提出技术层需求变更单 (CR)。"
+            "负责技术栈选型与核心模块划分、物理数据模型设计与存储实现(SQLite DDL/ORM/系统安全存储)、"
+            "按项目 Profile 把控客户端推理成本、核心业务逻辑源码交付与单元测试覆盖率报告(≥80%)、向工序 05 提出技术层需求变更单 (CR)。"
         ),
         "system_persona": (
             "你是一名崇尚轻量架构、严谨代码与极致性能的首席架构师兼工程实现专家 (eng)。你的核心使命是交付稳健高效的生产级代码：\n"
@@ -197,10 +191,10 @@ DEFAULT_AGENT_ROLES: List[Dict[str, Any]] = [
             "3. 【允许的核心能力】：选定技术栈与存储引擎、编写物理建表 DDL 与业务代码、构建自动化测试、发现技术不可行时向工序 05 提 CR。\n"
             "4. 【严格能力边界与禁区 (Redlines)】：\n"
             "   - 严禁私自阉割产品功能：若三方 SDK 限制或性能瓶颈无法落地，严禁粗暴私自砍需求，必须向工序 05 提【需求变更单 (CR)】闭环确认；\n"
-            "   - 严禁客户端重度 AI 推理：死守“客户端零推理成本”红线，AI 超分/抠图必须离线预处理或云端完成，绝不允许客户端高耗电发热；\n"
+            "   - 严守项目推理 Profile：客户端能否运行模型推理以下方【本项目 Profile 红线】为准；\n"
             "   - 严禁兼职自封测试放行：研发自测通过只代表单测绿灯，绝对不等于整机验收通过，发布准入权严格归属于测试保障 qa。"
         ),
-        "allowed_tools": ["code_writer", "schema_designer", "git_worker", "ast_parser"],
+        "allowed_tools": _mcp_tool_names("eng"),
         "preferred_executor": "cli"
     },
     {
@@ -222,10 +216,10 @@ DEFAULT_AGENT_ROLES: List[Dict[str, Any]] = [
             "   - 严格禁区：严禁带病上线！只要存在未修复的 Critical 或 Major 级缺陷，系统强制阻断基线定稿；严禁越界修改生产代码修复 Bug（必须建 Issue 分派 eng 修复）。\n"
             "2. 【工序 09（发布与上线）】：\n"
             "   - 标准输入契约：工序 08 测试绿灯决议、应用商店元数据包、Remote Config 降级配置草案；\n"
-            "   - 标准输出契约：商店提审合规审查表（Apple 4.3 查重度、隐私合规声明）、提审降级保护开关预案 (Remote Config)、灰度发布与回滚计划；\n"
+            "   - 标准输出契约：商店提审合规审查表（按项目平台的商店查重/重复内容政策、隐私合规声明）、提审降级保护开关预案 (Remote Config)、灰度发布与回滚计划；\n"
             "   - 严格禁区：严禁裸奔提审！未配置 Remote Config 降级兜底开关与隐私合规条款，严禁提审放行。"
         ),
-        "allowed_tools": ["test_runner", "defect_tracker", "release_gatekeeper"],
+        "allowed_tools": _mcp_tool_names("qa"),
         "preferred_executor": "cli"
     },
     {
@@ -249,7 +243,7 @@ DEFAULT_AGENT_ROLES: List[Dict[str, Any]] = [
             "   - 严禁伪需求膨胀：严禁把个别用户的极端吐槽直接列为 P0 需求，必须有留存或流失数据印证；\n"
             "   - 严禁跳过工序 05 直接开工：Backlog 必须正式输入给【工序 05 产品经理】发起增量 PRD 评审，不得直接指挥研发或设计。"
         ),
-        "allowed_tools": ["cohort_analyzer", "event_tracking_spec", "funnel_metric"],
+        "allowed_tools": _mcp_tool_names("ops"),
         "preferred_executor": "cli"
     },
     {
@@ -276,15 +270,73 @@ DEFAULT_AGENT_ROLES: List[Dict[str, Any]] = [
             "   - ❌ 严禁放行未提供有效隐私协议或违规采集敏感数据（通讯录、精准定位）的项目；\n"
             "   - ❌ 高风险合规隐患一律强制触发升红至 🔴 G5 关口，并阻断定稿与发布，交由人类与法务顾问审批。"
         ),
-        "allowed_tools": [
-            "compliance_policy_checker",
-            "privacy_data_flow_auditor",
-            "app_store_guideline_linter",
-            "regional_tax_advisor"
-        ],
+        "allowed_tools": _mcp_tool_names("cmp"),
         "preferred_executor": "cli"
     }
 ]
+
+
+def profile_redlines(role_code: str, platform: Optional[str], client_zero_inference: Optional[bool]) -> List[str]:
+    """Profile-specific redlines; thresholds mirror deliverable_audit.audit_design / audit_inference."""
+    from backend.app.services.profile_guard import covers_android, covers_ios
+
+    on_ios = covers_ios(platform)
+    on_android = covers_android(platform)
+    zero_inference = True if client_zero_inference is None else bool(client_zero_inference)
+    lines: List[str] = []
+    if role_code == "ux":
+        if on_ios and on_android:
+            lines.append("平台：iOS 与 Android 都要交付，两端实测值都要出现在同一份设计交付物里。")
+        if on_android:
+            lines += [
+                "Android：遵循 Google Material Design 3，用 `check_material.py` / `audit_material_spec` 检查；",
+                "状态栏/摄像头挖孔顶部避让 ≥24dp（推荐 24~48dp），触控热区 ≥48×48dp；",
+                "交付物 json 字段：`status_bar_safe_dp`、`min_touch_target_dp`。",
+            ]
+        if on_ios:
+            lines += [
+                "iOS：遵循 Apple HIG，用 `check_hig.py` / `audit_hig_safe_area` 检查；",
+                "灵动岛顶部安全区 ≥71pt，底部 Home Indicator 安全区 ≥34pt，触控热区 ≥44×44pt；",
+                "交付物 json 字段：`top_safe_padding_pt`、`bottom_safe_padding_pt`、`min_touch_target_pt`。",
+            ]
+        if on_android and not on_ios:
+            lines.append("严禁套用 iOS 灵动岛 / pt 规范。")
+    elif role_code == "eng":
+        if on_ios and on_android:
+            lines.append("平台：iOS 与 Android 都要实现。iOS 安全存储用 Keychain；Android 用 Keystore / EncryptedSharedPreferences。")
+        elif on_android:
+            lines.append("平台：Android，系统安全存储用 Keystore / EncryptedSharedPreferences；")
+        else:
+            lines.append("平台：iOS，系统安全存储用 Keychain；")
+        if zero_inference:
+            lines.append(
+                "client_zero_inference=true：客户端严禁包含任何模型推理调用，AI 超分/抠图必须离线预处理或云端完成，"
+                "交付物 `client_realtime_ai_calls` 必须为 0；"
+            )
+        else:
+            runtime = "CoreML / ONNX Runtime / TFLite" if on_ios and on_android else (
+                "ONNX Runtime / TFLite" if on_android else "CoreML / ONNX Runtime"
+            )
+            lines.append(
+                f"client_zero_inference=false：允许端侧轻量离线模型（{runtime}），需写明模型体积、首帧耗时与耗电评估；"
+            )
+    elif role_code == "qa":
+        if on_ios and on_android:
+            lines.append("平台：iOS 与 Android 都要提审。iOS 按 App Store Review Guidelines（4.3 查重、5.1 隐私）；Android 按 Google Play Developer Policy（重复内容政策、数据安全表单）。")
+        elif on_android:
+            lines.append("平台：Android，提审合规按 Google Play Developer Policy（重复内容政策、数据安全表单）；严禁套用 Apple 4.3 检查。")
+        else:
+            lines.append("平台：iOS，提审合规按 App Store Review Guidelines（4.3 查重、5.1 隐私）。")
+    return lines
+
+
+def render_persona(role_code: str, persona: str, platform: Optional[str], client_zero_inference: Optional[bool]) -> str:
+    lines = profile_redlines(role_code, platform, client_zero_inference)
+    if not lines:
+        return persona
+    return persona + "\n5. 【本项目 Profile 红线】：\n" + "\n".join(f"   - {line}" for line in lines)
+
+
 # ==============================================================================
 # Mapping from 11 Workflow Stages to Roles and Gates (关口分级模型)
 # ==============================================================================
@@ -372,7 +424,7 @@ STAGE_ROLE_CONFIGS: Dict[str, Dict[str, Any]] = {
         "primary": "ux",
         "collaborators": ["pm"],
         "stage_name": "设计实现",
-        "execution_mode": "human_driven",
+        "execution_mode": "agent_driven",
         "mission_focus": "信息架构、交互主流程原型与可用性测试用例",
         "gate": {
             "name": "HIG/Material 检测",
@@ -386,7 +438,7 @@ STAGE_ROLE_CONFIGS: Dict[str, Dict[str, Any]] = {
         "primary": "eng",
         "collaborators": ["qa"],
         "stage_name": "开发实现",
-        "execution_mode": "human_driven",
+        "execution_mode": "agent_driven",
         "mission_focus": "技术架构选型、工程骨架、接口契约规范与核心业务代码实现",
         "gate": {
             "name": "覆盖率与零推理门禁",
@@ -400,7 +452,7 @@ STAGE_ROLE_CONFIGS: Dict[str, Dict[str, Any]] = {
         "primary": "qa",
         "collaborators": ["eng"],
         "stage_name": "测试与 QA",
-        "execution_mode": "human_driven",
+        "execution_mode": "agent_driven",
         "mission_focus": "冒烟测试用例、边界条件测试与阻断性Issue审查",
         "gate": {
             "name": "G3 质量门",
@@ -468,21 +520,23 @@ def get_stage_gate_conditions(stage_code: str, platform: str = "ios", client_zer
     stage_cfg = STAGE_ROLE_CONFIGS.get(stage_code, {})
     gate_cfg = stage_cfg.get("gate", {})
     conditions = list(gate_cfg.get("conditions", []))
-    norm_platform = (platform or "ios").lower()
+    from backend.app.services.profile_guard import covers_android, covers_ios
 
     if stage_code == "06":
-        if norm_platform == "android":
-            return [
+        conditions_06: List[str] = []
+        if covers_android(platform):
+            conditions_06 += [
                 "根据项目 profile 匹配规则 (Android Material 3)",
                 "状态栏/挖孔避让安全区 >= 24~48dp",
-                "触控热区 >= 48x48dp"
+                "触控热区 >= 48x48dp",
             ]
-        else:
-            return [
+        if covers_ios(platform):
+            conditions_06 += [
                 "根据项目 profile 匹配规则 (iOS HIG)",
                 "iOS 灵动岛顶部安全区 >= 71pt",
-                "触控热区 >= 44x44pt"
+                "触控热区 >= 44x44pt",
             ]
+        return conditions_06
     elif stage_code == "07":
         if client_zero_inference:
             return [
@@ -569,6 +623,10 @@ async def migrate_db_for_roles(db: AsyncSession):
         if "synced_upstream_versions" not in existing_mod_col_names:
             await db.execute(text("ALTER TABLE module_instances ADD COLUMN synced_upstream_versions JSON DEFAULT '{}'"))
 
+        run_cols = (await db.execute(text("PRAGMA table_info(workflow_runs)"))).fetchall()
+        if "auto_advance" not in [col[1] for col in run_cols]:
+            await db.execute(text("ALTER TABLE workflow_runs ADD COLUMN auto_advance BOOLEAN DEFAULT 1"))
+
         # 2. SessionMessage columns
         msg_cols = (await db.execute(text("PRAGMA table_info(session_messages)"))).fetchall()
         existing_msg_col_names = [col[1] for col in msg_cols]
@@ -614,6 +672,10 @@ async def migrate_db_for_roles(db: AsyncSession):
             await db.execute(text("ALTER TABLE gate_applications ADD COLUMN lead_rationale TEXT DEFAULT NULL"))
         if "is_consistent" not in existing_gate_col_names:
             await db.execute(text("ALTER TABLE gate_applications ADD COLUMN is_consistent BOOLEAN DEFAULT NULL"))
+
+        setting_cols = (await db.execute(text("PRAGMA table_info(agent_settings)"))).fetchall()
+        if setting_cols and "cli_model" not in [col[1] for col in setting_cols]:
+            await db.execute(text("ALTER TABLE agent_settings ADD COLUMN cli_model VARCHAR(120) DEFAULT NULL"))
 
         # 7. Create lead_shadow_decisions table if not exists
         await db.execute(text("""

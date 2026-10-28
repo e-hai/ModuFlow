@@ -6,6 +6,7 @@ import { Dashboard } from './pages/Dashboard';
 import { WorkflowView } from './pages/WorkflowView';
 import { ModuleSpace } from './pages/ModuleSpace';
 import { IssueBoard } from './pages/IssueBoard';
+import { CockpitTabKey } from './components/cockpit/CockpitHeader';
 import { StrategicInitiative, Product, ModuleInstance, AgentSettings } from './types';
 import { api } from './services/api';
 import { X, Compass, Briefcase, AlertTriangle } from 'lucide-react';
@@ -13,8 +14,11 @@ import { X, Compass, Briefcase, AlertTriangle } from 'lucide-react';
 export const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [currentView, setCurrentView] = useState<'dashboard' | 'workflow' | 'module' | 'issues'>('dashboard');
+  const [dashboardTab, setDashboardTab] = useState<CockpitTabKey>('overview');
 
   const [initiatives, setInitiatives] = useState<StrategicInitiative[]>([]);
+  const [listStatus, setListStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [listError, setListError] = useState<string | null>(null);
   const [currentInitiative, setCurrentInitiative] = useState<StrategicInitiative | null>(null);
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -38,6 +42,7 @@ export const App: React.FC = () => {
   const [prodName, setProdName] = useState('');
   const [prodCode, setProdCode] = useState('');
   const [prodDesc, setProdDesc] = useState('');
+  const [prodPlatform, setProdPlatform] = useState('cross_platform');
 
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<string>('lifetime');
@@ -62,25 +67,38 @@ export const App: React.FC = () => {
   };
 
   const loadInitiativesAndProducts = async (preferredInitId?: string) => {
-    try {
-      const initList = await api.getInitiatives();
-      setInitiatives(initList);
+    setListStatus('loading');
+    setListError(null);
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const initList = await api.getInitiatives();
+        setInitiatives(initList);
+        setListStatus('ready');
 
-      const activeInit = preferredInitId
-        ? initList.find(i => i.id === preferredInitId) || initList[0]
-        : (currentInitiative ? initList.find(i => i.id === currentInitiative.id) || initList[0] : initList[0]);
+        const activeInit = preferredInitId
+          ? initList.find(i => i.id === preferredInitId) || initList[0]
+          : (currentInitiative ? initList.find(i => i.id === currentInitiative.id) || initList[0] : initList[0]);
 
-      if (activeInit) {
-        setCurrentInitiative(activeInit);
-        const prodList = await api.getProducts(activeInit.id);
-        setProducts(prodList);
-        if (prodList.length > 0 && (!currentProduct || !prodList.find(p => p.id === currentProduct.id))) {
-          setCurrentProduct(prodList[0]);
+        if (activeInit) {
+          setCurrentInitiative(activeInit);
+          const prodList = await api.getProducts(activeInit.id);
+          setProducts(prodList);
+          if (prodList.length > 0 && (!currentProduct || !prodList.find(p => p.id === currentProduct.id))) {
+            setCurrentProduct(prodList[0]);
+          }
+        }
+        return;
+      } catch (e) {
+        lastError = e;
+        if (attempt < 2) {
+          await new Promise(resolve => window.setTimeout(resolve, 1200));
         }
       }
-    } catch (e) {
-      console.error(e);
     }
+    console.error(lastError);
+    setListStatus('error');
+    setListError(lastError instanceof Error ? lastError.message : '工程列表暂时读不出来');
   };
 
   const handleSelectInitiative = async (initId: string) => {
@@ -175,12 +193,14 @@ export const App: React.FC = () => {
         name: prodName.trim(),
         code: prodCode.trim().toUpperCase(),
         description: prodDesc.trim(),
-        initiative_id: currentInitiative.id
+        initiative_id: currentInitiative.id,
+        platform: prodPlatform,
       });
       setShowNewProdModal(false);
       setProdName('');
       setProdCode('');
       setProdDesc('');
+      setProdPlatform('cross_platform');
 
       // 1. Refresh products list for the current initiative
       const prodList = await api.getProducts(currentInitiative.id);
@@ -211,6 +231,9 @@ export const App: React.FC = () => {
         onDeleteInitiative={handleDeleteInitiative}
         onOpenSettingsModal={() => setShowSettingsModal(true)}
         hasAgentWarning={agentSettings ? !agentSettings.is_current_installed : false}
+        listStatus={listStatus}
+        listError={listError}
+        onRetryLoad={() => { void loadInitiativesAndProducts(); }}
       />
 
       {/* 2. 右侧主工作区 */}
@@ -225,7 +248,10 @@ export const App: React.FC = () => {
           currentView={currentView}
           activeModule={activeModule}
           runModules={runModules}
-          onNavigateToDashboard={() => setCurrentView('dashboard')}
+          onNavigateToDashboard={() => {
+            setDashboardTab('overview');
+            setCurrentView('dashboard');
+          }}
           onNavigateToWorkflow={() => setCurrentView('workflow')}
           onNavigateToIssues={() => setCurrentView('issues')}
           onSelectProduct={(p) => handleSelectProduct(p)}
@@ -274,6 +300,10 @@ export const App: React.FC = () => {
               onOpenNewProductModal={() => setShowNewProdModal(true)}
               onOpenNewInitiativeModal={() => setShowNewInitModal(true)}
               onNavigateToIssues={() => setCurrentView('issues')}
+              initialTab={dashboardTab}
+              listStatus={listStatus}
+              listError={listError}
+              onRetryLoad={() => { void loadInitiativesAndProducts(); }}
             />
           )}
 
@@ -287,7 +317,14 @@ export const App: React.FC = () => {
                 setSelectedRunId(undefined);
               }}
               onSelectModule={handleSelectModule}
-              onBackToDashboard={() => setCurrentView('dashboard')}
+              onBackToDashboard={() => {
+                setDashboardTab('overview');
+                setCurrentView('dashboard');
+              }}
+              onOpenDecisionCenter={() => {
+                setDashboardTab('decisions');
+                setCurrentView('dashboard');
+              }}
             />
           )}
 
@@ -462,6 +499,19 @@ export const App: React.FC = () => {
                   onChange={e => setProdCode(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 uppercase font-mono focus:bg-white focus:outline-none focus:border-emerald-500"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">客户端</label>
+                <select
+                  value={prodPlatform}
+                  onChange={e => setProdPlatform(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="cross_platform">iOS 和 Android（默认，两端都要过）</option>
+                  <option value="ios">仅 iOS</option>
+                  <option value="android">仅 Android</option>
+                </select>
               </div>
 
               <div>

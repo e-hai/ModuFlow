@@ -323,6 +323,17 @@ async def test_initiatives_and_runs():
         assert res_close.status_code == 200
         assert res_close.json()["status"] == "closed"
 
+        som_doc = (
+            '{"monthly_search_volume": 120000, "target_capture_rate": 0.04, '
+            '"blended_arpu_usd": 1.8, "source": "测试夹具：假设/待验证"}\n'
+        )
+        upload_prd = await ac.post(
+            f"/api/v1/modules/{first_mod['id']}/artifacts/upload",
+            files={"file": ("som.json", som_doc.encode("utf-8"), "application/json")},
+            data={"change_summary": "补齐可放行的 SOM 测算"},
+        )
+        assert upload_prd.status_code == 200
+
         res_baseline_ok = await ac.patch(
             f"/api/v1/modules/{first_mod['id']}/phase",
             json={"phase": "baselined"}
