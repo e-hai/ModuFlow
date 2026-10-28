@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../services/api';
-import { Product, WorkflowRun, ModuleInstance, WorkflowTemplate, ProductProfile, ShadowStats, GateConfig } from '../types';
+import { Product, WorkflowRun, ModuleInstance, WorkflowTemplate, ShadowStats, GateConfig } from '../types';
 import { PhaseBadge } from '../components/StatusBadge';
 import { GateBadge } from '../components/gate/GateBadge';
 import { LeadDailyDigestModal } from '../components/lead/LeadDailyDigestModal';
@@ -27,8 +27,6 @@ import {
   Edit3,
   AlertCircle,
   Bot,
-  Smartphone,
-  Cpu,
   ShieldCheck
 } from 'lucide-react';
 
@@ -65,7 +63,6 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
   const [actionLoading, setActionLoading] = useState(false);
 
   // Three-Tier Architecture, Profile & Lead Shadow Mode state
-  const [productProfile, setProductProfile] = useState<ProductProfile | null>(null);
   const [shadowStats, setShadowStats] = useState<ShadowStats | null>(null);
   const [showDigestModal, setShowDigestModal] = useState(false);
   const [gateConfigs, setGateConfigs] = useState<Record<string, GateConfig>>({});
@@ -85,16 +82,14 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
   const loadProductRuns = async (prodId: string, runIdToPick?: string) => {
     try {
       setLoading(true);
-      const [runsList, tplList, prof, shadow] = await Promise.allSettled([
+      const [runsList, tplList, shadow] = await Promise.allSettled([
         api.getRuns(prodId),
         api.getTemplates(),
-        api.getProductProfile(prodId),
         api.getProductShadowStats(prodId)
       ]);
 
       if (runsList.status === 'fulfilled') setProductRuns(runsList.value);
       if (tplList.status === 'fulfilled') setTemplates(tplList.value);
-      if (prof.status === 'fulfilled') setProductProfile(prof.value);
       if (shadow.status === 'fulfilled') setShadowStats(shadow.value);
 
       const resolvedRuns = runsList.status === 'fulfilled' ? runsList.value : [];
@@ -278,26 +273,6 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
               <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-medium hidden sm:inline">
                 产研协同工作台
               </span>
-
-              {/* Profile 平台与零推理规则集标签 */}
-              {productProfile && (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span
-                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-800 border border-blue-200"
-                    title={`当前项目适配规则：${productProfile.ruleset}`}
-                  >
-                    <Smartphone className="w-3 h-3 text-blue-600" />
-                    {productProfile.platform === 'android' ? '安卓端 · M3 规范' : '苹果端 · HIG 规范'}
-                  </span>
-                  <span
-                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-teal-50 text-teal-800 border border-teal-200"
-                    title={productProfile.client_zero_inference ? '严格死守零客户端推理成本红线' : '允许端侧轻量 AI 模型离线推理'}
-                  >
-                    <Cpu className="w-3 h-3 text-teal-600" />
-                    {productProfile.client_zero_inference ? '纯客户端 (零 AI 成本)' : '端侧轻量 AI'}
-                  </span>
-                </div>
-              )}
             </div>
 
             <p className="text-xs text-slate-500 line-clamp-1">
@@ -313,7 +288,7 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 text-xs shadow-2xs">
               <Bot className="w-3.5 h-3.5 text-purple-600" />
               <span className="font-semibold">
-                {shadowStats.shadow_mode_enabled ? '项目总控影子模式 (学习中)' : '项目总控自主模式 (已放权)'}
+                {shadowStats.shadow_mode_enabled ? '总控影子模式' : '总控自主模式'}
               </span>
               {shadowStats.total_evaluated > 0 && (
                 <span className="font-mono text-[11px] text-purple-700">
