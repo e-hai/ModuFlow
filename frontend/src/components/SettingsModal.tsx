@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   Terminal,
   Bot,
-  Sliders,
   Check,
   AlertCircle,
   RefreshCw,
@@ -32,8 +31,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
   const [testResult, setTestResult] = useState<string | null>(null);
 
   const [agentSettings, setAgentSettings] = useState<AgentSettings | null>(null);
-  const [selectedAdapter, setSelectedAdapter] = useState<'cli' | 'simulator'>('cli');
-  const [selectedCommand, setSelectedCommand] = useState<string>('claude');
+  const [selectedCommand, setSelectedCommand] = useState<string>('agy');
   const [customCommand, setCustomCommand] = useState<string>('');
   const [timeoutSeconds, setTimeoutSeconds] = useState<number>(120);
 
@@ -48,10 +46,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
     try {
       const data = await api.getAgentSettings();
       setAgentSettings(data);
-      setSelectedAdapter(data.adapter_type);
       setSelectedCommand(data.cli_command);
       setTimeoutSeconds(data.timeout);
-      if (!['claude', 'agy', 'codex', 'simulator'].includes(data.cli_command)) {
+      if (!['claude', 'agy', 'codex'].includes(data.cli_command)) {
         setCustomCommand(data.cli_command);
         setSelectedCommand('custom');
       }
@@ -66,9 +63,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
     setSaving(true);
     setSaveSuccess(false);
     try {
-      const commandToSave = selectedCommand === 'custom' ? (customCommand || 'claude') : selectedCommand;
+      const commandToSave = selectedCommand === 'custom' ? (customCommand || 'agy') : selectedCommand;
       const updated = await api.updateAgentSettings({
-        adapter_type: selectedAdapter,
+        adapter_type: 'cli',
         cli_command: commandToSave,
         timeout: timeoutSeconds,
       });
@@ -87,9 +84,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
     setTestResult(null);
     try {
       // First save current selection so test runs against current settings
-      const commandToSave = selectedCommand === 'custom' ? (customCommand || 'claude') : selectedCommand;
+      const commandToSave = selectedCommand === 'custom' ? (customCommand || 'agy') : selectedCommand;
       await api.updateAgentSettings({
-        adapter_type: selectedAdapter,
+        adapter_type: 'cli',
         cli_command: commandToSave,
         timeout: timeoutSeconds,
       });
@@ -167,151 +164,101 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         <div className="space-y-4 overflow-y-auto pr-1 flex-1 text-xs">
           {activeTab === 'agent' && (
             <div className="space-y-4">
-              {/* 1. 运行模式选择 */}
+              {/* 底层 AI 引擎工具预设 */}
               <div className="space-y-2">
-                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block font-mono">
-                  ① 智能体运行适配模式 (Runtime Adapter)
-                </label>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div
-                    onClick={() => setSelectedAdapter('cli')}
-                    className={`p-3 rounded-xl border transition cursor-pointer ${
-                      selectedAdapter === 'cli'
-                        ? 'border-emerald-600 bg-emerald-50/60 ring-2 ring-emerald-500/20'
-                        : 'border-slate-200 bg-white hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-bold text-slate-900 flex items-center gap-1.5">
-                        <Terminal className="w-4 h-4 text-emerald-600" />
-                        命令行工具适配器 (CLI)
-                      </span>
-                      {selectedAdapter === 'cli' && <Check className="w-4 h-4 text-emerald-600" />}
-                    </div>
-                    <p className="text-[11px] text-slate-500 leading-normal">
-                      连接至各单品项目工作区目录执行，支持真实工程文件读写与终端能力。（推荐）
-                    </p>
-                  </div>
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block font-mono">
+                    智能体底层执行引擎 (AI Engine)
+                  </label>
+                  <span className="text-[11px] text-slate-400">已自动探测本机 PATH 环境</span>
+                </div>
 
+                <div className="space-y-2">
+                  {agentSettings?.available_presets
+                    .filter((p) => p.id !== 'simulator')
+                    .map((preset) => {
+                      const isSelected = selectedCommand === preset.command;
+                      return (
+                        <div
+                          key={preset.id}
+                          onClick={() => setSelectedCommand(preset.command)}
+                          className={`p-3 rounded-xl border flex items-start justify-between transition cursor-pointer ${
+                            isSelected
+                              ? 'border-emerald-600 bg-emerald-50/50 ring-1 ring-emerald-500/20'
+                              : 'border-slate-200 bg-white hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="space-y-1 pr-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-slate-900 text-xs">{preset.name}</span>
+                              <code className="text-[10px] font-mono bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200">
+                                {preset.command}
+                              </code>
+                              {preset.installed ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 bg-emerald-100/70 px-1.5 py-0.2 rounded-full">
+                                  <Check className="w-3 h-3 text-emerald-600" />
+                                  已检测到安装
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center text-[10px] font-medium text-slate-400 bg-slate-100 px-1.5 py-0.2 rounded-full">
+                                  未在 PATH 中
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-500 leading-normal">{preset.description}</p>
+                            {preset.path && (
+                              <p className="text-[10px] font-mono text-slate-400 truncate max-w-md">
+                                路径: {preset.path}
+                              </p>
+                            )}
+                          </div>
+                          <input
+                            type="radio"
+                            name="cli_preset"
+                            checked={isSelected}
+                            onChange={() => setSelectedCommand(preset.command)}
+                            className="mt-1 text-emerald-600 cursor-pointer"
+                          />
+                        </div>
+                      );
+                    })}
+
+                  {/* 自定义命令行选项 */}
                   <div
-                    onClick={() => setSelectedAdapter('simulator')}
-                    className={`p-3 rounded-xl border transition cursor-pointer ${
-                      selectedAdapter === 'simulator'
-                        ? 'border-emerald-600 bg-emerald-50/60 ring-2 ring-emerald-500/20'
+                    onClick={() => setSelectedCommand('custom')}
+                    className={`p-3 rounded-xl border transition cursor-pointer space-y-2 ${
+                      selectedCommand === 'custom'
+                        ? 'border-emerald-600 bg-emerald-50/50 ring-1 ring-emerald-500/20'
                         : 'border-slate-200 bg-white hover:bg-slate-50'
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-bold text-slate-900 flex items-center gap-1.5">
-                        <Sliders className="w-4 h-4 text-slate-600" />
-                        内置高保真沙箱
-                      </span>
-                      {selectedAdapter === 'simulator' && <Check className="w-4 h-4 text-emerald-600" />}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900 text-xs">自定义命令行 (Custom Command)</span>
+                        <span className="text-[10px] text-slate-400">支持接入团队自研 Agent 或可执行脚本</span>
+                      </div>
+                      <input
+                        type="radio"
+                        name="cli_preset"
+                        checked={selectedCommand === 'custom'}
+                        onChange={() => setSelectedCommand('custom')}
+                        className="text-emerald-600 cursor-pointer"
+                      />
                     </div>
-                    <p className="text-[11px] text-slate-500 leading-normal">
-                      无需外部 CLI 安装或任何 API Key，供快速演示、离线演练与回归测试。
-                    </p>
+                    {selectedCommand === 'custom' && (
+                      <div className="pt-1">
+                        <input
+                          type="text"
+                          placeholder="例如: /usr/local/bin/my-agent-cli 或 python3 -m runner"
+                          value={customCommand}
+                          onChange={(e) => setCustomCommand(e.target.value)}
+                          className="w-full px-3 py-1.5 text-xs font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
-
-              {/* 2. 底层 CLI 预设选择 */}
-              {selectedAdapter === 'cli' && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block font-mono">
-                      ② 底层 AI 引擎工具预设
-                    </label>
-                    <span className="text-[11px] text-slate-400">已自动探测本机 PATH 环境</span>
-                  </div>
-
-                  <div className="space-y-2">
-                    {agentSettings?.available_presets
-                      .filter((p) => p.id !== 'simulator')
-                      .map((preset) => {
-                        const isSelected = selectedCommand === preset.command;
-                        return (
-                          <div
-                            key={preset.id}
-                            onClick={() => setSelectedCommand(preset.command)}
-                            className={`p-3 rounded-xl border flex items-start justify-between transition cursor-pointer ${
-                              isSelected
-                                ? 'border-emerald-600 bg-emerald-50/50 ring-1 ring-emerald-500/20'
-                                : 'border-slate-200 bg-white hover:bg-slate-50'
-                            }`}
-                          >
-                            <div className="space-y-1 pr-2">
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-slate-900 text-xs">{preset.name}</span>
-                                <code className="text-[10px] font-mono bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200">
-                                  {preset.command}
-                                </code>
-                                {preset.installed ? (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 bg-emerald-100/70 px-1.5 py-0.2 rounded-full">
-                                    <Check className="w-3 h-3 text-emerald-600" />
-                                    已检测到安装
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center text-[10px] font-medium text-slate-400 bg-slate-100 px-1.5 py-0.2 rounded-full">
-                                    未在 PATH 中
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-[11px] text-slate-500 leading-normal">{preset.description}</p>
-                              {preset.path && (
-                                <p className="text-[10px] font-mono text-slate-400 truncate max-w-md">
-                                  路径: {preset.path}
-                                </p>
-                              )}
-                            </div>
-                            <input
-                              type="radio"
-                              name="cli_preset"
-                              checked={isSelected}
-                              onChange={() => setSelectedCommand(preset.command)}
-                              className="mt-1 text-emerald-600 cursor-pointer"
-                            />
-                          </div>
-                        );
-                      })}
-
-                    {/* 自定义命令行选项 */}
-                    <div
-                      onClick={() => setSelectedCommand('custom')}
-                      className={`p-3 rounded-xl border transition cursor-pointer space-y-2 ${
-                        selectedCommand === 'custom'
-                          ? 'border-emerald-600 bg-emerald-50/50 ring-1 ring-emerald-500/20'
-                          : 'border-slate-200 bg-white hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-900 text-xs">自定义命令行 (Custom Command)</span>
-                          <span className="text-[10px] text-slate-400">支持接入团队自研 Agent 或可执行脚本</span>
-                        </div>
-                        <input
-                          type="radio"
-                          name="cli_preset"
-                          checked={selectedCommand === 'custom'}
-                          onChange={() => setSelectedCommand('custom')}
-                          className="text-emerald-600 cursor-pointer"
-                        />
-                      </div>
-                      {selectedCommand === 'custom' && (
-                        <div className="pt-1">
-                          <input
-                            type="text"
-                            placeholder="例如: /usr/local/bin/my-agent-cli 或 python3 -m runner"
-                            value={customCommand}
-                            onChange={(e) => setCustomCommand(e.target.value)}
-                            className="w-full px-3 py-1.5 text-xs font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
 
               {/* 3. 超时保护配置 */}
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">

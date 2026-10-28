@@ -1817,14 +1817,6 @@ async def get_agent_settings(db: AsyncSession = Depends(get_db)):
             description="代码合成与全栈产研命令行工具，擅长函数实现、架构推演与单测生成",
             installed=bool(codex_path),
             path=codex_path
-        ),
-        AgentPresetItem(
-            id="simulator",
-            name="离线模拟引擎 (Local Sandbox)",
-            command="simulator",
-            description="轻量高保真沙箱，无需外部 CLI 工具或 API Key，用于快速体验与离线演练",
-            installed=True,
-            path="builtin://simulator"
         )
     ]
     return AgentSettingsOut(
@@ -1862,31 +1854,17 @@ async def test_agent_settings():
     import asyncio
     from backend.app.adapters.cli_adapter import find_cli_binary
     
-    if settings.AGENT_ADAPTER_TYPE == "simulator" or settings.AGENT_CLI_COMMAND == "simulator":
-        events = [
-            {"type": "log", "content": "[Probe] 离线高保真产研沙箱就绪"},
-            {"type": "done", "content": "离线模拟引擎连通性测试通过"}
-        ]
-        return {
-            "success": True,
-            "adapter_type": "simulator",
-            "cli_command": "simulator",
-            "events_count": len(events),
-            "events": events
-        }
-    
     cmd_path = find_cli_binary(settings.AGENT_CLI_COMMAND)
     if not cmd_path:
         events = [
-            {"type": "log", "content": f"[Adapter] 未在 PATH 中找到 `{settings.AGENT_CLI_COMMAND}`"},
-            {"type": "log", "content": "[Adapter] 已激活本地子进程隔离沙箱兜底保障业务连续性"},
-            {"type": "done", "content": "沙箱兜底模式连通性正常"}
+            {"type": "log", "content": f"[Adapter] 未在系统 PATH 中找到 `{settings.AGENT_CLI_COMMAND}`"},
+            {"type": "log", "content": f"[Adapter] 请确认 `{settings.AGENT_CLI_COMMAND}` 已安装并配置在系统环境变量 PATH 中"},
+            {"type": "done", "content": f"命令探测完成 (未找到可执行文件 `{settings.AGENT_CLI_COMMAND}`)"}
         ]
         return {
             "success": True,
             "adapter_type": settings.AGENT_ADAPTER_TYPE,
             "cli_command": settings.AGENT_CLI_COMMAND,
-            "note": "fallback_to_sandbox",
             "events_count": len(events),
             "events": events
         }
@@ -1916,7 +1894,7 @@ async def test_agent_settings():
     except Exception as e:
         events = [
             {"type": "log", "content": f"[Adapter] 执行探测异常: {str(e)}"},
-            {"type": "log", "content": "[Adapter] 已切换至沙箱兜底保障"}
+            {"type": "done", "content": f"探测执行完成: {str(e)}"}
         ]
         return {
             "success": True,
