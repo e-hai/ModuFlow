@@ -22,6 +22,7 @@ interface SidebarProps {
   onRenameInitiative: (initId: string, newName: string) => Promise<void>;
   onDeleteInitiative: (initId: string) => Promise<void>;
   onOpenSettingsModal: () => void;
+  hasAgentWarning?: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -32,7 +33,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenNewInitiativeModal,
   onRenameInitiative,
   onDeleteInitiative,
-  onOpenSettingsModal
+  onOpenSettingsModal,
+  hasAgentWarning = false
 }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
@@ -246,13 +248,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="p-3 border-t border-slate-200 bg-slate-50/50">
           <button
             onClick={onOpenSettingsModal}
-            className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition group cursor-pointer"
+            className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium transition group cursor-pointer ${
+              hasAgentWarning
+                ? 'bg-amber-50 hover:bg-amber-100/90 text-amber-900 border border-amber-200 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
           >
             <div className="flex items-center gap-2">
-              <Settings className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 transition" />
+              <Settings className={`w-4 h-4 ${hasAgentWarning ? 'text-amber-600' : 'text-slate-400 group-hover:text-emerald-600'} transition`} />
               <span>设置</span>
+              {hasAgentWarning && (
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="未检测到 Agent CLI" />
+              )}
             </div>
-            <span className="font-mono text-[10px] text-slate-400 group-hover:text-slate-600">v0.1</span>
+            {hasAgentWarning ? (
+              <span className="font-semibold text-[10px] text-amber-700 bg-white border border-amber-300 px-1.5 py-0.5 rounded shadow-2xs">
+                未就绪
+              </span>
+            ) : (
+              <span className="font-mono text-[10px] text-slate-400 group-hover:text-slate-600">v0.1</span>
+            )}
           </button>
         </div>
       </aside>

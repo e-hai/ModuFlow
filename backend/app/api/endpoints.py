@@ -1795,20 +1795,24 @@ async def get_agent_settings(db: AsyncSession = Depends(get_db)):
 
     presets = [
         AgentPresetItem(
+            id="agy",
+            name="Google Antigravity CLI (agy)",
+            command="agy",
+            description="Google Antigravity 自主智能体 CLI，原生契合 11 道战略工序与权限治理",
+            installed=bool(agy_path),
+            path=agy_path,
+            install_command="brew install google/antigravity/agy 或 pip install antigravity-cli",
+            install_guide="官方自主智能体，建议配置在 ~/.local/bin 或系统 PATH 中"
+        ),
+        AgentPresetItem(
             id="claude",
             name="Claude Code CLI",
             command="claude",
             description="Anthropic 官方生产力 Agent，具备自主终端与工程读写闭环能力",
             installed=bool(claude_path),
-            path=claude_path
-        ),
-        AgentPresetItem(
-            id="agy",
-            name="Google Antigravity CLI (agy)",
-            command="agy",
-            description="Google Antigravity 自主智能体 CLI，原生契合 13 工序规划与协同治理",
-            installed=bool(agy_path),
-            path=agy_path
+            path=claude_path,
+            install_command="npm install -g @anthropic-ai/claude-code",
+            install_guide="全局安装后，在终端运行一次 `claude` 完成 Anthropic 账号登录授权即可"
         ),
         AgentPresetItem(
             id="codex",
@@ -1816,14 +1820,22 @@ async def get_agent_settings(db: AsyncSession = Depends(get_db)):
             command="codex",
             description="代码合成与全栈产研命令行工具，擅长函数实现、架构推演与单测生成",
             installed=bool(codex_path),
-            path=codex_path
+            path=codex_path,
+            install_command="npm install -g @openai/codex",
+            install_guide="全局安装后，在终端运行一次 `codex` 完成 OpenAI 账号登录授权即可"
         )
     ]
+
+    current_installed = bool(find_cli_binary(setting_row.cli_command))
+    any_installed = any(p.installed for p in presets) or current_installed
+
     return AgentSettingsOut(
         adapter_type=setting_row.adapter_type,
         cli_command=setting_row.cli_command,
         timeout=setting_row.timeout,
-        available_presets=presets
+        available_presets=presets,
+        is_current_installed=current_installed,
+        any_installed=any_installed
     )
 
 @api_router.patch("/settings/agent", response_model=AgentSettingsOut)
@@ -1858,11 +1870,12 @@ async def test_agent_settings():
     if not cmd_path:
         events = [
             {"type": "log", "content": f"[Adapter] 未在系统 PATH 中找到 `{settings.AGENT_CLI_COMMAND}`"},
-            {"type": "log", "content": f"[Adapter] 请确认 `{settings.AGENT_CLI_COMMAND}` 已安装并配置在系统环境变量 PATH 中"},
-            {"type": "done", "content": f"命令探测完成 (未找到可执行文件 `{settings.AGENT_CLI_COMMAND}`)"}
+            {"type": "log", "content": f"[Guide] 请确认 `{settings.AGENT_CLI_COMMAND}` 已安装，或在设置中选择已安装的 Agent CLI / 自定义路径"},
+            {"type": "done", "content": f"命令探测未就绪: 未找到可执行文件 `{settings.AGENT_CLI_COMMAND}`"}
         ]
         return {
             "success": True,
+            "installed": False,
             "adapter_type": settings.AGENT_ADAPTER_TYPE,
             "cli_command": settings.AGENT_CLI_COMMAND,
             "events_count": len(events),

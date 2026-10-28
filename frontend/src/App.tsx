@@ -6,9 +6,9 @@ import { Dashboard } from './pages/Dashboard';
 import { WorkflowView } from './pages/WorkflowView';
 import { ModuleSpace } from './pages/ModuleSpace';
 import { IssueBoard } from './pages/IssueBoard';
-import { StrategicInitiative, Product, ModuleInstance } from './types';
+import { StrategicInitiative, Product, ModuleInstance, AgentSettings } from './types';
 import { api } from './services/api';
-import { X, Compass, Briefcase } from 'lucide-react';
+import { X, Compass, Briefcase, AlertTriangle } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -43,9 +43,23 @@ export const App: React.FC = () => {
   const [selectedPeriod, setSelectedPeriod] = useState<string>('lifetime');
   const [cockpitRefreshTrigger, setCockpitRefreshTrigger] = useState(0);
 
+  // Agent CLI detection & warning
+  const [agentSettings, setAgentSettings] = useState<AgentSettings | null>(null);
+  const [dismissAgentBanner, setDismissAgentBanner] = useState(false);
+
   useEffect(() => {
     loadInitiativesAndProducts();
+    loadAgentSettings();
   }, []);
+
+  const loadAgentSettings = async () => {
+    try {
+      const s = await api.getAgentSettings();
+      setAgentSettings(s);
+    } catch (e) {
+      console.error('Failed to load agent settings', e);
+    }
+  };
 
   const loadInitiativesAndProducts = async (preferredInitId?: string) => {
     try {
@@ -196,6 +210,7 @@ export const App: React.FC = () => {
         onRenameInitiative={handleRenameInitiative}
         onDeleteInitiative={handleDeleteInitiative}
         onOpenSettingsModal={() => setShowSettingsModal(true)}
+        hasAgentWarning={agentSettings ? !agentSettings.is_current_installed : false}
       />
 
       {/* 2. 右侧主工作区 */}
@@ -218,6 +233,33 @@ export const App: React.FC = () => {
           selectedPeriod={selectedPeriod}
           onPeriodChange={setSelectedPeriod}
         />
+
+        {/* 全局未安装 Agent CLI 警示与引导横幅 */}
+        {agentSettings && !agentSettings.is_current_installed && !dismissAgentBanner && (
+          <div className="bg-amber-50 border-b border-amber-200/90 px-4 py-2 flex items-center justify-between text-xs text-amber-900 shrink-0 animate-in fade-in duration-150">
+            <div className="flex items-center gap-2 min-w-0">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span className="truncate">
+                <strong>未检测到 Agent CLI 工具</strong>：当前选择的命令 <code>{agentSettings.cli_command}</code> 未在电脑中找到。AI 自动化工序推演需依赖真实 CLI。
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 ml-3">
+              <button
+                onClick={() => setShowSettingsModal(true)}
+                className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold text-xs transition cursor-pointer shadow-2xs"
+              >
+                查看安装指引与配置 →
+              </button>
+              <button
+                onClick={() => setDismissAgentBanner(true)}
+                className="text-amber-500 hover:text-amber-800 p-1 rounded-md hover:bg-amber-100/60 transition cursor-pointer"
+                title="暂时关闭提示"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 内容展示区 */}
         <main className="flex-1 overflow-y-auto">
@@ -258,6 +300,7 @@ export const App: React.FC = () => {
               onModuleUpdated={() => {
                 loadInitiativesAndProducts();
               }}
+              onOpenSettingsModal={() => setShowSettingsModal(true)}
             />
           )}
 
@@ -456,6 +499,7 @@ export const App: React.FC = () => {
       <SettingsModal
         isOpen={showSettingsModal}
         onClose={() => setShowSettingsModal(false)}
+        onSettingsChanged={(updated) => setAgentSettings(updated)}
       />
     </div>
   );

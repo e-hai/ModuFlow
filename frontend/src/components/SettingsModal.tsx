@@ -10,9 +10,11 @@ import {
   Bot,
   Check,
   AlertCircle,
+  AlertTriangle,
   RefreshCw,
   Zap,
-  FolderGit2
+  FolderGit2,
+  Copy
 } from 'lucide-react';
 import { api } from '../services/api';
 import { AgentSettings } from '../types';
@@ -20,15 +22,17 @@ import { AgentSettings } from '../types';
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSettingsChanged?: (settings: AgentSettings) => void;
 }
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
+export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSettingsChanged }) => {
   const [activeTab, setActiveTab] = useState<'agent' | 'platform'>('agent');
   const [loading, setLoading] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
   const [testing, setTesting] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
 
   const [agentSettings, setAgentSettings] = useState<AgentSettings | null>(null);
   const [selectedCommand, setSelectedCommand] = useState<string>('agy');
@@ -46,6 +50,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
     try {
       const data = await api.getAgentSettings();
       setAgentSettings(data);
+      onSettingsChanged?.(data);
       setSelectedCommand(data.cli_command);
       setTimeoutSeconds(data.timeout);
       if (!['claude', 'agy', 'codex'].includes(data.cli_command)) {
@@ -70,6 +75,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         timeout: timeoutSeconds,
       });
       setAgentSettings(updated);
+      onSettingsChanged?.(updated);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (e) {
@@ -93,7 +99,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
 
       const res = await api.testAgentSettings();
       if (res.success) {
-        setTestResult(`✓ 探测成功：适配器 (${res.adapter_type}) / 命令 [${res.cli_command}] 调度正常，已捕获 ${res.events_count} 条事件流`);
+        if (res.installed === false) {
+          setTestResult(`⚠️ 命令未就绪：系统 PATH 中未找到 [${res.cli_command}]。请参考上方指引安装，或检查自定义路径。`);
+        } else {
+          setTestResult(`✓ 探测成功：适配器 (${res.adapter_type}) / 命令 [${res.cli_command}] 调度正常，已就绪`);
+        }
       } else {
         setTestResult('⚠️ 探测未返回成功状态');
       }
@@ -164,13 +174,38 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         <div className="space-y-4 overflow-y-auto pr-1 flex-1 text-xs">
           {activeTab === 'agent' && (
             <div className="space-y-4">
+              {/* 未检测到安装时的置顶提醒与引导 */}
+              {agentSettings && (!agentSettings.is_current_installed || !agentSettings.any_installed) && (
+                <div className="p-3.5 bg-amber-50/90 border border-amber-200/90 rounded-xl space-y-2 animate-in fade-in duration-150">
+                  <div className="flex items-center gap-2 text-amber-800 font-bold text-xs">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>
+                      {!agentSettings.any_installed
+                        ? '电脑未检测到已安装的 Agent CLI 命令行工具'
+                        : `当前选择的命令行工具 [${selectedCommand}] 尚未安装或未加入 PATH`}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-amber-700 leading-relaxed">
+                    ModuFlow 采用物理工作区调度真实的 Agent CLI 驱动工序推演与交付物输出。请从下方推荐的 Agent CLI 中任选一款一键复制命令安装，或通过「自定义命令行」指定本机已有的可执行脚本。
+                  </p>
+                </div>
+              )}
+
               {/* 底层 AI 引擎工具预设 */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block font-mono">
                     智能体底层执行引擎 (AI Engine)
                   </label>
-                  <span className="text-[11px] text-slate-400">已自动探测本机 PATH 环境</span>
+                  <button
+                    type="button"
+                    onClick={loadSettings}
+                    disabled={loading}
+                    className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 px-2 py-0.5 rounded-md transition cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+                    <span>{loading ? '探测中...' : '重新探测本机环境'}</span>
+                  </button>
                 </div>
 
                 <div className="space-y-2">
@@ -182,43 +217,89 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                         <div
                           key={preset.id}
                           onClick={() => setSelectedCommand(preset.command)}
-                          className={`p-3 rounded-xl border flex items-start justify-between transition cursor-pointer ${
+                          className={`p-3 rounded-xl border flex flex-col justify-between transition cursor-pointer ${
                             isSelected
-                              ? 'border-emerald-600 bg-emerald-50/50 ring-1 ring-emerald-500/20'
+                              ? 'border-emerald-600 bg-emerald-50/40 ring-1 ring-emerald-500/20'
                               : 'border-slate-200 bg-white hover:bg-slate-50'
                           }`}
                         >
-                          <div className="space-y-1 pr-2">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-slate-900 text-xs">{preset.name}</span>
-                              <code className="text-[10px] font-mono bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200">
-                                {preset.command}
-                              </code>
-                              {preset.installed ? (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 bg-emerald-100/70 px-1.5 py-0.2 rounded-full">
-                                  <Check className="w-3 h-3 text-emerald-600" />
-                                  已检测到安装
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center text-[10px] font-medium text-slate-400 bg-slate-100 px-1.5 py-0.2 rounded-full">
-                                  未在 PATH 中
-                                </span>
+                          <div className="flex items-start justify-between">
+                            <div className="space-y-1 pr-2">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-slate-900 text-xs">{preset.name}</span>
+                                <code className="text-[10px] font-mono bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200">
+                                  {preset.command}
+                                </code>
+                                {preset.installed ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 bg-emerald-100/70 border border-emerald-200/60 px-1.5 py-0.2 rounded-full">
+                                    <Check className="w-3 h-3 text-emerald-600" />
+                                    已检测到安装
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200/80 px-1.5 py-0.2 rounded-full">
+                                    <AlertCircle className="w-3 h-3 text-amber-600" />
+                                    未在 PATH 中
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-500 leading-normal">{preset.description}</p>
+                              {preset.path && (
+                                <p className="text-[10px] font-mono text-slate-400 truncate max-w-md">
+                                  路径: {preset.path}
+                                </p>
                               )}
                             </div>
-                            <p className="text-[11px] text-slate-500 leading-normal">{preset.description}</p>
-                            {preset.path && (
-                              <p className="text-[10px] font-mono text-slate-400 truncate max-w-md">
-                                路径: {preset.path}
-                              </p>
-                            )}
+                            <input
+                              type="radio"
+                              name="cli_preset"
+                              checked={isSelected}
+                              onChange={() => setSelectedCommand(preset.command)}
+                              className="mt-1 text-emerald-600 cursor-pointer shrink-0"
+                            />
                           </div>
-                          <input
-                            type="radio"
-                            name="cli_preset"
-                            checked={isSelected}
-                            onChange={() => setSelectedCommand(preset.command)}
-                            className="mt-1 text-emerald-600 cursor-pointer"
-                          />
+
+                          {/* 若未安装，且当前卡片被选中或系统缺少该工具，展示一键复制安装引导 */}
+                          {!preset.installed && (
+                            <div className="mt-2.5 pt-2 border-t border-slate-200/60 space-y-1.5 bg-slate-50/80 p-2.5 rounded-lg">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-semibold text-slate-700">推荐一键安装命令：</span>
+                                {preset.install_command && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      navigator.clipboard.writeText(preset.install_command!);
+                                      setCopiedCommand(preset.id);
+                                      setTimeout(() => setCopiedCommand(null), 2000);
+                                    }}
+                                    className="flex items-center gap-1 text-[10px] text-emerald-700 hover:text-emerald-800 font-medium px-2 py-0.5 bg-white border border-slate-200 hover:border-emerald-300 rounded transition cursor-pointer shadow-2xs"
+                                  >
+                                    {copiedCommand === preset.id ? (
+                                      <>
+                                        <Check className="w-3 h-3 text-emerald-600" />
+                                        <span>已复制命令</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Copy className="w-3 h-3 text-slate-500" />
+                                        <span>复制命令</span>
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                              {preset.install_command && (
+                                <div className="font-mono text-[11px] bg-slate-900 text-slate-100 px-2.5 py-1.5 rounded select-all break-all">
+                                  {preset.install_command}
+                                </div>
+                              )}
+                              {preset.install_guide && (
+                                <p className="text-[10px] text-slate-500">
+                                  💡 {preset.install_guide}
+                                </p>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -246,7 +327,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                       />
                     </div>
                     {selectedCommand === 'custom' && (
-                      <div className="pt-1">
+                      <div className="pt-1 space-y-1">
                         <input
                           type="text"
                           placeholder="例如: /usr/local/bin/my-agent-cli 或 python3 -m runner"
@@ -254,6 +335,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                           onChange={(e) => setCustomCommand(e.target.value)}
                           className="w-full px-3 py-1.5 text-xs font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                         />
+                        <p className="text-[10px] text-slate-400">
+                          支持填写绝对路径或系统 PATH 中的可执行文件名。保存后可点击下方「连通性测试」验证。
+                        </p>
                       </div>
                     )}
                   </div>

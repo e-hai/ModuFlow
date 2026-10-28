@@ -341,6 +341,8 @@ export interface AgentPresetItem {
   description: string;
   installed: boolean;
   path?: string;
+  install_command?: string;
+  install_guide?: string;
 }
 
 export interface AgentSettings {
@@ -348,6 +350,8 @@ export interface AgentSettings {
   cli_command: string;
   timeout: number;
   available_presets: AgentPresetItem[];
+  is_current_installed?: boolean;
+  any_installed?: boolean;
 }
 
 // --- Three-Tier Architecture, Gate Classification & Profile Types ---

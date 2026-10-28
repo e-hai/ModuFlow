@@ -431,12 +431,16 @@ class AgentPresetItem(BaseModel):
     description: str
     installed: bool
     path: Optional[str] = None
+    install_command: Optional[str] = None
+    install_guide: Optional[str] = None
 
 class AgentSettingsOut(BaseModel):
     adapter_type: str
     cli_command: str
     timeout: int
     available_presets: List[AgentPresetItem]
+    is_current_installed: bool = True
+    any_installed: bool = True
 
 class AgentSettingsUpdate(BaseModel):
     adapter_type: Optional[str] = None

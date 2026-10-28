@@ -50,7 +50,8 @@ import {
   Minimize2,
   Columns2,
   GitPullRequest,
-  ArrowLeftRight
+  ArrowLeftRight,
+  Settings
 } from 'lucide-react';
 
 interface ModuleSpaceProps {
@@ -58,13 +59,15 @@ interface ModuleSpaceProps {
   allModules: ModuleInstance[];
   onBackToWorkflow: () => void;
   onModuleUpdated: () => void;
+  onOpenSettingsModal?: () => void;
 }
 
 export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
   module,
   allModules,
   onBackToWorkflow,
-  onModuleUpdated
+  onModuleUpdated,
+  onOpenSettingsModal
 }) => {
   const [session, setSession] = useState<CollaborationSession | null>(null);
   const [messages, setMessages] = useState<SessionMessage[]>([]);
@@ -79,6 +82,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
   const [moduleState, setModuleState] = useState<ModuleInstance>(module);
   const [moduleIssues, setModuleIssues] = useState<Issue[]>([]);
   const [agentCommand, setAgentCommand] = useState<string>('agy');
+  const [isCliMissing, setIsCliMissing] = useState<boolean>(false);
   const [agentStage, setAgentStage] = useState<'idle' | 'context' | 'spawning' | 'reasoning' | 'completed' | 'error'>('idle');
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
 
@@ -171,6 +175,9 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
     loadSessionAndArtifacts();
     api.getAgentSettings().then(s => {
       if (s?.cli_command) setAgentCommand(s.cli_command);
+      if (s && s.is_current_installed !== undefined) {
+        setIsCliMissing(!s.is_current_installed);
+      }
     }).catch(() => {});
   }, [module.id]);
 
@@ -786,6 +793,19 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                           <span>AI 智能体执行遇到异常。系统已如实记录，请检查网络连接、AI 引擎设置或稍后重试。</span>
                         </div>
+
+                        {(msg.content.includes('未找到命令行工具') || msg.content.includes('PATH') || msg.content.includes('未找到可执行文件')) && onOpenSettingsModal && (
+                          <div className="mt-2.5">
+                            <button
+                              type="button"
+                              onClick={onOpenSettingsModal}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold transition cursor-pointer shadow-xs"
+                            >
+                              <Settings className="w-3.5 h-3.5" />
+                              <span>前往设置并查看 CLI 安装指引 →</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -1143,6 +1163,27 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                     下游 CR 修订 PRD
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* 未检测到 Agent CLI 时的实时引导横幅 */}
+            {isCliMissing && (
+              <div className="mb-2.5 p-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between text-xs text-amber-900 shadow-2xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span className="truncate">
+                    未检测到 Agent CLI 命令 <code>{agentCommand}</code>，无法执行 AI 推演。
+                  </span>
+                </div>
+                {onOpenSettingsModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenSettingsModal}
+                    className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg text-[11px] transition cursor-pointer shrink-0 ml-2 shadow-2xs"
+                  >
+                    前往设置与安装指引 →
+                  </button>
+                )}
               </div>
             )}
 

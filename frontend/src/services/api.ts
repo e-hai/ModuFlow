@@ -173,7 +173,7 @@ export const api = {
   updateAgentSettings: (data: Partial<AgentSettings>) =>
     fetchJSON<AgentSettings>('/settings/agent', { method: 'PATCH', body: JSON.stringify(data) }),
   testAgentSettings: () =>
-    fetchJSON<{ success: boolean; adapter_type: string; cli_command: string; events_count: number }>(
+    fetchJSON<{ success: boolean; installed?: boolean; adapter_type: string; cli_command: string; events_count: number }>(
       '/settings/agent/test',
       { method: 'POST' }
     ),
