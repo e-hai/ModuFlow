@@ -17,6 +17,33 @@ def _fields(data: Dict[str, Any]) -> str:
     return "```json\n" + json.dumps({"simulated": True, **data}, ensure_ascii=False, indent=2) + "\n```\n"
 
 
+def _market_research(name: str) -> str:
+    som_data = {
+        "monthly_search_volume": 120000,
+        "target_capture_rate": 0.05,
+        "blended_arpu_usd": 15.0,
+        "source": "Google Keyword Planner & Sensor Tower Q3 2026",
+    }
+    return f"""# 《{name}》市场研究与 SOM 测算报告 (工序 01)
+
+## 负责人 30 秒拍板摘要卡 (Executive Gate)
+- 首年 SOM 现实盘子：$1,080,000 (约 72,000 次安装)
+- 建议：GO (具备高利润截胡价值)
+- 数字来源：Google Keyword Planner & Sensor Tower Q3 2026
+
+## 一、自下而上 SOM 测算
+{_fields(som_data)}
+- 月搜索量：120,000
+- 目标获取率：5%
+- 综合 ARPU：$15.0
+- 首年盘子：$1,080,000 美元
+
+## 二、JTBD 核心画像
+1. 海外社媒创作者：追求极致出图速度与无广告体验。
+2. 跨境电商运营：追求轻量快捷。
+"""
+
+
 def _direction(name: str) -> str:
     return f"""# 《{name}》精益方向卡 (工序 03)
 
@@ -399,6 +426,7 @@ def build_simulated_deliverable(module_code: str, meta: Optional[Dict[str, Any]]
     platform = str(meta.get("platform") or "ios").lower()
     extra: Dict[str, str] = {}
     builders = {
+        "01": lambda: _market_research(name),
         "02": lambda: _unit_economics(name),
         "03": lambda: _direction(name),
         "04": lambda: _fakedoor(name),
@@ -415,4 +443,8 @@ def build_simulated_deliverable(module_code: str, meta: Optional[Dict[str, Any]]
         return "", extra
     if module_code == "04":
         extra["index.html"] = _fakedoor_html(name)
+    from backend.app.services.delivery_contract import CONTRACT_STAGES, build_stage_manifest
+
+    if module_code in CONTRACT_STAGES:
+        extra["delivery.manifest.json"] = build_stage_manifest(module_code, f"交付物_{module_code}.md")
     return SIMULATION_BANNER + builder(), extra

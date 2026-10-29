@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moduflow.ai/schemas/manifests/stage_01.schema.json",
+  "title": "Stage 01 Market Research Manifest",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "stage",
+    "artifacts",
+    "risk_flags",
+    "market_research"
+  ],
+  "properties": {
+    "contract_version": { "type": "string", "enum": ["1"] },
+    "stage": { "type": "string", "enum": ["01"] },
+    "artifacts": { "type": "array", "minItems": 1 },
+    "risk_flags": { "type": "object" },
+    "market_research": {
+      "type": "object",
+      "required": [
+        "monthly_search_volume",
+        "target_capture_rate",
+        "blended_arpu_usd",
+        "annual_target_installs",
+        "first_year_som_usd",
+        "source",
+        "verdict"
+      ],
+      "properties": {
+        "monthly_search_volume": { "type": "number", "minimum": 0 },
+        "target_capture_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "blended_arpu_usd": { "type": "number", "minimum": 0 },
+        "annual_target_installs": { "type": "integer", "minimum": 0 },
+        "first_year_som_usd": { "type": "number", "minimum": 0 },
+        "source": { "type": "string", "minLength": 1 },
+        "verdict": { "type": "string", "minLength": 1 },
+        "target_personas": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

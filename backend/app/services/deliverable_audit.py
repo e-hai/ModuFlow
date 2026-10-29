@@ -208,6 +208,45 @@ def audit_unit_economics(texts: List[str]) -> Dict[str, Any]:
     )
 
 
+_SOM_MENTION = re.compile(r"(?<![A-Za-z])SOM(?![A-Za-z])|现实盘子|营收盘子|首年盘子")
+_SOM_MONEY = re.compile(
+    r"(?:US\$|\$|＄)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(万|[KkMmBb])?"
+    r"|([0-9][0-9,]*(?:\.[0-9]+)?)\s*万美元"
+)
+_SOM_SCALE = {"万": 10000, "K": 1000, "k": 1000, "M": 1_000_000, "m": 1_000_000, "B": 1_000_000_000, "b": 1_000_000_000}
+
+
+def _stated_som_amounts(text: str) -> List[float]:
+    """Dollar figures a stage-01 draft states as the first-year SOM, not other prices."""
+    found: List[float] = []
+    for line in text.splitlines():
+        if not _SOM_MENTION.search(line):
+            continue
+        # A SOM sentence often names the SAM beside it. That figure is not the first-year SOM.
+        som_part = re.split(r"(?<![A-Za-z])SAM(?![A-Za-z])", line, maxsplit=1)[0]
+        if not _SOM_MENTION.search(som_part):
+            continue
+        for match in _SOM_MONEY.finditer(som_part):
+            raw = (match.group(1) or match.group(3) or "").replace(",", "")
+            if not raw:
+                continue
+            value = float(raw)
+            if match.group(3):
+                value *= 10000
+            elif match.group(2):
+                value *= _SOM_SCALE[match.group(2)]
+            elif value < 1000:
+                continue
+            found.append(value)
+    return found
+
+
+def _som_disagrees(stated: float, computed: float) -> bool:
+    if computed <= 0:
+        return abs(stated - computed) > 1
+    return abs(stated - computed) / computed > 0.02
+
+
 def audit_som(texts: List[str]) -> Dict[str, Any]:
     fields = merged_fields(texts)
     missing = _require(fields, ["monthly_search_volume", "target_capture_rate", "blended_arpu_usd", "source"])
@@ -218,15 +257,48 @@ def audit_som(texts: List[str]) -> Dict[str, Any]:
     arpu = float(fields["blended_arpu_usd"])
     annual = int(volume * 12 * rate)
     som = round(annual * arpu, 2)
+    mismatched: List[float] = []
+    for text in texts:
+        local = merged_fields([text])
+        local_som = som
+        if not _require(local, ["monthly_search_volume", "target_capture_rate", "blended_arpu_usd", "source"]):
+            local_volume = int(float(local["monthly_search_volume"]))
+            local_som = round(int(local_volume * 12 * float(local["target_capture_rate"])) * float(local["blended_arpu_usd"]), 2)
+        for stated in _stated_som_amounts(text):
+            if _som_disagrees(stated, local_som) and stated not in mismatched:
+                mismatched.append(stated)
+    reasons = []
+    if mismatched:
+        shown = "、".join(f"{v:,.0f}" for v in mismatched)
+        reasons.append(
+            f"正文里的首年盘子写的是 {shown} 美元，按月搜索量、取得比例和客单价算出的是 {som:,.2f} 美元。请把正文改成算出的数。"
+        )
     return _result(
-        True,
-        [],
+        not reasons,
+        reasons,
         evidence_found=True,
         annual_target_installs=annual,
         first_year_som_usd=som,
         source=str(fields["source"]),
         verdict="GO (具备高利润截胡价值)" if som >= 100000 else "CAUTION (盘子偏小，需控研发成本)",
     )
+
+
+def handoff_som_text(text: str) -> str:
+    """Upstream stage 01 text for the next stage: keep the computed SOM, drop a conflicting prose figure."""
+    audit = audit_som([text])
+    som = audit.get("first_year_som_usd")
+    if som is None:
+        return text
+    if not any(_som_disagrees(v, float(som)) for v in _stated_som_amounts(text)):
+        return text
+    kept: List[str] = []
+    for line in text.splitlines():
+        if any(_som_disagrees(v, float(som)) for v in _stated_som_amounts(line)):
+            continue
+        kept.append(line)
+    kept.append(f"首年盘子以结构化字段为准：{float(som):,.2f} 美元。")
+    return "\n".join(kept)
 
 
 def audit_direction(texts: List[str]) -> Dict[str, Any]:
@@ -237,6 +309,48 @@ def audit_direction(texts: List[str]) -> Dict[str, Any]:
     if not re.search(r"\bH1\b", blob):
         reasons.append("方向卡缺少 H1 假设")
     return _result(not reasons, reasons, evidence_found=bool(blob.strip()))
+
+
+def linked_entry_text(storage_rel_path: Optional[str], entry_file: Optional[str] = None) -> str:
+    """工序目录里的 index.html。检查器要读这个文件，不能只看归档进数据库的说明稿。"""
+    if not storage_rel_path:
+        return ""
+    from backend.app.core.config import settings
+
+    root = (settings.WORKSPACE_DIR / storage_rel_path).resolve()
+    workspace = settings.WORKSPACE_DIR.resolve()
+    if workspace != root and workspace not in root.parents:
+        return ""
+    entry = entry_file or "index.html"
+    path = root / entry if root.is_dir() else root
+    if not path.is_file() or path.suffix.lower() not in TEXT_SUFFIXES:
+        return ""
+    try:
+        if path.stat().st_size > 1_000_000:
+            return ""
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def artifact_audit_texts(artifacts: Iterable[Any]) -> List[str]:
+    texts: List[str] = []
+    for artifact in artifacts:
+        content = getattr(artifact, "content", None) or ""
+        if content.strip():
+            texts.append(content)
+        extra = linked_entry_text(
+            getattr(artifact, "storage_rel_path", None),
+            getattr(artifact, "entry_file", None),
+        )
+        if extra.strip() and extra not in texts:
+            texts.append(extra)
+        from backend.app.services.delivery_contract import read_manifest_text
+
+        manifest_text = read_manifest_text(getattr(artifact, "storage_rel_path", None))
+        if manifest_text.strip() and manifest_text not in texts:
+            texts.append(manifest_text)
+    return texts
 
 
 def audit_fakedoor(texts: List[str]) -> Dict[str, Any]:
@@ -489,50 +603,187 @@ def audit_pricing_authority(module_code: str, texts: List[str], baseline_prices:
     return _result(not offending, reasons, evidence_found=True, offending_lines=offending)
 
 
-def audit_stage(
-    module_code: str,
+def _audit_stage_text(
+    code: str,
     texts: List[str],
     platform: str = "ios",
     client_zero_inference: bool = True,
-    price_baseline: Optional[Iterable[float]] = None,
 ) -> Dict[str, Any]:
-    """price_baseline=None skips the pricing-authority check (no run context available)."""
-    fields = merged_fields(texts)
-    red_flags = extract_red_flags(fields)
-    code = str(module_code)
     if code == "01":
-        result = audit_som(texts)
-    elif code == "02":
-        result = audit_unit_economics(texts)
-    elif code == "03":
-        result = audit_direction(texts)
-    elif code == "04":
-        result = audit_fakedoor(texts)
-    elif code == "05":
-        result = audit_prd(texts)
-    elif code == "06":
-        result = audit_design(texts, platform=platform)
-    elif code == "07":
+        return audit_som(texts)
+    if code == "02":
+        return audit_unit_economics(texts)
+    if code == "03":
+        return audit_direction(texts)
+    if code == "04":
+        return audit_fakedoor(texts)
+    if code == "05":
+        return audit_prd(texts)
+    if code == "06":
+        return audit_design(texts, platform=platform)
+    if code == "07":
         inference = audit_inference(texts, enforce_zero=client_zero_inference)
         coverage = audit_coverage(texts)
         reasons = list(inference.get("reasons") or []) + list(coverage.get("reasons") or [])
-        result = _result(
+        return _result(
             bool(inference.get("passed") and coverage.get("passed")),
             reasons,
             evidence_found=bool(inference.get("evidence_found") and coverage.get("evidence_found")),
             inference=inference,
             coverage=coverage,
         )
-    elif code == "08":
-        result = audit_quality(texts, require_remote_config=False)
-    elif code == "09":
-        result = audit_quality(texts, require_remote_config=True)
-    elif code == "10":
-        result = audit_acquisition(texts)
-    elif code == "11":
-        result = audit_retention(texts)
+    if code == "08":
+        return audit_quality(texts, require_remote_config=False)
+    if code == "09":
+        return audit_quality(texts, require_remote_config=True)
+    if code == "10":
+        return audit_acquisition(texts)
+    if code == "11":
+        return audit_retention(texts)
+    return _result(False, [f"工序 {code} 没有确定性检查器"], evidence_found=False)
+
+
+def _prose_texts(texts: List[str]) -> List[str]:
+    from backend.app.services.delivery_contract import manifest_from_texts
+
+    prose = [text for text in texts if manifest_from_texts([text]) is None]
+    return prose or texts
+
+
+def audit_stage(
+    module_code: str,
+    texts: List[str],
+    platform: str = "ios",
+    client_zero_inference: bool = True,
+    price_baseline: Optional[Iterable[float]] = None,
+    manifest_root: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """price_baseline=None skips the pricing-authority check (no run context available)."""
+    from backend.app.services.delivery_contract import (
+        CONTRACT_STAGES,
+        manifest_from_texts,
+        risk_fields_from_manifest,
+        stage_code,
+        validate_manifest,
+    )
+
+    code = str(module_code)
+    manifest = manifest_from_texts(texts)
+    if manifest is None and manifest_root is not None:
+        from backend.app.services.delivery_contract import MANIFEST_FILENAME
+
+        manifest_path = manifest_root / MANIFEST_FILENAME
+        if manifest_path.is_file():
+            manifest = manifest_from_texts([manifest_path.read_text(encoding="utf-8", errors="replace")])
+    use_manifest = (
+        manifest is not None
+        and stage_code(manifest.get("stage")) == code
+        and code in CONTRACT_STAGES
+    )
+    if use_manifest:
+        assert manifest is not None
+        reasons = validate_manifest(
+            manifest,
+            root=manifest_root,
+            texts=texts,
+            platform=platform,
+            client_zero_inference=client_zero_inference,
+        )
+        red_flags = extract_red_flags(risk_fields_from_manifest(manifest))
+        extra: Dict[str, Any] = {"contract": "delivery.manifest.json"}
+        if code == "01":
+            mr = manifest.get("market_research") or manifest.get("som") or {}
+            extra.update({
+                "annual_target_installs": mr.get("annual_target_installs"),
+                "first_year_som_usd": mr.get("first_year_som_usd"),
+                "source": str(mr.get("source") or ""),
+                "verdict": mr.get("verdict"),
+            })
+        elif code == "02":
+            ue = manifest.get("unit_economics") or {}
+            extra.update({
+                "blended_cac_usd": ue.get("blended_cac_usd"),
+                "ltv_180d_usd": ue.get("ltv_180d_usd"),
+                "ltv_cac_ratio": ue.get("ltv_cac_ratio"),
+                "healthy": (ue.get("ltv_cac_ratio") or 0) >= 3.0,
+            })
+        elif code == "03":
+            dir_data = manifest.get("direction") or {}
+            raw_hyps = dir_data.get("hypotheses") or []
+            hyps = [
+                h.get("hypothesis") if isinstance(h, dict) else str(h)
+                for h in raw_hyps
+            ]
+            extra.update({
+                "uvp": dir_data.get("uvp"),
+                "hypotheses": hyps,
+            })
+        elif code == "04":
+            fd = manifest.get("fakedoor") or {}
+            extra.update({
+                "exists": True,
+                "test_budget_usd": fd.get("test_budget_usd", 200.0),
+            })
+        elif code == "05":
+            prd = audit_prd(_prose_texts(texts))
+            extra["score"] = prd.get("score")
+            extra["linter"] = prd.get("linter")
+            if not prd.get("passed"):
+                reasons.extend(prd.get("reasons") or [])
+        elif code == "06":
+            des = manifest.get("design") or {}
+            safe_area = des.get("safe_area") or {}
+            touch = des.get("touch_targets") or {}
+            extra.update({
+                "platform": des.get("platform", platform),
+                "dynamic_island_safe_pt": safe_area.get("top_safe_padding_pt"),
+                "min_touch_pt": touch.get("min_touch_target_pt"),
+                "status_bar_cutout_safe_dp": safe_area.get("status_bar_safe_dp"),
+                "min_touch_target_dp": touch.get("min_touch_target_dp"),
+            })
+        elif code == "07":
+            eng = manifest.get("engineering") or {}
+            cov = eng.get("coverage_percent", 0.0)
+            zero = eng.get("zero_client_inference", True)
+            extra.update({
+                "coverage_percent": cov,
+                "coverage": {"coverage_percent": cov},
+                "inference": {"zero_client_ai_compliant": zero},
+            })
+        elif code == "08":
+            qa = manifest.get("quality") or {}
+            extra.update({
+                "open_p0": qa.get("open_p0", 0),
+                "open_p1": qa.get("open_p1", 0),
+            })
+        elif code == "09":
+            rel = manifest.get("release") or {}
+            extra.update({
+                "open_p0": 0,
+                "open_p1": 0,
+                "has_remote_config_fallback": rel.get("has_remote_killswitch", True),
+            })
+        elif code == "10":
+            acq = manifest.get("acquisition") or {}
+            extra.update({
+                "ecac_usd": acq.get("ecac_usd"),
+                "ecac_limit_usd": acq.get("ecac_limit_usd"),
+            })
+        elif code == "11":
+            ret = manifest.get("retention") or {}
+            extra.update({
+                "d1_retention": ret.get("d1_retention"),
+                "d7_retention": ret.get("d7_retention"),
+                "d30_retention": ret.get("d30_retention"),
+                "d30_healthy": (ret.get("d30_retention") or 0) >= 8.0,
+            })
+        result = _result(not reasons, reasons, evidence_found=True, **extra)
     else:
-        result = _result(False, [f"工序 {code} 没有确定性检查器"], evidence_found=False)
+        fields = merged_fields(texts)
+        red_flags = extract_red_flags(fields)
+        result = _audit_stage_text(
+            code, texts, platform=platform, client_zero_inference=client_zero_inference,
+        )
     if price_baseline is not None:
         pricing = audit_pricing_authority(code, texts, price_baseline)
         result["pricing"] = pricing

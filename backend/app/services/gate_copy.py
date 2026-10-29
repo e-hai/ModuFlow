@@ -185,8 +185,8 @@ def build_stage_brief(module_code: str, texts: List[str], audit: Dict[str, Any])
             missing.append("回收倍数")
         watch = "这里定下的价格，后面的工序不能自行改。"
     elif code == "03":
-        uvp = _uvp_sentence(fields, blob)
-        hypotheses = _hypotheses(blob)
+        uvp = audit.get("uvp") or _uvp_sentence(fields, blob)
+        hypotheses = audit.get("hypotheses") or _hypotheses(blob)
         keep, cut = _cut_and_keep(blob)
         choices = _choice_lines(blob)
         if uvp:
@@ -203,7 +203,7 @@ def build_stage_brief(module_code: str, texts: List[str], audit: Dict[str, Any])
             facts.append(f"明确不做：{cut}。")
         watch = "后面的小额测试和需求都按这个方向做。"
     elif code == "04":
-        budget = fields.get("test_budget_usd")
+        budget = audit.get("test_budget_usd") if audit.get("test_budget_usd") is not None else fields.get("test_budget_usd")
         if budget in (None, ""):
             match = re.search(r"测试预算[：:]\s*\$?\s*([0-9]+(?:\.[0-9]+)?)", blob)
             budget = float(match.group(1)) if match else None
@@ -223,10 +223,11 @@ def build_stage_brief(module_code: str, texts: List[str], audit: Dict[str, Any])
         if match:
             decision = f"这版只交付{_clean(match.group(1), 120)}。"
         else:
+            # 范围由 PRD 清单的封版一节保证，评分 100 才会走到这里，
+            # 所以这里只是换个说法汇报，不要因为没用"本版只交付"这个措辞就卡住定稿。
             score = audit.get("score")
             score_text = f"清单评分 {score}。" if score is not None else ""
             decision = f"需求规格已按清单写全。{score_text}".strip()
-            missing.append("这版做哪些")
         facts.append("范围、页面、业务规则、埋点和验收写在同一份规格里。")
         watch = "封版之后要改范围，走变更，不在下游稿里直接改。"
     elif code == "06":

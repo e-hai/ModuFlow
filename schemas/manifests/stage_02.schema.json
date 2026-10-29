@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moduflow.ai/schemas/manifests/stage_02.schema.json",
+  "title": "Stage 02 Business Analysis & Unit Economics Manifest",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "stage",
+    "artifacts",
+    "risk_flags",
+    "unit_economics"
+  ],
+  "properties": {
+    "contract_version": { "type": "string", "enum": ["1"] },
+    "stage": { "type": "string", "enum": ["02"] },
+    "artifacts": { "type": "array", "minItems": 1 },
+    "risk_flags": { "type": "object" },
+    "unit_economics": {
+      "type": "object",
+      "required": [
+        "organic_share",
+        "paid_cpi_usd",
+        "ad_arpu_usd",
+        "iap_conversion_rate",
+        "iap_net_arppu_usd",
+        "blended_cac_usd",
+        "ltv_180d_usd",
+        "ltv_cac_ratio",
+        "pricing_tiers"
+      ],
+      "properties": {
+        "organic_share": { "type": "number", "minimum": 0, "maximum": 1 },
+        "paid_cpi_usd": { "type": "number", "minimum": 0 },
+        "ad_arpu_usd": { "type": "number", "minimum": 0 },
+        "iap_conversion_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "iap_net_arppu_usd": { "type": "number", "minimum": 0 },
+        "blended_cac_usd": { "type": "number", "minimum": 0 },
+        "ltv_180d_usd": { "type": "number", "minimum": 0 },
+        "ltv_cac_ratio": { "type": "number", "minimum": 0 },
+        "payback_months": { "type": "number", "minimum": 0 },
+        "pricing_tiers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["tier_id", "name", "price_usd"],
+            "properties": {
+              "tier_id": { "type": "string" },
+              "name": { "type": "string" },
+              "price_usd": { "type": "number", "minimum": 0 },
+              "billing_period": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

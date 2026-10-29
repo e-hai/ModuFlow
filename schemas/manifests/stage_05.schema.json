@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moduflow.ai/schemas/manifests/stage_05.schema.json",
+  "title": "Stage 05 PRD Specification Manifest",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "stage",
+    "artifacts",
+    "risk_flags",
+    "views",
+    "acceptance_criteria",
+    "event_dictionary",
+    "compliance"
+  ],
+  "properties": {
+    "contract_version": { "type": "string", "enum": ["1"] },
+    "stage": { "type": "string", "enum": ["05"] },
+    "artifacts": { "type": "array", "minItems": 1 },
+    "risk_flags": { "type": "object" },
+    "views": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "pattern": "^V-\\d{2}$" }
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "pattern": "^AC-\\d{2}$" }
+    },
+    "event_dictionary": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "trigger": { "type": "string" }
+        }
+      }
+    },
+    "compliance": {
+      "type": "object",
+      "required": ["uses_idfa", "uses_ad_id"],
+      "properties": {
+        "uses_idfa": { "type": "boolean" },
+        "att_copy": { "type": "string" },
+        "att_denied_fallback": { "type": "string" },
+        "uses_ad_id": { "type": "boolean" },
+        "ad_id_permission_declared": { "type": "boolean" },
+        "min_audience_age": { "type": "integer", "minimum": 13 },
+        "ad_id_opt_out_fallback": { "type": "string" }
+      }
+    }
+  }
+}

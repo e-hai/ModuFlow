@@ -70,8 +70,11 @@ class SimulatorAdapter(BaseAgentAdapter):
             content=f"已读取战略底稿，正在为工序 {mod_code} ({mod_name}) 生成规范草案..."
         )
 
+        extra_files: Dict[str, str] = {}
         if mod_code == "01":
             from backend.app.services.market_research_engine import generate_comprehensive_market_report
+            from backend.app.services.delivery_contract import MANIFEST_FILENAME, build_stage_manifest
+
             product_name = (metadata or {}).get("product_name") or "当前产品"
             product_code = (metadata or {}).get("product_code") or "PRD"
             target_market = (metadata or {}).get("target_market") or "目标细分市场"
@@ -84,10 +87,9 @@ class SimulatorAdapter(BaseAgentAdapter):
                 user_instruction=user_instruction
             )
             template_content = SIMULATION_BANNER + template_content
+            extra_files[MANIFEST_FILENAME] = build_stage_manifest("01", f"交付物_{mod_code}_{mod_name}.md")
         else:
             template_content, extra_files = build_simulated_deliverable(mod_code, metadata)
-            for rel_name, file_content in extra_files.items():
-                (workspace_dir / rel_name).write_text(file_content, encoding="utf-8")
             if not template_content:
                 template_content = MODULE_TEMPLATES_CONTENT.get(
                     mod_code,
@@ -101,8 +103,14 @@ class SimulatorAdapter(BaseAgentAdapter):
             content = template_content
             event_type = AgentEventType.ARTIFACT_DRAFT
 
-        # Write to workspace
-        (workspace_dir / f"交付物_{mod_code}_{mod_name}.md").write_text(content, encoding="utf-8")
+        filename = f"交付物_{mod_code}_{mod_name}.md"
+        (workspace_dir / filename).write_text(content, encoding="utf-8")
+        from backend.app.services.delivery_contract import MANIFEST_FILENAME, bind_manifest_report_path
+
+        for rel_name, file_content in extra_files.items():
+            if rel_name == MANIFEST_FILENAME:
+                file_content = bind_manifest_report_path(file_content, filename)
+            (workspace_dir / rel_name).write_text(file_content, encoding="utf-8")
 
         yield AgentStreamEvent(
             event_type=event_type,

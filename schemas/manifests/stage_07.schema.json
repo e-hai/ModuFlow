@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moduflow.ai/schemas/manifests/stage_07.schema.json",
+  "title": "Stage 07 Engineering Architecture Manifest",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "stage",
+    "artifacts",
+    "risk_flags",
+    "engineering"
+  ],
+  "properties": {
+    "contract_version": { "type": "string", "enum": ["1"] },
+    "stage": { "type": "string", "enum": ["07"] },
+    "artifacts": { "type": "array", "minItems": 1 },
+    "risk_flags": { "type": "object" },
+    "engineering": {
+      "type": "object",
+      "required": ["coverage_percent", "zero_client_inference"],
+      "properties": {
+        "coverage_percent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "zero_client_inference": { "type": "boolean" },
+        "modules": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

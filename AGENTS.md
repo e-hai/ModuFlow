@@ -4,10 +4,49 @@
 
 ---
 
-## 一、项目定位与三层架构体系 (Three-Tier Architecture)
+## 一、项目定位与系统核心设计哲学 (Core Mental Model & Architecture)
 
 **ModuFlow** = `Module`（模块化与可插拔）+ `Flow`（战略工序流）。  
-专为出海与多产品矩阵设计的 **AI 原生产研与运营平台**。系统全面采用 **「人类战略层 → 项目总控层 (lead) → 专业执行层」** 三层架构体系：
+专为出海与多产品矩阵设计的 **AI 原生产研与运营平台**。
+
+### 1. 核心设计思想：五元架构模型 (Five-Element Mental Model)
+ModuFlow 的底层运转秩序由五个最本质的业务要素咬合而成：
+> **「阶段负责组织业务，任务负责组织工作，Agent 负责执行与协作，产物负责共享上下文，用户负责方向与关键决策。」**
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│  👤 用户 (User)       ── 负责战略方向、资源注资与重大关口拍板 (🔴/🟡)  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ 设定目标与授权包
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│  🏁 阶段 (Stages)     ── 组织宏观业务流程 (11 道标准出海产研工序)       │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ 触发与编排
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│  📋 任务 (Tasks)      ── 组织具体执行单元 (异步独立作业队列 / CR)       │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ 派发与认领
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│  🤖 Agent (智能体)    ── 专业执行与多角交叉协作 (动态挂载专属工具箱)   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ 交付与固化
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│  📦 产物 (Artifacts)  ── 承载物理基线，单向流动共享上下文 (唯一真理源) │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+1. **阶段 (Stages) 负责组织业务**：定义商业与产研的宏观演进里程碑（01 赛道摸底 → 02 变现精算 → 04 假门外测 → 05 需求定义 → 09 提审发布），绑定各工序准入准出与质量门禁（Gate），解决“业务走到哪一步”。
+2. **任务 (Tasks) 负责组织工作**：定义高内聚、解耦的具体执行单元（如计算 SOM、验证 H5、审查 CR），通过独立进程执行器（`backend.app.runner`）与持久化队列（`orchestration_jobs`）异步推进，支持心跳守护、重试与超时保护，解决“这一刻具体干什么”。
+3. **Agent (智能体) 负责执行与协作**：具备特定专业视角与排他职权的执行实体（9 大专业角色 + 1 项目总控），动态挂载专属 Skill/MCP 工具箱并在物理沙箱中运行，完成跨角色交叉审查与闭环协作，解决“由谁来执行与协同”。
+4. **产物 (Artifacts) 负责共享上下文**：全平台唯一的真理源（Single Source of Truth），坚决杜绝依赖易退化、易遗忘的聊天会话传递记忆。上游以物理文件（Markdown 报告、`delivery.manifest.json`、HTML 原型、代码包）单向固化注入下游，解决“智能体之间如何消除信息差与防止幻觉”。
+5. **用户 (User) 负责方向与关键决策**：人类拥有无可替代的战略主权。从琐碎的提示词催促与排查中解脱，退到最高维度的驾驶舱，专注掌控“立项注资（授权包）、关键关口拍板（黄级批量审批、红级必须签字）、生死方向转向（Go/Pivot/Kill）”，解决“做不做、行不行、发不发”。
+
+### 2. 三层治理架构体系 (Three-Tier Governance)
+系统全面采用 **「人类战略层 → 项目总控层 (lead) → 专业执行层」** 三层架构体系：
 
 ```
                     ┌────────────────────────────────────────┐
@@ -34,7 +73,7 @@
     └────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 1. 三层权责边界划分与红线原则
+### 3. 三层权责边界划分与红线原则
 1. **人类战略层 (Human Strategic Tier)**：
    - **专属核心权力**：战略工程立项、总体预算与单阶段预算注资、硬止损阈值设定、黄级/红级关口审批（尤其是 G1、G2、G4、G5）、商店开发者账号与生产支付/数据库真实凭证持有。
    - **绝对防线**：任何 Agent（包括 lead）绝不可修改授权包、批准预算上调或持有生产级凭证。
@@ -47,7 +86,7 @@
    - 每个工序处于独立物理工作区目录，仅动态挂载当前工序角色专属的 Skill 与 MCP 工具箱。
    - 严格遵循输入输出契约与红线禁区，所有越权行为（如跨角色改价、越权写授权包）被系统底层物理拦截。
 
-### 2. 确定性止损与熔断机制 (Zero-LLM Circuit Breaking)
+### 4. 确定性止损与熔断机制 (Zero-LLM Circuit Breaking)
 - **代码级硬拦截**：预算超限检查、时限超期检查、退出条件 (`kill_criteria`) 命中检查、`lead_forbidden` 禁区拦截**绝不交给 LLM 模糊判断**，必须由独立的确定性安全脚本 (`authorization_engine.py`) 执行。
 - **自动熔断行为**：一旦命中止损或违规行为，系统立即将项目状态自动置为 `paused`，持久化审计记录至 `decisions/` 目录，生成 🔴 Critical 告警，并彻底阻断后续工序派活。
 
@@ -287,12 +326,19 @@ ModuFlow 严密定义 **10 大专业智能体**（包括项目总控与合规风
 
 ### 6. 自动编排 (Orchestrator)
 - **范围**：`orchestrator.py` 只替人做"推一下"的动作，关口规则不变。流程为：交接锚点检查 → 派活 → `audit_stage` 确定性检查 → `cmp` 合规 → 协作评审 → 提交关口申请 → `lead` 评估 → 定稿 → 解锁下游 → 继续派活。
-- **触发点**（FastAPI BackgroundTasks）：
+- **触发点**（只往 `orchestration_jobs` 排队，不在请求里跑）：
  - 创建迭代；
  - 会话里产出交付物；
  - 上传交付物；
  - 人类审批关口（通过则定稿推进，打回/调整则把意见发回 Agent 修订）；
- - 手动定稿或变更审批通过。
+ - 手动定稿或变更审批通过；
+ - 决策中心「重新检查」：只复核当前交付物。检查未通过就停下，不派 Agent 重写；关口已经签过字且检查通过，沿用原签字定稿，不把申请单打回待批。
+- **执行器进程 (Runner)**：Agent CLI 一律跑在独立进程 `python -m backend.app.runner` 里，后端只写队列行就返回。
+ - **为什么**：一道工序可能跑好几分钟。CLI 以前跑在 uvicorn 工作进程里，于是任何一个产品推进工序，整个工作台都停住，重启也要等它跑完。
+ - **串行粒度**：同一迭代同时只有一个任务在跑（`claim_next` 跳过已有 `running` 任务的迭代），不同产品互不影响；某个任务失败只写进它自己那一行。
+ - **失联恢复**：执行器每 15 秒写心跳，并刷新 `data/runner.pulse`。心跳超过 `RUNNER_STALE_SECONDS` 的任务由 `reclaim_stale` 重新排队；执行器收到退出信号时先结束自己启动的 CLI，再把在跑的任务标成 `interrupted`。空闲时 `resume_orphaned` 会把停在「等待派活 / 等待检查」、队列里却没任务的迭代重新排上（最近一次任务是失败的不再自动重试，等人点「立即推进」）。
+ - **人类可见**：`GET /runs/{id}/orchestration-status` 的 `queue` 字段给出排队数、在跑数与执行器是否在岗，工序页据此区分「排队中」和「执行器没在跑」。
+ - **启动**：`./run.sh` 会连带启动执行器；单独跑后端时工序只会排队，不会推进。
 - **停点**：
  - 黄/红级关口、工序 09、影子模式下的绿级关口，一律停在 pending 等人类签字；
  - 绿级关口只能由配置里指定的审批人放行：工序 08 G3 归 `qa`，关闭影子模式后由 `qa` 依据确定性质量报告（P0/P1 清零、无未关闭 Critical/Major Issue）放行，`lead` 无权代批；
@@ -336,6 +382,34 @@ ModuFlow 严密定义 **10 大专业智能体**（包括项目总控与合规风
 - **交接锚点**：派活前检查上游基线是否带有下游必需的锚点（如 06 需要 05 的 `V-xx` 与埋点字典，07/08 需要 05 的 `AC-xx`，10 需要 02 变现阶梯与 09 回滚计划）。缺失时不派活，在上游工序建 `handoff_gap` Issue（去重），状态为 `handoff_incomplete`，并把缺的锚点发回已定稿的上游主责补一版。补缺与检查修订共用 2 次上限，单独计次。补写通过本工序确定性检查后重新定稿，关掉缺口，下游再开工。两次仍补不上，在上游生成 `ORCH_STUCK_{工序}`，决策中心同时看到卡死和交接缺口。原先那次人类签字继续有效；只有补写本身带上新的支付、隐私、密钥或数据字典标记，才重新请人批，原基线保持不动。上下文装配会追加「上游交接锚点」一节：锚点原文、结构化字段、上游评审备注与遗留 CR。
 - **人类可见**：决策中心是唯一审核入口，聚合黄/红级关口、`ORCH_DISPUTE`、`ORCH_STUCK` 和交接缺口。分歧在该页裁决（采纳评审意见或按当前交付物继续），卡死可在该页重新检查。工序页仍显示状态，但人不必进入每个工序会话。日报的 `collaboration` 统计今日评审数、待裁决分歧、遗留 CR 与交接缺口。
 
+### 8. 全局工序交付清单规范 (Global Delivery Manifest Specification: `delivery.manifest.json`)
+为彻底消除 Agent 之间仅靠模糊非结构化自然语言传递记忆而导致的漏项、口径漂移与幻觉，ModuFlow 在全系统 11 道标准工序中全面推行 **结构化交付清单机制**（就如同客户端与服务端通过 JSON Schema / Protobuf 确定数据通信契约一样）。
+
+#### 1. 设计哲学与核心原则
+1. **单一真理源 (Single Source of Truth)**：每个工序目录下的 `delivery.manifest.json` 与正文物理报告同时修订、版本受控。下游工序与确定性检查器优先按字段精准读取；
+2. **通用的封套规范 (`schemas/manifests/base.manifest.schema.json`)**：
+   - `contract_version`: 字符串，目前固定为 `"1"`；
+   - `stage`: 两位字符串编号 (`"01"` ~ `"11"`)；
+   - `artifacts`: 实体交付物角色与路径清单数组（`role` 与 `path`，物理路径严格限制在本工序目录内）；
+   - `risk_flags`: 7 大安全硬拦截布尔值（`payment`, `privacy`, `user_data`, `encryption`, `lead_permissions`, `public_statement`, `data_dictionary`），代码级硬拦截并驱动红级关口 (🔴) 自动升格。
+3. **平滑兼容与双轨保底 (Graceful Degradation)**：没有清单的历史目录或旧稿自动回退执行正则纯文本检查；存在清单的目录严格按 JSON Schema 契约校验，字段缺失或非法一票否决。
+
+#### 2. 全局 11 道工序结构化契约与校验规则矩阵
+
+| 工序编号与角色 | 结构化关键对象 | JSON Schema 规范文件 | 核心类型字段与确定性放行红线 |
+| :---: | :---: | :---: | :--- |
+| **`01 市场研究`** (`mr`) | `market_research` | `stage_01.schema.json` | `monthly_search_volume`, `target_capture_rate` (0~1), `blended_arpu_usd`, `annual_target_installs`, `first_year_som_usd`, `source` (严禁为空), `verdict`。参数可精确复算。 |
+| **`02 商业分析`** (`ba`) | `unit_economics` | `stage_02.schema.json` | `organic_share`, `paid_cpi_usd`, `ad_arpu_usd`, `iap_conversion_rate`, `iap_net_arppu_usd`, `blended_cac_usd`, `ltv_180d_usd`, `ltv_cac_ratio` (必须 ≥ 3.0), `pricing_tiers` (**全平台价格唯一真理源**) |
+| **`03 方向决策`** (`pm`) | `direction` | `stage_03.schema.json` | `uvp` (核心价值主张), `moscow.must` (必须非空 MVP 清单), `hypotheses` (生死假设列表，必须包含 `H1`) |
+| **`04 假门外测`** (`mkt`) | `fakedoor` | `stage_04.schema.json` | `entry` (指向有效 `index.html`), `interactive: true`, `test_budget_usd`, `measured_results` (无真实数据必须填 `"pending"`，严禁造假) |
+| **`05 需求定义`** (`pm`) | `views` / `criteria` / `events` / `compliance` | `stage_05.schema.json` | `views` (`V-xx` 数组), `acceptance_criteria` (`AC-xx` 数组), `event_dictionary` (`id`+`name`), `compliance` (包含 `uses_idfa` / `uses_ad_id` 及其降级文案) |
+| **`06 设计实现`** (`ux`) | `design` | `stage_06.schema.json` | `platform`, `safe_area` (iOS top ≥ 71pt, Android status_bar ≥ 24dp), `touch_targets` (iOS ≥ 44pt, Android ≥ 48dp), `tokens_defined: true` |
+| **`07 开发实现`** (`eng`) | `engineering` | `stage_07.schema.json` | `coverage_percent` (核心逻辑单测 ≥ 80%), `zero_client_inference` (按 Profile 严格声明客户端零推理成本), `modules` |
+| **`08 测试保障`** (`qa`) | `quality` | `stage_08.schema.json` | `open_p0: 0` (P0 缺陷必须清零), `open_p1: 0` (P1 缺陷必须清零), `test_cases_total`, `test_cases_passed`, `e2e_pass_rate` |
+| **`09 发布上线`** (`ops`/`pm`) | `release` | `stage_09.schema.json` | `store_targets`, `compliance_checked: true`, `has_remote_killswitch: true` (Remote Config 降级开关), `rollback_plan` (详尽回滚预案) |
+| **`10 推广获客`** (`mkt`) | `acquisition` | `stage_10.schema.json` | `ecac_usd`, `ecac_limit_usd` (熔断止损线，`ecac_usd` 绝不可超标), `channels` (渠道列表), `daily_budget_usd` |
+| **`11 运营迭代`** (`ops`) | `retention` | `stage_11.schema.json` | `d1_retention`, `d7_retention`, `d30_retention`, `backlog_items` (包含流失/留存数据依据的 V1.1 需求建议清单) |
+
 ---
 
 ## 六、技术架构与代码实现
@@ -362,7 +436,9 @@ backend/app/
 ├── mcp/
 │   └── role_mcp_server.py    # 角色级隔离的 Stdio JSON-RPC 2.0 MCP Server (10 大角色专属工具箱)
 ├── models/
-│   └── entities.py           # 核心 ORM 实体 (Initiative, Product, GateApplication, HotfixFollowupTask 等)
+│   └── entities.py           # 核心 ORM 实体 (Initiative, Product, GateApplication, OrchestrationJob 等)
+├── runner/
+│   └── __main__.py           # 工序执行器进程：领队列任务、跑 Agent CLI、心跳与退出善后
 ├── schemas/
 │   ├── all_schemas.py        # 核心业务 Pydantic 模型
 │   └── gate_schemas.py       # 关口申请单与审批契约模型
@@ -376,6 +452,8 @@ backend/app/
     ├── portfolio_and_hotfix_service.py # 热修复 24h SLA 追踪、Portfolio 周报生成器
     ├── workflow_engine.py        # 模板管理与 11 道工序实例化引擎
     ├── orchestrator.py           # 自动编排：派活、检查、提交关口、定稿与解锁下游
+    ├── job_queue.py              # 派活队列：后端只排队，执行器进程领任务跑 CLI
+    ├── stage_memory.py           # 本工序进度（当前稿、未关闭事项、未消化意见）渲染
     ├── collaboration.py          # 协作评审矩阵、确定性交叉检查、评审结论解析与交接锚点
     ├── deliverable_audit.py      # 读取交付物的确定性检查器 (定稿与自动编排共用)
     ├── workspace_sandbox.py      # CLI Agent 文件系统沙箱 (sandbox-exec + 运行后完整性校验)
@@ -419,13 +497,17 @@ ModuFlow 严格执行**按工序角色物理隔离的 Skill 与 MCP 动态挂载
 
 ### 1. 运行系统
 ```bash
-# 一键并发启动前后端服务
+# 一键并发启动前端、后端与工序执行器
 ./run.sh
+
+# 只重启工序执行器（Agent CLI 跑在这里，后端不受影响）
+PYTHONPATH=. backend/.venv/bin/python -m backend.app.runner
 ```
 - Web 前端控制台：`http://localhost:5173`
 - FastAPI Swagger 接口文档：`http://127.0.0.1:8000/docs`
+- 执行器没启动时，派活只会排队不会推进，工序页会显示「执行器没在跑」。
 
-### 2. 自动化测试套件 (133 项全绿保证)
+### 2. 自动化测试套件 (179 项全绿保证)
 ```bash
 # 运行后端全量异步测试 (覆盖授权包、关口分级、安全防护、Lead 影子模式、合规风控、Profile、热修与组合)
 PYTHONPATH=. backend/.venv/bin/pytest backend/tests/ -v

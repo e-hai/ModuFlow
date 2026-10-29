@@ -191,7 +191,22 @@ async def load_price_baseline(db: AsyncSession, mod: ModuleInstance) -> List[flo
         return []
     same_run = [art for art, run_id in rows if run_id == mod.run_id]
     baseline = same_run[0] if same_run else rows[0][0]
-    return extract_price_points(baseline.content or "")
+    prices = extract_price_points(baseline.content or "")
+    from backend.app.services.delivery_contract import read_manifest_text, iter_json_documents
+
+    manifest_raw = read_manifest_text(getattr(baseline, "storage_rel_path", None))
+    if manifest_raw:
+        for doc in iter_json_documents(manifest_raw):
+            tiers = (doc.get("unit_economics") or {}).get("pricing_tiers") or []
+            for t in tiers:
+                if isinstance(t, dict) and "price_usd" in t:
+                    try:
+                        p = round(float(t["price_usd"]), 2)
+                        if p not in prices:
+                            prices.append(p)
+                    except (TypeError, ValueError):
+                        continue
+    return prices
 
 
 async def can_baseline_module(db: AsyncSession, module_id: str) -> Tuple[bool, str]:
@@ -297,7 +312,8 @@ async def can_baseline_module(db: AsyncSession, module_id: str) -> Tuple[bool, s
         return False, "模块尚未产出任何可作为基线的交付物 (Artifact)"
 
     from sqlalchemy.orm.attributes import flag_modified
-    from backend.app.services.deliverable_audit import audit_stage
+    from backend.app.services.deliverable_audit import artifact_audit_texts, audit_stage
+    from backend.app.services.delivery_contract import manifest_from_texts, stage_directory
 
     platform = "ios"
     zero_inf = True
@@ -315,12 +331,14 @@ async def can_baseline_module(db: AsyncSession, module_id: str) -> Tuple[bool, s
                 platform = product.platform or "ios"
                 zero_inf = True if product.client_zero_inference is None else bool(product.client_zero_inference)
 
+    texts = artifact_audit_texts(artifacts)
     audit = audit_stage(
         module_code,
-        [artifact.content or "" for artifact in artifacts],
+        texts,
         platform=platform,
         client_zero_inference=zero_inf,
         price_baseline=await load_price_baseline(db, mod) if mod is not None else None,
+        manifest_root=stage_directory(artifacts),
     )
     human_signed = gate is not None and gate.status == "approved" and gate.reviewer_role == "human"
     if audit.get("red_flags") and not human_signed:
@@ -331,7 +349,9 @@ async def can_baseline_module(db: AsyncSession, module_id: str) -> Tuple[bool, s
 
     from backend.app.services.compliance_engine import audit_module_compliance, compliance_failed_items
     latest_artifact = max(artifacts, key=lambda a: a.version or 0)
-    compliance = await audit_module_compliance(db, module_code, product, latest_artifact.content or "")
+    compliance = await audit_module_compliance(
+        db, module_code, product, latest_artifact.content or "", manifest=manifest_from_texts(texts),
+    )
     if compliance and compliance["status"] != "passed" and not human_signed:
         items = compliance_failed_items(compliance)
         return False, f"合规风控 (cmp) 结论为 {compliance['status']}，须整改或由人类签字: " + "; ".join(items[:3])
