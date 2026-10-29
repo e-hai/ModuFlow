@@ -88,8 +88,11 @@ def manifest_instruction(module_code: str, filename: str) -> str:
         )
     elif code == "06":
         lines.append(
-            "design 必须包含 platform、safe_area（iOS top ≥ 71pt / Android status_bar ≥ 24dp）"
-            "以及 touch_targets（iOS ≥ 44pt / Android ≥ 48dp）。"
+            "design 是设计交付包清单，必须包含 platform、entry（index.html 设计工作台）、tokens_path（tokens.json）、"
+            "screens（每个工序 05 视图一项：view_id、path 为 screens/V-xx.html、platforms）和 icons（assets/icons/*.svg 路径列表）。"
+            "每张画板必须有 iOS/Android 设备外框（data-device、data-safe-top、data-safe-bottom）、四态面板（data-state）、"
+            "可点击元素的 data-hit 热区标注，颜色只能来自 tokens.json，零外部依赖。"
+            "iOS 顶部 ≥ 71pt、底部 ≥ 34pt、触控 ≥ 44pt；Android 状态栏 ≥ 24dp、触控 ≥ 48dp。"
         )
     elif code == "07":
         lines.append(
@@ -114,7 +117,12 @@ def manifest_instruction(module_code: str, filename: str) -> str:
     return " ".join(lines)
 
 
-def build_stage_manifest(module_code: str, report_path: str) -> str:
+def build_stage_manifest(
+    module_code: str,
+    report_path: str,
+    platform: str = "cross_platform",
+    views: Optional[List[str]] = None,
+) -> str:
     """Simulator manifest across all 11 stages. Stage 04 leaves measured results pending."""
     code = stage_code(module_code)
     flags = {key: False for key in RISK_FLAG_KEYS}
@@ -224,24 +232,21 @@ def build_stage_manifest(module_code: str, report_path: str) -> str:
             "compliance": {"uses_idfa": False, "uses_ad_id": False},
         }
     elif code == "06":
+        from backend.app.services.design_bundle_sim import design_manifest_block
+
+        artifacts_06 = [
+            {"role": "design_spec", "path": report_path},
+            {"role": "design_workbench", "path": "index.html"},
+            {"role": "design_tokens", "path": "tokens.json"},
+        ]
+        view_list = views or ["V-01", "V-02", "V-03", "V-04"]
+        artifacts_06 += [{"role": "design_screen", "path": f"screens/{view}.html"} for view in view_list]
         data = {
             "contract_version": CONTRACT_VERSION,
             "stage": "06",
-            "artifacts": [{"role": "design_spec", "path": report_path}],
+            "artifacts": artifacts_06,
             "risk_flags": flags,
-            "design": {
-                "platform": "cross_platform",
-                "safe_area": {
-                    "top_safe_padding_pt": 71,
-                    "bottom_safe_padding_pt": 34,
-                    "status_bar_safe_dp": 24,
-                },
-                "touch_targets": {
-                    "min_touch_target_pt": 44,
-                    "min_touch_target_dp": 48,
-                },
-                "tokens_defined": True,
-            },
+            "design": design_manifest_block(platform, view_list),
         }
     elif code == "07":
         data = {
@@ -604,30 +609,16 @@ def _validate_stage05(data: Dict[str, Any], platform: str) -> List[str]:
     return reasons
 
 
-def _validate_stage06(data: Dict[str, Any], platform: str) -> List[str]:
-    from backend.app.services.profile_guard import covers_android, covers_ios
+def _validate_stage06(
+    data: Dict[str, Any],
+    platform: str,
+    root: Optional[Path] = None,
+    upstream_views: Optional[List[str]] = None,
+) -> List[str]:
+    from backend.app.services.design_bundle import upstream_prd_views, validate_design_bundle
 
-    reasons: List[str] = []
-    design = data.get("design")
-    if not isinstance(design, dict):
-        return ["design：缺少设计规范对象"]
-    safe_area = design.get("safe_area") or {}
-    touch = design.get("touch_targets") or {}
-    if covers_ios(platform):
-        top_pt = safe_area.get("top_safe_padding_pt")
-        min_touch_pt = touch.get("min_touch_target_pt")
-        if not _is_number(top_pt) or top_pt < 71:
-            reasons.append(f"design.safe_area.top_safe_padding_pt：iOS 灵动岛顶部留白 {top_pt}pt 低于 71pt")
-        if not _is_number(min_touch_pt) or min_touch_pt < 44:
-            reasons.append(f"design.touch_targets.min_touch_target_pt：iOS 触控热区 {min_touch_pt}pt 低于 44pt")
-    if covers_android(platform):
-        status_dp = safe_area.get("status_bar_safe_dp")
-        min_touch_dp = touch.get("min_touch_target_dp")
-        if not _is_number(status_dp) or status_dp < 24:
-            reasons.append(f"design.safe_area.status_bar_safe_dp：Android 状态栏避让 {status_dp}dp 低于 24dp")
-        if not _is_number(min_touch_dp) or min_touch_dp < 48:
-            reasons.append(f"design.touch_targets.min_touch_target_dp：Android 触控热区 {min_touch_dp}dp 低于 48dp")
-    return reasons
+    views = upstream_views if upstream_views is not None else upstream_prd_views(root)
+    return validate_design_bundle(root, data.get("design"), platform, views)
 
 
 def _validate_stage07(data: Dict[str, Any], client_zero_inference: bool) -> List[str]:
@@ -761,7 +752,7 @@ def validate_manifest(
     elif code == "05":
         reasons.extend(_validate_stage05(manifest, platform))
     elif code == "06":
-        reasons.extend(_validate_stage06(manifest, platform))
+        reasons.extend(_validate_stage06(manifest, platform, root))
     elif code == "07":
         reasons.extend(_validate_stage07(manifest, client_zero_inference))
     elif code == "08":

@@ -128,6 +128,18 @@ def test_stage_05_prd_compliance_audit():
     assert res_clean["is_g5_escalated"] is False
 
 
+def test_stage_05_tracking_requirements_pass_when_the_prd_is_complete():
+    content = """
+    iOS 使用 IDFA 做广告追踪。NSUserTrackingUsageDescription 的 ATT 授权弹窗文案已定义；
+    用户选择 Ask App not to Track / denied 后，归因降级为 SKAdNetwork，核心功能保持可用。
+    Android 声明 com.google.android.gms.permission.AD_ID 权限；目标受众年龄为 13 岁及以上，
+    遵守家庭政策。用户停用个性化广告（OPTED_OUT）后降级为非个性化归因。
+    """
+    result = audit_stage_compliance("05", content, platform="cross_platform")
+    assert result["status"] == "passed"
+    assert all(f["passed"] for f in result["findings"])
+
+
 def test_stage_09_submission_compliance_audit():
     """Stage 09: Apple 4.3 spam, Privacy policy URL, Remote Config & Rollback plan."""
     # 1. Missing privacy policy URL -> High risk G5!

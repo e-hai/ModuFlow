@@ -162,7 +162,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
         <p className="text-[10px] text-amber-700">{modelsError}</p>
       )}
       {!modelsError && (
-        <p className="text-[10px] text-slate-400">保存后，后续工序会用这里选中的模型调用该 CLI。</p>
+        <p className="text-[10px] text-slate-400">保存后，后续工序会用这里选中的模型。测试连通性会用它发一条最短请求，额度用尽会在这里提示。</p>
       )}
     </div>
   );
@@ -203,20 +203,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
       });
 
       const res = await api.testAgentSettings();
-      if (res.success) {
-        if (res.installed === false) {
-          setTestResult(`⚠️ 命令未就绪：系统 PATH 中未找到 [${res.cli_command}]。请参考上方指引安装，或检查自定义路径。`);
-        } else {
-          setTestResult(`✓ 探测成功：适配器 (${res.adapter_type}) / 命令 [${res.cli_command}] 调度正常，已就绪`);
-        }
+      const modelLabel = res.model || 'CLI 默认模型';
+      if (res.installed === false) {
+        setTestResult(`⚠️ 命令未就绪：系统 PATH 中未找到 [${res.cli_command}]。请参考上方指引安装，或检查自定义路径。`);
+      } else if (res.kind === 'quota') {
+        setTestResult(`⚠️ 额度不足：模型 [${modelLabel}] ${res.detail || '当前模型额度已用尽'}`);
+      } else if (!res.success) {
+        setTestResult(`❌ 模型没有接通：${res.detail || '探测未返回成功状态'}`);
       } else {
-        setTestResult('⚠️ 探测未返回成功状态');
+        setTestResult(`✓ 探测成功：命令 [${res.cli_command}] 可用，模型 [${modelLabel}] 额度正常`);
       }
     } catch (e: any) {
       setTestResult(`❌ 连通测试失败: ${e.message || '未知错误'}`);
     } finally {
       setTesting(false);
-      setTimeout(() => setTestResult(null), 5000);
     }
   };
 
@@ -546,7 +546,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer disabled:opacity-50"
               >
                 {testing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 text-amber-500" />}
-                <span>{testing ? '探测中...' : '测试连通性'}</span>
+                <span>{testing ? '正在确认模型额度...' : '测试连通性'}</span>
               </button>
             )}
             {saveSuccess && (

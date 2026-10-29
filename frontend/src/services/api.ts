@@ -101,11 +101,20 @@ export const api = {
       `/runs/${runId}/advance`,
       { method: 'POST' }
     ),
-  submitModuleForGate: (moduleId: string) =>
-    fetchJSON<{ module_id: string; status: string }>(`/modules/${moduleId}/submit-for-gate`, {
+  redispatchModule: (moduleId: string) =>
+    fetchJSON<{ module_id: string; status: string; job_id?: string | null }>(`/modules/${moduleId}/redispatch`, {
       method: 'POST',
       headers: { 'X-ModuFlow-Actor': 'human:sponsor' },
     }),
+  submitModuleForGate: (moduleId: string) =>
+    fetchJSON<{ module_id: string; status: string; job_id?: string | null }>(`/modules/${moduleId}/submit-for-gate`, {
+      method: 'POST',
+      headers: { 'X-ModuFlow-Actor': 'human:sponsor' },
+    }),
+  getOrchestrationJob: (jobId: string) =>
+    fetchJSON<{ id: string; status: string; result?: string | null; error?: string | null; runner_alive: boolean }>(
+      `/orchestration-jobs/${jobId}`
+    ),
   resolveModuleDispute: (moduleId: string, decision: 'accept_review' | 'override_review', comment = '') =>
     fetchJSON<{ module_id: string; decision: string; status: string }>(`/modules/${moduleId}/resolve-dispute`, {
       method: 'POST',
@@ -133,7 +142,8 @@ export const api = {
   getModuleArtifacts: (moduleId: string) => fetchJSON<Artifact[]>(`/modules/${moduleId}/artifacts`),
   getArtifact: (artifactId: string) => fetchJSON<Artifact>(`/artifacts/${artifactId}`),
   getArtifactPreviewUrl: (artifactId: string, path = '') =>
-    `${API_BASE}/artifacts/${artifactId}/preview${path ? `/${path}` : ''}`,
+    // 末尾保留斜杠：多页设计包里的相对链接（screens/V-01.html）才能解析到同一个产物目录下
+    `${API_BASE}/artifacts/${artifactId}/preview/${path}`,
   uploadModuleArtifact: async (moduleId: string, file: File, changeSummary?: string) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -220,7 +230,16 @@ export const api = {
   updateAgentSettings: (data: Partial<AgentSettings>) =>
     fetchJSON<AgentSettings>('/settings/agent', { method: 'PATCH', body: JSON.stringify(data) }),
   testAgentSettings: () =>
-    fetchJSON<{ success: boolean; installed?: boolean; adapter_type: string; cli_command: string; events_count: number }>(
+    fetchJSON<{
+      success: boolean;
+      installed?: boolean;
+      kind?: string;
+      adapter_type: string;
+      cli_command: string;
+      model?: string;
+      detail?: string;
+      events_count: number;
+    }>(
       '/settings/agent/test',
       { method: 'POST' }
     ),

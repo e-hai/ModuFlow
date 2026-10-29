@@ -331,7 +331,9 @@ async def can_baseline_module(db: AsyncSession, module_id: str) -> Tuple[bool, s
                 platform = product.platform or "ios"
                 zero_inf = True if product.client_zero_inference is None else bool(product.client_zero_inference)
 
-    texts = artifact_audit_texts(artifacts)
+    latest_version = artifacts[-1].version
+    latest_artifacts = [a for a in artifacts if a.version == latest_version]
+    texts = artifact_audit_texts(latest_artifacts)
     audit = audit_stage(
         module_code,
         texts,

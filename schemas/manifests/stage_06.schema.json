@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://moduflow.ai/schemas/manifests/stage_06.schema.json",
-  "title": "Stage 06 UX & UI Design Manifest",
+  "title": "Stage 06 Design Delivery Bundle Manifest",
   "type": "object",
   "required": [
     "contract_version",
@@ -11,34 +11,95 @@
     "design"
   ],
   "properties": {
-    "contract_version": { "type": "string", "enum": ["1"] },
-    "stage": { "type": "string", "enum": ["06"] },
-    "artifacts": { "type": "array", "minItems": 1 },
-    "risk_flags": { "type": "object" },
+    "contract_version": {
+      "type": "string",
+      "enum": [
+        "1"
+      ]
+    },
+    "stage": {
+      "type": "string",
+      "enum": [
+        "06"
+      ]
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1
+    },
+    "risk_flags": {
+      "type": "object"
+    },
     "design": {
       "type": "object",
-      "required": ["platform", "safe_area", "touch_targets"],
+      "description": "设计交付包清单。safe_area / touch_targets 不再由 Agent 自报，校验器从 screens/*.html 的 data-* 标注读取。",
+      "required": [
+        "platform",
+        "entry",
+        "tokens_path",
+        "screens",
+        "icons"
+      ],
       "properties": {
         "platform": {
           "type": "string",
-          "enum": ["cross_platform", "ios", "android"]
+          "enum": [
+            "cross_platform",
+            "ios",
+            "android"
+          ]
         },
-        "safe_area": {
-          "type": "object",
-          "properties": {
-            "top_safe_padding_pt": { "type": "number", "minimum": 0 },
-            "bottom_safe_padding_pt": { "type": "number", "minimum": 0 },
-            "status_bar_safe_dp": { "type": "number", "minimum": 0 }
+        "entry": {
+          "type": "string",
+          "const": "index.html",
+          "description": "设计工作台入口，成果交付库直接打开它"
+        },
+        "tokens_path": {
+          "type": "string",
+          "description": "tokens.json，颜色/字阶/间距/圆角的唯一真理源"
+        },
+        "screens": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "view_id",
+              "path",
+              "platforms"
+            ],
+            "properties": {
+              "view_id": {
+                "type": "string",
+                "pattern": "^V-\\d{2}$"
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^screens/.+\\.html$"
+              },
+              "platforms": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "ios",
+                    "android"
+                  ]
+                },
+                "minItems": 1
+              }
+            },
+            "additionalProperties": false
           }
         },
-        "touch_targets": {
-          "type": "object",
-          "properties": {
-            "min_touch_target_pt": { "type": "number", "minimum": 0 },
-            "min_touch_target_dp": { "type": "number", "minimum": 0 }
+        "icons": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^assets/icons/.+\\.svg$"
           }
-        },
-        "tokens_defined": { "type": "boolean" }
+        }
       },
       "additionalProperties": false
     }

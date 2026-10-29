@@ -2,7 +2,7 @@ import asyncio
 import json
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, UploadFile, File, Form, Header, Request
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Header, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
@@ -71,31 +71,20 @@ from backend.app.services.gate_keeper import (
     get_stage_gate_config
 )
 
-from backend.app.services import orchestrator
+from backend.app.services import job_queue, orchestrator
 
 api_router = APIRouter()
 
 
-_orchestration_tasks: set[asyncio.Task] = set()
+async def _schedule_orchestration(
+    db: AsyncSession, task: str, *args, run_id: Optional[str] = None, requested_by: str = "api"
+):
+    """只往派活队列写一行，CLI 由独立的执行器进程跑。
 
-
-def _schedule_orchestration(background_tasks: BackgroundTasks, func, *args) -> None:
-    """排队编排，但不在当前请求里跑完。
-
-    Starlette 会在请求的数据库会话关闭之前执行 BackgroundTasks。
-    若把 CLI 放进这个任务，会话会占着连接直到工序跑完（最长数分钟），
-    刷新页面时工程列表读不出来，看起来像工程被删了。
-    这里只负责挂上一个独立任务，当前请求马上结束并放开连接。
+    工序一次可能跑好几分钟。以前它跑在后端进程里，于是任何一个产品推进工序，
+    整个工作台都停住，重启也要等它跑完。现在请求写完队列立刻返回。
     """
-    if not orchestrator.orchestration_enabled():
-        return
-
-    async def _kick() -> None:
-        task = asyncio.create_task(orchestrator.run_in_fresh_session(func, *args))
-        _orchestration_tasks.add(task)
-        task.add_done_callback(_orchestration_tasks.discard)
-
-    background_tasks.add_task(_kick)
+    return await job_queue.enqueue(db, task, *args, run_id=run_id, requested_by=requested_by)
 
 # --- Strategic Initiatives ---
 @api_router.get("/initiatives", response_model=List[StrategicInitiativeOut])
@@ -894,7 +883,7 @@ async def list_runs(product_id: Optional[str] = None, db: AsyncSession = Depends
     return runs
 
 @api_router.post("/runs", response_model=WorkflowRunOut)
-async def create_run(data: WorkflowRunCreate, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+async def create_run(data: WorkflowRunCreate, db: AsyncSession = Depends(get_db)):
     # 核心约束：单产品迭代周期不允许并行，必须唯一活跃
     active_stmt = select(WorkflowRun).where(
         WorkflowRun.product_id == data.product_id,
@@ -921,7 +910,7 @@ async def create_run(data: WorkflowRunCreate, background_tasks: BackgroundTasks,
         created = res.scalar_one()
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-    _schedule_orchestration(background_tasks, orchestrator.advance_run, created.id)
+    await _schedule_orchestration(db, "advance_run", created.id, run_id=created.id)
     return created
 
 @api_router.patch("/runs/{run_id}", response_model=WorkflowRunOut)
@@ -952,6 +941,9 @@ async def update_run(
             if active_res.scalar_one_or_none():
                 raise HTTPException(status_code=400, detail="该产品已有其他进行中的活跃迭代，无法将此迭代恢复为进行中")
         run.status = data.status
+        if data.status in ("abandoned", "completed"):
+            product = (await db.execute(select(Product).where(Product.id == run.product_id))).scalar_one_or_none()
+            await orchestrator.close_iteration_risks(db, product, "迭代已结束，本轮卡住与分歧记录关闭。")
 
     run.updated_at = datetime.utcnow()
     await db.commit()
@@ -960,20 +952,32 @@ async def update_run(
 
 @api_router.post("/runs/{run_id}/advance")
 async def advance_run_endpoint(run_id: str, db: AsyncSession = Depends(get_db)):
-    """Manually kicks the orchestrator for a run; gate rules are unchanged."""
+    """Queues a kick for this run; the runner process executes it. Gate rules are unchanged."""
     run = (await db.execute(select(WorkflowRun).where(WorkflowRun.id == run_id))).scalar_one_or_none()
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
-    result = await orchestrator.advance_run(db, run_id)
-    result["orchestration"] = await orchestrator.get_run_orchestration_status(db, run_id)
-    return result
+    blocked = orchestrator.dispatch_block_reason(run)
+    if blocked:
+        return {
+            "run_id": run_id,
+            "status": blocked,
+            "orchestration": await orchestrator.get_run_orchestration_status(db, run_id),
+        }
+    job = await _schedule_orchestration(
+        db, "advance_run", run_id, run_id=run_id, requested_by="human:manual_advance"
+    )
+    return {
+        "run_id": run_id,
+        "status": "queued" if job else "orchestrator_disabled",
+        "job_id": job.id if job else None,
+        "orchestration": await orchestrator.get_run_orchestration_status(db, run_id),
+    }
 
 @api_router.patch("/runs/{run_id}/auto-advance")
 async def toggle_run_auto_advance(
     run_id: str,
     payload: dict,
     request: Request,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
     from backend.app.services.security_guard import parse_actor_identity
@@ -987,7 +991,7 @@ async def toggle_run_auto_advance(
     run.updated_at = datetime.utcnow()
     await db.commit()
     if run.auto_advance:
-        _schedule_orchestration(background_tasks, orchestrator.advance_run, run_id)
+        await _schedule_orchestration(db, "advance_run", run_id, run_id=run_id, requested_by=actor)
     return {"ok": True, "run_id": run_id, "auto_advance": run.auto_advance, "actor": actor}
 
 @api_router.get("/runs/{run_id}/orchestration-status")
@@ -996,6 +1000,39 @@ async def get_run_orchestration_status_endpoint(run_id: str, db: AsyncSession = 
     if not status_data.get("found"):
         raise HTTPException(status_code=404, detail="Run not found")
     return status_data
+
+@api_router.get("/orchestration-jobs/{job_id}")
+async def get_orchestration_job(job_id: str, db: AsyncSession = Depends(get_db)):
+    view = await job_queue.job_view(db, job_id)
+    if view is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return view
+
+@api_router.post("/modules/{module_id}/redispatch")
+async def redispatch_module(
+    module_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-queue the stage after the runner exhausted empty executions. Does not submit a gate."""
+    from backend.app.services.security_guard import parse_actor_identity
+    actor_type, _role_code, _actor = parse_actor_identity(request.headers.get("X-ModuFlow-Actor"))
+    if actor_type != "human":
+        raise HTTPException(status_code=403, detail="只有人类负责人可以重新派活。")
+    mod = (await db.execute(select(ModuleInstance).where(ModuleInstance.id == module_id))).scalar_one_or_none()
+    if not mod:
+        raise HTTPException(status_code=404, detail="Module not found")
+    status = await orchestrator.request_redispatch(db, module_id)
+    if status != "ready":
+        raise HTTPException(status_code=400, detail=status)
+    if orchestrator.orchestration_enabled():
+        job = await _schedule_orchestration(
+            db, "advance_run", mod.run_id, run_id=mod.run_id, requested_by="human:redispatch",
+        )
+        return {"module_id": module_id, "status": "queued", "job_id": job.id if job else None}
+    result = await orchestrator.advance_run(db, mod.run_id)
+    return {"module_id": module_id, "status": result.get("status", "idle")}
+
 
 @api_router.post("/modules/{module_id}/submit-for-gate")
 async def submit_module_for_gate(
@@ -1011,6 +1048,12 @@ async def submit_module_for_gate(
     mod = (await db.execute(select(ModuleInstance).where(ModuleInstance.id == module_id))).scalar_one_or_none()
     if not mod:
         raise HTTPException(status_code=404, detail="Module not found")
+    if orchestrator.orchestration_enabled():
+        job = await _schedule_orchestration(
+            db, "on_artifact_created", module_id, "human_confirmed",
+            run_id=mod.run_id, requested_by="human:submit",
+        )
+        return {"module_id": module_id, "status": "queued", "job_id": job.id if job else None}
     result = await orchestrator.on_artifact_created(db, module_id, origin="human_confirmed")
     return {"module_id": module_id, "status": result}
 
@@ -1029,8 +1072,18 @@ async def resolve_module_dispute(
     decision = payload.get("decision")
     if decision not in ("accept_review", "override_review"):
         raise HTTPException(status_code=400, detail="decision 必须是 accept_review 或 override_review")
+    comment = str(payload.get("comment") or "")
+    if orchestrator.orchestration_enabled():
+        mod = (await db.execute(select(ModuleInstance).where(ModuleInstance.id == module_id))).scalar_one_or_none()
+        if not mod:
+            raise HTTPException(status_code=404, detail="Module not found")
+        job = await _schedule_orchestration(
+            db, "resolve_dispute", module_id, decision, actor or "human", comment,
+            run_id=mod.run_id, requested_by=actor or "human",
+        )
+        return {"module_id": module_id, "decision": decision, "status": "queued", "job_id": job.id if job else None}
     result = await orchestrator.resolve_dispute(
-        db, module_id, decision, actor or "human", str(payload.get("comment") or "")
+        db, module_id, decision, actor or "human", comment
     )
     if result == "module_not_found":
         raise HTTPException(status_code=404, detail="Module not found")
@@ -1170,7 +1223,6 @@ async def get_module(module_id: str, db: AsyncSession = Depends(get_db)):
 async def update_module_phase(
     module_id: str,
     data: ModulePhaseUpdate,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
     stmt = select(ModuleInstance).where(ModuleInstance.id == module_id)
@@ -1203,7 +1255,7 @@ async def update_module_phase(
         await db.commit()
         # Unlock downstream
         await unlock_downstream_modules(db, mod.run_id)
-        _schedule_orchestration(background_tasks, orchestrator.advance_run, mod.run_id)
+        await _schedule_orchestration(db, "advance_run", mod.run_id, run_id=mod.run_id)
     else:
         mod.phase = new_phase
         if new_phase != "baselined":
@@ -1344,7 +1396,6 @@ async def list_pending_gates_for_batch(
 async def review_gate(
     gate_id: str,
     data: GateApplicationReview,
-    background_tasks: BackgroundTasks,
     x_moduflow_actor: Optional[str] = Header(None, alias="X-ModuFlow-Actor"),
     db: AsyncSession = Depends(get_db)
 ):
@@ -1372,7 +1423,9 @@ async def review_gate(
             actor=actor,
             actor_role=actor_role
         )
-        _schedule_orchestration(background_tasks, orchestrator.on_gate_reviewed, updated_gate.id)
+        await _schedule_orchestration(
+            db, "on_gate_reviewed", updated_gate.id, run_id=updated_gate.run_id, requested_by=actor
+        )
         return updated_gate
     except PermissionError as pe:
         raise HTTPException(status_code=403, detail=str(pe))
@@ -1522,7 +1575,6 @@ async def get_or_create_module_session(module_id: str, db: AsyncSession = Depend
 async def post_message(
     session_id: str,
     data: SessionMessageCreate,
-    background_tasks: BackgroundTasks,
     trigger_agent: bool = True,
     db: AsyncSession = Depends(get_db)
 ):
@@ -1554,8 +1606,12 @@ async def post_message(
         if agent_msg:
             result_messages.append(agent_msg)
             if agent_msg.artifact_ref_id:
-                _schedule_orchestration(
-                    background_tasks, orchestrator.on_artifact_created, session.module_id, "human_session"
+                mod = (await db.execute(
+                    select(ModuleInstance).where(ModuleInstance.id == session.module_id)
+                )).scalar_one_or_none()
+                await _schedule_orchestration(
+                    db, "on_artifact_created", session.module_id, "human_session",
+                    run_id=mod.run_id if mod else None,
                 )
 
     return result_messages
@@ -1579,7 +1635,6 @@ async def get_artifact(artifact_id: str, db: AsyncSession = Depends(get_db)):
 @api_router.post("/modules/{module_id}/artifacts/upload")
 async def upload_module_artifact(
     module_id: str,
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     change_summary: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db)
@@ -1605,7 +1660,9 @@ async def upload_module_artifact(
         file_bytes=file_bytes,
         change_summary=change_summary
     )
-    _schedule_orchestration(background_tasks, orchestrator.on_artifact_created, module_id, "human_confirmed")
+    await _schedule_orchestration(
+        db, "on_artifact_created", module_id, "human_confirmed", run_id=mod.run_id
+    )
 
     return {
         "artifact": ArtifactOut.model_validate(artifact),
@@ -1678,7 +1735,6 @@ async def get_change_review(review_id: str, db: AsyncSession = Depends(get_db)):
 @api_router.post("/change-reviews/{review_id}/approve", response_model=ChangeReviewOut)
 async def approve_change_review(
     review_id: str,
-    background_tasks: BackgroundTasks,
     action: Optional[ChangeReviewAction] = None,
     db: AsyncSession = Depends(get_db)
 ):
@@ -1740,7 +1796,7 @@ async def approve_change_review(
             await sync_run_workspace(db, mod.run_id)
         except Exception:
             pass
-        _schedule_orchestration(background_tasks, orchestrator.advance_run, mod.run_id)
+        await _schedule_orchestration(db, "advance_run", mod.run_id, run_id=mod.run_id)
 
     return review
 
@@ -2018,8 +2074,9 @@ async def update_agent_settings(data: AgentSettingsUpdate, db: AsyncSession = De
 @api_router.post("/settings/agent/test")
 async def test_agent_settings():
     import asyncio
-    from backend.app.adapters.cli_adapter import find_cli_binary
-    
+    from backend.app.adapters.cli_adapter import find_cli_binary, probe_selected_model
+
+    model = settings.AGENT_CLI_MODEL or ""
     cmd_path = find_cli_binary(settings.AGENT_CLI_COMMAND)
     if not cmd_path:
         events = [
@@ -2030,8 +2087,10 @@ async def test_agent_settings():
         return {
             "success": True,
             "installed": False,
+            "kind": "missing",
             "adapter_type": settings.AGENT_ADAPTER_TYPE,
             "cli_command": settings.AGENT_CLI_COMMAND,
+            "model": model,
             "events_count": len(events),
             "events": events
         }
@@ -2044,33 +2103,52 @@ async def test_agent_settings():
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=3.0)
         version_str = stdout.decode().strip() or stderr.decode().strip() or "已就绪"
-        events = [
-            {"type": "log", "content": f"[Adapter] 检测到底层二进制路径: {cmd_path}"},
-            {"type": "log", "content": f"[Adapter] CLI 运行时握手正常: {version_str}"},
-            {"type": "done", "content": f"Agent CLI ({settings.AGENT_CLI_COMMAND}) 连通性测试通过"}
-        ]
-        return {
-            "success": True,
-            "adapter_type": settings.AGENT_ADAPTER_TYPE,
-            "cli_command": settings.AGENT_CLI_COMMAND,
-            "cli_path": cmd_path,
-            "version": version_str,
-            "events_count": len(events),
-            "events": events
-        }
     except Exception as e:
         events = [
             {"type": "log", "content": f"[Adapter] 执行探测异常: {str(e)}"},
             {"type": "done", "content": f"探测执行完成: {str(e)}"}
         ]
         return {
-            "success": True,
+            "success": False,
+            "installed": True,
+            "kind": "cli",
             "adapter_type": settings.AGENT_ADAPTER_TYPE,
             "cli_command": settings.AGENT_CLI_COMMAND,
-            "error": str(e),
+            "model": model,
+            "detail": str(e),
             "events_count": len(events),
             "events": events
         }
+
+    probe = await probe_selected_model(cmd_path, model or None)
+    kind = probe["kind"]
+    detail = probe["detail"]
+    ok = kind == "ok"
+    if kind == "quota":
+        done = f"模型额度不足: {detail}"
+    elif ok:
+        done = f"Agent CLI ({settings.AGENT_CLI_COMMAND}) 连通性测试通过，模型额度可用"
+    else:
+        done = f"模型探测未通过: {detail}"
+    events = [
+        {"type": "log", "content": f"[Adapter] 检测到底层二进制路径: {cmd_path}"},
+        {"type": "log", "content": f"[Adapter] CLI 运行时握手正常: {version_str}"},
+        {"type": "log", "content": f"[Adapter] 用模型 [{model or 'CLI 默认'}] 发送最短请求"},
+        {"type": "done", "content": done},
+    ]
+    return {
+        "success": ok,
+        "installed": True,
+        "kind": kind,
+        "adapter_type": settings.AGENT_ADAPTER_TYPE,
+        "cli_command": settings.AGENT_CLI_COMMAND,
+        "cli_path": cmd_path,
+        "model": model,
+        "version": version_str,
+        "detail": detail,
+        "events_count": len(events),
+        "events": events,
+    }
 
 # --- Core Agent Roles Endpoints ---
 @api_router.get("/roles", response_model=List[AgentRoleDefinitionOut])

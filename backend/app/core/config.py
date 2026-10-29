@@ -20,6 +20,8 @@ class Settings(BaseSettings):
 
     # Global kill switch for automatic orchestration triggers; per-run control lives on WorkflowRun.auto_advance
     ORCHESTRATOR_ENABLED: bool = True
+    RUNNER_POLL_SECONDS: float = 1.0      # Idle poll interval of the out-of-process stage runner
+    RUNNER_STALE_SECONDS: int = 120       # No heartbeat for this long means the runner died; the job is requeued
     COLLAB_REVIEW_MODE: str = "full"      # "full": cross-checks + collaborator Agent reviews; "deterministic"; "off"
     AGENT_FS_SANDBOX: str = "auto"        # "auto": macOS sandbox-exec when available; "off": integrity check only
     

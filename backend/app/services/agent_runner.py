@@ -263,13 +263,14 @@ async def execute_agent_for_session(
             storage_rel_path = None
             entry_file = "index.html"
 
-            if workspace_path and (workspace_path / "index.html").exists():
-                artifact_type = "html_bundle"
+            if workspace_path:
                 try:
                     from backend.app.core.config import settings
                     storage_rel_path = str(workspace_path.relative_to(settings.WORKSPACE_DIR))
                 except Exception:
                     storage_rel_path = None
+                if (workspace_path / "index.html").exists():
+                    artifact_type = "html_bundle"
 
             change_summary = None
             if user_message.issue_ref_id:

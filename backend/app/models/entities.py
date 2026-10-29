@@ -388,3 +388,24 @@ class HotfixFollowupTask(Base):
     product = relationship("Product")
 
 
+class OrchestrationJob(Base):
+    """派活请求。后端只写这张表，CLI 由独立的执行器进程跑，HTTP 永不等待工序。"""
+    __tablename__ = "orchestration_jobs"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    task = Column(String(40), nullable=False)  # advance_run, on_artifact_created, on_gate_reviewed, finalize_and_advance
+    args = Column(JSON, nullable=False, default=list)
+    run_id = Column(String, nullable=True)  # 同一迭代串行执行，不加外键以便迭代删除后仍可留痕
+    status = Column(String(20), nullable=False, default="queued")  # queued, running, done, failed, interrupted
+    requested_by = Column(String(80), nullable=False, default="system")
+    worker = Column(String(120), nullable=True)  # host:pid
+    attempts = Column(Integer, nullable=False, default=0)
+    result = Column(Text, nullable=True)
+    error = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, nullable=True)
+    heartbeat_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+
+

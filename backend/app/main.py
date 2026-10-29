@@ -1,7 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
 
 from backend.app.core.config import settings
 from backend.app.core.database import engine, Base, AsyncSessionLocal
@@ -21,15 +20,8 @@ async def lifespan(app: FastAPI):
         await seed_agent_roles_if_empty(db)
         await seed_templates_if_empty(db)
         
-        # Load agent settings from DB into memory
-        from backend.app.models.entities import AgentSettingsModel
-        res = await db.execute(select(AgentSettingsModel).where(AgentSettingsModel.id == "default"))
-        agent_setting = res.scalar_one_or_none()
-        if agent_setting:
-            settings.AGENT_ADAPTER_TYPE = agent_setting.adapter_type
-            settings.AGENT_CLI_COMMAND = agent_setting.cli_command
-            settings.AGENT_CLI_MODEL = agent_setting.cli_model or ""
-            settings.AGENT_CLI_TIMEOUT = agent_setting.timeout
+        from backend.app.adapters.cli_adapter import apply_saved_cli_settings
+        await apply_saved_cli_settings(db)
         
     yield
     # Shutdown

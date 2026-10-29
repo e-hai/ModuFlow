@@ -210,56 +210,60 @@ def _design(name: str, platform: str) -> str:
     from backend.app.services.profile_guard import is_dual_platform
 
     if is_dual_platform(platform):
-        fields = {
-            "top_safe_padding_pt": 74,
-            "bottom_safe_padding_pt": 34,
-            "min_touch_target_pt": 44,
-            "status_bar_safe_dp": 32,
-            "min_touch_target_dp": 48,
-        }
         matrix = (
-            "| 规范项 | 实测值 | 要求 |\n| --- | --- | --- |\n"
-            "| 灵动岛顶部留白 | 74pt | ≥ 71pt |\n| 底部安全区 | 34pt | ≥ 34pt |\n| iOS 最小触控热区 | 44×44pt | ≥ 44×44pt |\n"
-            "| 状态栏/挖孔顶部避让 | 32dp | ≥ 24dp |\n| Android 最小触控热区 | 48×48dp | ≥ 48×48dp |\n"
+            "| 规范项 | 画板标注值 | 要求 |\n| --- | --- | --- |\n"
+            "| iOS 灵动岛顶部留白 | 74pt | ≥ 71pt |\n| iOS 底部安全区 | 34pt | ≥ 34pt |\n| iOS 最小触控热区 | 44×44pt | ≥ 44×44pt |\n"
+            "| Android 状态栏/挖孔顶部避让 | 32dp | ≥ 24dp |\n| Android 最小触控热区 | 48×48dp | ≥ 48×48dp |\n"
         )
         ruleset = "Apple HIG + Material Design 3"
     elif platform == "android":
-        fields = {"status_bar_safe_dp": 32, "min_touch_target_dp": 48}
         matrix = (
-            "| 规范项 | 实测值 | 要求 |\n| --- | --- | --- |\n"
+            "| 规范项 | 画板标注值 | 要求 |\n| --- | --- | --- |\n"
             "| 状态栏/挖孔顶部避让 | 32dp | ≥ 24dp |\n| 最小触控热区 | 48×48dp | ≥ 48×48dp |\n"
         )
         ruleset = "Material Design 3"
     else:
-        fields = {"top_safe_padding_pt": 74, "min_touch_target_pt": 44, "bottom_safe_padding_pt": 34}
         matrix = (
-            "| 规范项 | 实测值 | 要求 |\n| --- | --- | --- |\n"
+            "| 规范项 | 画板标注值 | 要求 |\n| --- | --- | --- |\n"
             "| 灵动岛顶部留白 | 74pt | ≥ 71pt |\n| 底部安全区 | 34pt | ≥ 34pt |\n| 最小触控热区 | 44×44pt | ≥ 44×44pt |\n"
         )
         ruleset = "Apple HIG"
-    return f"""# 《{name}》设计实现规范 (工序 06)
+    return f"""# 《{name}》设计实现说明 (工序 06)
 
 ## 负责人 30 秒拍板摘要卡 (Executive Gate)
-- 规范基线：{ruleset}，安全区与触控热区全部达标。
-- 覆盖视图：继承工序 05 的 V-01~V-04，每个视图给出四态。
-- 需拍板：确认 Design Tokens 主色。
+- 交付形态：可直接点开体验的设计交付包（设计工作台 + 完整视觉稿 + 令牌 + 图标），不是一份纯文字规范。
+- 规范基线：{ruleset}。安全区、触控热区由校验器从画板标注逐项核对。
+- 覆盖视图：继承工序 05 的 V-01~V-04，每张画板都有 Default / Loading / Empty / Error 四态，页面之间可点击跳转。
+- 需拍板：确认 Design Tokens 主色与整体视觉风格。
 
-{_fields(fields)}
-## 一、平台安全区合规矩阵
+## 一、交付包清单
+| 文件 | 内容 |
+| --- | --- |
+| `index.html` | 设计工作台：画板切换、平台切换、四态切换、标注层、点选检视、色板与图标库 |
+| `tokens.json` | Design Tokens 唯一真理源（颜色、字阶、间距、圆角），工序 07 直接读取 |
+| `screens/V-01.html` ~ `V-04.html` | 每个视图一张高保真视觉稿，含四态 |
+| `assets/icons/*.svg` | 图标资源 |
+
+## 二、平台安全区与触控热区
 {matrix}
-## 二、Design Tokens
+## 三、Design Tokens
 | Token | 值 |
 | --- | --- |
-| color.primary | #0E8A5A |
-| color.background | #F8FAFC |
+| color.primary | 见 `tokens.json` |
+| typography.title | 24/30，粗体 |
 | radius.card | 12 |
 
-## 三、逐视图四态
+## 四、逐视图四态
 | 视图 | Default | Loading | Empty | Error |
 | --- | --- | --- | --- | --- |
-| V-01 | 模板列表 | 骨架屏 | 无模板提示 | 重试按钮 |
-| V-03 | 结果预览 | 进度环 | — | 生成失败提示 |
-| V-04 | 历史列表 | 骨架屏 | 空态插画 | 重试按钮 |
+| V-01 模板列表 | 模板卡片列表 | 骨架屏 | 新建模板引导 | 重试按钮 |
+| V-02 创作编辑 | 预览与选项 | 处理中进度环 | 请先选择素材 | 重新选择 |
+| V-03 结果预览 | 结果与保存分享 | 骨架屏 | 返回编辑 | 重试按钮 |
+| V-04 历史记录 | 历史列表 | 骨架屏 | 去创作引导 | 重试按钮 |
+
+## 五、体验说明
+- 在成果交付库打开本工序，直接进入设计工作台。
+- 画板里的按钮可以点：模板进入编辑，编辑生成结果，结果可回编辑，底部标签切换模板与历史。
 """
 
 
@@ -443,8 +447,12 @@ def build_simulated_deliverable(module_code: str, meta: Optional[Dict[str, Any]]
         return "", extra
     if module_code == "04":
         extra["index.html"] = _fakedoor_html(name)
+    if module_code == "06":
+        from backend.app.services.design_bundle_sim import build_design_bundle
+
+        extra.update(build_design_bundle(name, platform))
     from backend.app.services.delivery_contract import CONTRACT_STAGES, build_stage_manifest
 
     if module_code in CONTRACT_STAGES:
-        extra["delivery.manifest.json"] = build_stage_manifest(module_code, f"交付物_{module_code}.md")
+        extra["delivery.manifest.json"] = build_stage_manifest(module_code, f"交付物_{module_code}.md", platform)
     return SIMULATION_BANNER + builder(), extra

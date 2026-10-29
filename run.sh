@@ -22,6 +22,12 @@ BACKEND_PID=$!
 # 等待后端就绪
 sleep 1.5
 
+# 3.1 启动工序执行器：Agent CLI 跑在这个独立进程里，
+#     所以某个产品推进工序时后端照旧响应，重启后端也不用等工序跑完。
+echo "▶ 正在启动工序执行器 (Agent CLI 独立进程)..."
+PYTHONPATH=. backend/.venv/bin/python -m backend.app.runner &
+RUNNER_PID=$!
+
 # 4. 启动 Vite 前端
 echo "▶ 正在启动前端 Web 界面 (http://localhost:5173)..."
 cd frontend
@@ -33,6 +39,7 @@ echo "=========================================================="
 echo "  🚀 ModuFlow 平台已就绪："
 echo "  • 前端工作台: http://localhost:5173"
 echo "  • 后端接口文档: http://127.0.0.1:8088/docs"
+echo "  • 工序执行器: 独立进程 PID $RUNNER_PID"
 echo "  按 Ctrl+C 退出所有服务"
 echo "=========================================================="
 

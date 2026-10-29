@@ -57,16 +57,19 @@ REVIEW_MATRIX: Dict[str, List[Dict[str, Any]]] = {
 
 # Anchors a stage needs from upstream baselines before lead dispatches it.
 HANDOFF_REQUIREMENTS: Dict[str, List[Dict[str, str]]] = {
+    "02": [
+        {"upstream": "01", "anchor": "结构化首年盘子", "pattern": r"monthly_search_volume", "computed": "som"},
+    ],
     "06": [
-        {"upstream": "05", "anchor": "视图索引 V-xx", "pattern": r"V-\d{2}"},
-        {"upstream": "05", "anchor": "埋点字典", "pattern": r"埋点"},
+        {"upstream": "05", "anchor": "视图索引 V-xx", "pattern": r"V-\d{2}", "field": "views"},
+        {"upstream": "05", "anchor": "埋点字典", "pattern": r"埋点", "field": "event_dictionary"},
     ],
     "07": [
-        {"upstream": "05", "anchor": "验收编号 AC-xx", "pattern": r"AC-\d{2}"},
+        {"upstream": "05", "anchor": "验收编号 AC-xx", "pattern": r"AC-\d{2}", "field": "acceptance_criteria"},
         {"upstream": "06", "anchor": "Design Tokens", "pattern": r"(?i)design[ _]?tokens"},
     ],
     "08": [
-        {"upstream": "05", "anchor": "验收编号 AC-xx", "pattern": r"AC-\d{2}"},
+        {"upstream": "05", "anchor": "验收编号 AC-xx", "pattern": r"AC-\d{2}", "field": "acceptance_criteria"},
         {"upstream": "07", "anchor": "单测覆盖率 coverage_percent", "pattern": r"coverage_percent"},
     ],
     "09": [
@@ -191,7 +194,7 @@ def check_ecac_vs_ltv(spec, texts, upstream, auth_data) -> Dict[str, Any]:
 
 
 _EVIDENCE_PATTERN = re.compile(r"D1|D7|D30|留存|流失|转化|\d+(?:\.\d+)?\s?%", flags=re.I)
-_BACKLOG_ROW = re.compile(r"^\|\s*P[0-3]\s*\|")
+_BACKLOG_ROW = re.compile(r"^\|\s*(?:\*\*)?(?:P[0-3]|BL-)", flags=re.I)
 
 
 def check_backlog_evidence(spec, texts, upstream, auth_data) -> Dict[str, Any]:
@@ -271,14 +274,30 @@ def simulated_review(spec: Dict[str, Any], module_code: str) -> str:
 # Handoff
 # ---------------------------------------------------------------------------
 
+def anchor_satisfied(req: Dict[str, str], text: str) -> bool:
+    """A stage 05 manifest field satisfies the handoff. Older baselines keep the regex."""
+    from backend.app.services.delivery_contract import manifest_from_texts, stage_code
+
+    if req.get("computed") == "som":
+        fields = merged_fields([text or ""])
+        return all(fields.get(key) not in (None, "") for key in (
+            "monthly_search_volume", "target_capture_rate", "blended_arpu_usd", "source",
+        ))
+    field = req.get("field")
+    manifest = manifest_from_texts([text or ""])
+    if field and manifest is not None and stage_code(manifest.get("stage")) == req["upstream"]:
+        value = manifest.get(field)
+        return isinstance(value, list) and len(value) > 0
+    return bool(text and re.search(req["pattern"], text))
+
+
 def check_handoff(module_code: str, upstream: Dict[str, str], run_stage_codes: List[str]) -> List[Dict[str, str]]:
     """Missing anchors; upstream stages absent from this run (e.g. hotfix template) are skipped."""
     missing = []
     for req in HANDOFF_REQUIREMENTS.get(str(module_code), []):
         if req["upstream"] not in run_stage_codes:
             continue
-        text = upstream.get(req["upstream"])
-        if not text or not re.search(req["pattern"], text):
+        if not anchor_satisfied(req, upstream.get(req["upstream"]) or ""):
             missing.append(req)
     return missing
 

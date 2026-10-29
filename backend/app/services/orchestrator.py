@@ -9,12 +9,11 @@
 import asyncio
 import json
 import re
-import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings
@@ -88,6 +87,17 @@ def _run_block_reason(run: Optional[WorkflowRun], product: Optional[Product]) ->
     return None
 
 
+def dispatch_block_reason(run: Optional[WorkflowRun]) -> Optional[str]:
+    """派活前就能判定的拦截原因，排队之前先问一次，别排一个注定不派活的任务。"""
+    if run is None:
+        return "run_not_found"
+    if run.status != "in_progress":
+        return "run_not_active"
+    if not run.auto_advance:
+        return "auto_advance_off"
+    return None
+
+
 def _write_audit(product: Optional[Product], event: str, payload: Dict[str, Any]) -> None:
     if not product or not product.initiative_id:
         return
@@ -138,12 +148,70 @@ async def _open_risk(
 ) -> Optional[ExecutiveRisk]:
     if not product:
         return None
-    res = await db.execute(select(ExecutiveRisk).where(and_(
-        ExecutiveRisk.product_code == product.code,
-        ExecutiveRisk.rule_code == f"{prefix}{mod.module_code}",
-        ExecutiveRisk.is_resolved == False,  # noqa: E712
-    )))
+    res = await db.execute(
+        select(ExecutiveRisk).where(and_(
+            ExecutiveRisk.product_code == product.code,
+            ExecutiveRisk.rule_code == f"{prefix}{mod.module_code}",
+            ExecutiveRisk.is_resolved == False,  # noqa: E712
+        )).order_by(ExecutiveRisk.created_at.desc())
+    )
     return res.scalars().first()
+
+
+def _orch_kind(msg: SessionMessage) -> str:
+    return str((msg.metadata_json or {}).get("orchestrator") or "")
+
+
+async def _session_messages_newest(db: AsyncSession, session_id: str) -> List[SessionMessage]:
+    res = await db.execute(
+        select(SessionMessage)
+        .where(SessionMessage.session_id == session_id)
+        .order_by(SessionMessage.created_at.desc())
+    )
+    return list(res.scalars().all())
+
+
+async def _dispatch_hold(db: AsyncSession, session_id: str) -> bool:
+    """自动重派已经用完，且人还没有点「重新派活」。"""
+    for msg in await _session_messages_newest(db, session_id):
+        kind = _orch_kind(msg)
+        if kind == "redispatch":
+            return False
+        if kind == "dispatch_exhausted":
+            return True
+    return False
+
+
+async def _dispatch_misses(db: AsyncSession, session_id: str) -> int:
+    count = 0
+    for msg in await _session_messages_newest(db, session_id):
+        kind = _orch_kind(msg)
+        if kind == "redispatch":
+            break
+        if kind == "dispatch_miss":
+            count += 1
+    return count
+
+
+async def close_iteration_risks(db: AsyncSession, product: Optional[Product], note: str) -> int:
+    """迭代废弃或封版后，这一轮仍开着的卡住与分歧不再挡住下一次迭代。"""
+    if product is None:
+        return 0
+    rows = (await db.execute(select(ExecutiveRisk).where(and_(
+        ExecutiveRisk.product_code == product.code,
+        ExecutiveRisk.is_resolved == False,  # noqa: E712
+        or_(
+            ExecutiveRisk.rule_code.like(f"{STUCK_RULE_PREFIX}%"),
+            ExecutiveRisk.rule_code.like(f"{DISPUTE_RULE_PREFIX}%"),
+        ),
+    )))).scalars().all()
+    for risk in rows:
+        risk.is_resolved = True
+        risk.action_suggestion = note
+        db.add(risk)
+    if rows:
+        await db.commit()
+    return len(rows)
 
 
 async def _stuck_risk(db: AsyncSession, product: Optional[Product], mod: ModuleInstance) -> Optional[ExecutiveRisk]:
@@ -211,7 +279,13 @@ async def _upstream_baselines(db: AsyncSession, run_id: str) -> Dict[str, str]:
             continue
         art = (await db.execute(select(Artifact).where(Artifact.id == m.baseline_artifact_id))).scalar_one_or_none()
         if art:
-            texts[m.module_code] = art.content or ""
+            from backend.app.services.delivery_contract import read_manifest_text
+
+            body = art.content or ""
+            manifest_text = read_manifest_text(art.storage_rel_path)
+            if manifest_text.strip() and manifest_text.strip() not in body:
+                body = f"{body}\n```json\n{manifest_text.strip()}\n```\n"
+            texts[m.module_code] = body
     return texts
 
 
@@ -384,14 +458,23 @@ async def _raise_stuck(
     mod: ModuleInstance,
     session: CollaborationSession,
     reasons: List[str],
+    *,
+    exhausted: bool = False,
+    headline: Optional[str] = None,
 ) -> None:
+    if headline is None:
+        headline = (
+            f"已自动修订 {MAX_AUTO_REVISIONS} 次，交付物仍未通过检查"
+            if exhausted else
+            "这一轮没有产出新的交付物"
+        )
     if product and product.initiative_id and not await _stuck_risk(db, product, mod):
         db.add(ExecutiveRisk(
             initiative_id=product.initiative_id,
             rule_code=f"{STUCK_RULE_PREFIX}{mod.module_code}",
-            title=f"🟠 自动修订未通过：工序 {mod.module_code} {mod.name} · {product.code}",
+            title=f"🟠 {headline}：工序 {mod.module_code} {mod.name} · {product.code}",
             severity="major",
-            description="自动修订已用尽，交付物仍未通过确定性检查: " + "; ".join(reasons[:5]),
+            description=headline + "：" + "; ".join(reasons[:5]),
             product_code=product.code,
             action_suggestion="请在工序会话里补充指令或上传交付物，系统会重新检查并继续推进。",
             is_resolved=False,
@@ -403,7 +486,7 @@ async def _raise_stuck(
         role_code="lead",
         message_type="error",
         content=(
-            f"⛔ 已自动修订 {MAX_AUTO_REVISIONS} 次，交付物仍未通过检查，自动编排在本工序停下等人处理。\n"
+            f"⛔ {headline}，自动编排在本工序停下等人处理。\n"
             + "\n".join(f"- {r}" for r in reasons[:8])
         ),
         metadata_json={"orchestrator": "stuck", "reasons": reasons[:8]},
@@ -417,18 +500,38 @@ async def _raise_stuck(
 
 
 async def _revisions_since_boundary(db: AsyncSession, session_id: str) -> int:
+    """已经改完并交回的修订次数。
+
+    只统计这次派活（或负责人重新介入）之后、Agent 已经给出回复的修订。
+    进程在半路被杀掉、稿子根本没改出来的那次不占次数，否则重启之后
+    预算会被没用掉的尝试耗尽，工序停住不再往下走。
+    """
     res = await db.execute(
         select(SessionMessage).where(SessionMessage.session_id == session_id).order_by(SessionMessage.created_at.desc())
     )
-    count = 0
+    window: List[SessionMessage] = []
     for msg in res.scalars().all():
         kind = (msg.metadata_json or {}).get("orchestrator")
-        if kind == "revision":
-            count += 1
-        elif kind in (
+        if kind in (
             "dispatch", "gate_feedback", "human_resume", "handoff_repair", "handoff_repair_done",
         ) or msg.sender_role == "human":
             break
+        window.append(msg)
+    window.reverse()
+    count = 0
+    for index, msg in enumerate(window):
+        if (msg.metadata_json or {}).get("orchestrator") != "revision":
+            continue
+        for later in window[index + 1:]:
+            if (later.metadata_json or {}).get("orchestrator") == "revision":
+                break
+            if later.artifact_ref_id or later.message_type in ("draft_artifact", "revised_artifact"):
+                count += 1
+                break
+            # CLI 自己报错也算一次用掉的修订；编排器写的「停下等人」不算。
+            if later.message_type == "error" and later.sender_role == "agent":
+                count += 1
+                break
     return count
 
 
@@ -575,7 +678,7 @@ async def _process_artifact(
         compliance_failed_items,
         run_stage_compliance_check,
     )
-    from backend.app.services.deliverable_audit import audit_stage, merged_fields
+    from backend.app.services.deliverable_audit import artifact_audit_texts, audit_stage, merged_fields
     from backend.app.services.gate_keeper import create_or_update_gate_application, get_stage_gate_config
     from backend.app.services.lead_service import evaluate_gate_by_lead
     from backend.app.services.workflow_engine import load_price_baseline
@@ -614,16 +717,24 @@ async def _process_artifact(
 
         platform = (product.platform if product else None) or "ios"
         zero_inf = True if not product or product.client_zero_inference is None else bool(product.client_zero_inference)
-        texts = [a.content or "" for a in artifacts]
+        latest_version = artifacts[-1].version
+        latest_artifacts = [a for a in artifacts if a.version == latest_version]
+        texts = artifact_audit_texts(latest_artifacts)
+        from backend.app.services.delivery_contract import manifest_from_texts, stage_directory
+
         audit = audit_stage(
             mod.module_code,
             texts,
             platform=platform,
             client_zero_inference=zero_inf,
             price_baseline=await load_price_baseline(db, mod),
+            manifest_root=stage_directory(artifacts),
         )
         session = await _get_or_create_session(db, module_id)
-        compliance = await audit_module_compliance(db, mod.module_code, product, artifacts[-1].content or "")
+        compliance = await audit_module_compliance(
+            db, mod.module_code, product, artifacts[-1].content or "",
+            manifest=manifest_from_texts(texts),
+        )
         base_gate = get_stage_gate_config(mod.module_code, run.template_id if run else None)
         compliance_blocks_lead = (
             compliance is not None
@@ -636,8 +747,11 @@ async def _process_artifact(
             if compliance_blocks_lead:
                 reasons += compliance_failed_items(compliance)
             reasons = reasons or ["交付物检查未通过"]
+            if origin == "human_confirmed":
+                await _raise_stuck(db, product, mod, session, reasons, headline="重新检查仍未通过")
+                return "stuck"
             if await _revisions_since_boundary(db, session.id) >= MAX_AUTO_REVISIONS:
-                await _raise_stuck(db, product, mod, session, reasons)
+                await _raise_stuck(db, product, mod, session, reasons, exhausted=True)
                 return "stuck"
             feedback = "【自动检查未通过，请修订】\n" + "\n".join(f"- {r}" for r in reasons[:8])
             reply = await _post_and_run(db, session, feedback, "feedback", "revision", {"reasons": reasons[:8]})
@@ -646,6 +760,11 @@ async def _process_artifact(
                 return "stuck"
             continue
 
+        signed = await _module_gate(db, module_id)
+        if origin == "human_confirmed" and signed is not None and signed.status == "approved":
+            ok, _reason = await _finalize(db, module_id)
+            return "baselined" if ok else "finalize_blocked"
+
         reviews = [] if review_override else await _collaboration_reviews(db, mod, product, session, artifacts[-1])
         blocking = [r for r in reviews if r.get("verdict") == "request_changes"]
         if blocking:
@@ -653,6 +772,9 @@ async def _process_artifact(
                 f"【{r['reviewer']} 评审：需修订】{f}"
                 for r in blocking for f in (r.get("findings") or ["要求修订"])
             ]
+            if origin == "human_confirmed":
+                await _raise_stuck(db, product, mod, session, reasons, headline="重新检查仍未通过")
+                return "stuck"
             if await _revisions_since_boundary(db, session.id) >= MAX_AUTO_REVISIONS:
                 await _raise_dispute(db, product, mod, session, blocking)
                 return "dispute"
@@ -748,6 +870,7 @@ def _handoff_repair_brief(upstream: ModuleInstance, downstream: ModuleInstance, 
         f"【交接补缺】工序 {downstream.module_code} {downstream.name} 开工前，"
         f"工序 {upstream.module_code} 已定稿基线缺少：{'、'.join(anchors)}。",
         "请在现有基线上升成新版本，补上这些锚点，并让本工序确定性检查能够通过。",
+        "工序 04、05 的锚点写在 delivery.manifest.json 的对应字段里，并与正文一起改。",
         "不要改已经由负责人签过字的支付、隐私、密钥或数据字典结论。",
         "只有补写本身新出现这类事项时，才在交付物里写对应的结构化标记。",
     ])
@@ -850,7 +973,7 @@ async def _repair_handoff(
     """Send missing anchors back to a baselined upstream. Returns repaired, stuck, awaiting_gate, or busy."""
     from backend.app.services.agent_runner import get_session_lock
     from backend.app.services.compliance_engine import audit_module_compliance, compliance_failed_items
-    from backend.app.services.deliverable_audit import audit_stage
+    from backend.app.services.deliverable_audit import artifact_audit_texts, audit_stage
     from backend.app.services.workflow_engine import load_price_baseline
 
     modules = (await db.execute(
@@ -880,11 +1003,17 @@ async def _repair_handoff(
     while True:
         await db.refresh(upstream)
         if await _revisions_since_boundary(db, session.id) >= MAX_AUTO_REVISIONS:
-            await _raise_stuck(db, product, upstream, session, [f"交接补缺仍缺少：{a}" for a in anchors])
+            await _raise_stuck(
+                db, product, upstream, session, [f"交接补缺仍缺少：{a}" for a in anchors], exhausted=True,
+            )
             return "stuck"
         previous_id = upstream.baseline_artifact_id
         previous = (await db.execute(select(Artifact).where(Artifact.id == previous_id))).scalar_one_or_none()
         old_text = previous.content if previous else ""
+        from backend.app.services.delivery_contract import manifest_from_texts, stage_directory
+
+        old_texts = artifact_audit_texts([previous]) if previous else [old_text]
+        old_root = stage_directory([previous] if previous else [])
         reply = await _post_and_run(
             db, session, _handoff_repair_brief(upstream, downstream, anchors), "feedback", "revision",
             {"handoff_repair": True, "anchors": anchors},
@@ -896,20 +1025,31 @@ async def _repair_handoff(
             continue
         new_art = (await db.execute(select(Artifact).where(Artifact.id == reply.artifact_ref_id))).scalar_one_or_none()
         new_text = new_art.content if new_art else ""
-        missing = [g["anchor"] for g in owned if not new_text or not re.search(g["pattern"], new_text)]
+        from backend.app.services.collaboration import anchor_satisfied
+
+        new_texts = artifact_audit_texts([new_art]) if new_art else [new_text]
+        missing = [g["anchor"] for g in owned if not anchor_satisfied(g, "\n".join(new_texts))]
         price_baseline = await load_price_baseline(db, upstream)
         audit = audit_stage(
-            upstream.module_code, [new_text], platform=platform,
+            upstream.module_code,
+            new_texts,
+            platform=platform,
             client_zero_inference=zero_inf, price_baseline=price_baseline,
+            manifest_root=stage_directory([new_art] if new_art else []),
         )
         old_audit = audit_stage(
-            upstream.module_code, [old_text], platform=platform,
+            upstream.module_code,
+            old_texts,
+            platform=platform,
             client_zero_inference=zero_inf, price_baseline=price_baseline,
+            manifest_root=old_root,
         )
         reasons = list(missing)
         if not audit.get("passed"):
             reasons.extend(str(r) for r in (audit.get("reasons") or ["交付物检查未通过"])[:5])
-        compliance = await audit_module_compliance(db, upstream.module_code, product, new_text)
+        compliance = await audit_module_compliance(
+            db, upstream.module_code, product, new_text, manifest=manifest_from_texts(new_texts),
+        )
         legal_review = bool(compliance and compliance.get("status") == "legal_review")
         if compliance and compliance.get("status") == "needs_fix":
             reasons.extend(compliance_failed_items(compliance)[:5])
@@ -953,12 +1093,21 @@ async def _advance(db: AsyncSession, run_id: str) -> Dict[str, Any]:
     dispatched: List[str] = []
     processed: List[str] = []
     attempted: set = set()
+    task_error: Optional[str] = None
+
+    def outcome(status: str) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "run_id": run_id, "status": status, "dispatched": dispatched, "processed": processed,
+        }
+        if task_error:
+            payload["task_error"] = task_error
+        return payload
 
     while True:
         run, product = await _load_run(db, run_id)
         blocked = _run_block_reason(run, product)
         if blocked:
-            return {"run_id": run_id, "status": blocked, "dispatched": dispatched, "processed": processed}
+            return outcome(blocked)
 
         from backend.app.services.workflow_engine import unlock_downstream_modules
         await unlock_downstream_modules(db, run_id)
@@ -978,6 +1127,11 @@ async def _advance(db: AsyncSession, run_id: str) -> Dict[str, Any]:
             artifacts = await _module_artifacts(db, m.id)
             gate = await _module_gate(db, m.id)
             if not artifacts:
+                held = (await db.execute(
+                    select(CollaborationSession).where(CollaborationSession.module_id == m.id)
+                )).scalars().first()
+                if held and await _dispatch_hold(db, held.id):
+                    continue
                 gaps = await _handoff_gaps(db, m)
                 if gaps:
                     await _flag_handoff_gaps(db, product, m, gaps)
@@ -996,7 +1150,7 @@ async def _advance(db: AsyncSession, run_id: str) -> Dict[str, Any]:
         if target is None:
             if repaired:
                 continue
-            return {"run_id": run_id, "status": "idle", "dispatched": dispatched, "processed": processed}
+            return outcome("idle")
 
         attempted.add(target.id)
         session = await _get_or_create_session(db, target.id)
@@ -1009,7 +1163,30 @@ async def _advance(db: AsyncSession, run_id: str) -> Dict[str, Any]:
             reply = await _post_and_run(db, session, _dispatch_brief(target, product), "instruction", "dispatch")
             if not reply or not reply.artifact_ref_id:
                 detail = reply.content if reply else "Agent 无响应"
-                await _raise_stuck(db, product, target, session, [f"派活后 Agent 未产出交付物: {detail[:200]}"])
+                db.add(SessionMessage(
+                    session_id=session.id,
+                    sender=ORCH_SENDER,
+                    sender_role="system",
+                    role_code="lead",
+                    message_type="error",
+                    content=detail,
+                    metadata_json={"orchestrator": "dispatch_miss"},
+                ))
+                await db.commit()
+                if await _dispatch_misses(db, session.id) < MAX_AUTO_REVISIONS:
+                    attempted.discard(target.id)
+                    continue
+                db.add(SessionMessage(
+                    session_id=session.id,
+                    sender=ORCH_SENDER,
+                    sender_role="system",
+                    role_code="lead",
+                    message_type="error",
+                    content="这一次执行没有产出",
+                    metadata_json={"orchestrator": "dispatch_exhausted"},
+                ))
+                await db.commit()
+                task_error = detail
                 continue
         processed.append(target.module_code)
         await _process_artifact(db, target.id, origin="agent")
@@ -1019,9 +1196,72 @@ async def _advance(db: AsyncSession, run_id: str) -> Dict[str, Any]:
 # Public entrypoints (each takes the per-run lock)
 # ---------------------------------------------------------------------------
 
+async def runs_waiting_for_push(db: AsyncSession) -> List[str]:
+    """自动编排开着、却没有人接着推的迭代。
+
+    审批或重新检查若在半路被打断，工序会停在「等待派活 / 等待检查」，
+    队列里却没有任务。执行器用这个名单把它们捡回来。
+    已经在等人类签字、或已经卡死的工序不在名单里。
+    """
+    runs = (await db.execute(select(WorkflowRun).where(and_(
+        WorkflowRun.status == "in_progress",
+        WorkflowRun.auto_advance == True,  # noqa: E712
+    )))).scalars().all()
+    waiting: List[str] = []
+    for run in runs:
+        product = (await db.execute(select(Product).where(Product.id == run.product_id))).scalar_one_or_none()
+        if _run_block_reason(run, product):
+            continue
+        modules = (await db.execute(
+            select(ModuleInstance).where(ModuleInstance.run_id == run.id).order_by(ModuleInstance.order_index.asc())
+        )).scalars().all()
+        for mod in modules:
+            if not mod.is_unlocked or mod.phase == "baselined":
+                continue
+            if await _stuck_risk(db, product, mod):
+                continue
+            artifacts = await _module_artifacts(db, mod.id)
+            gate = await _module_gate(db, mod.id)
+            if not artifacts:
+                held = (await db.execute(
+                    select(CollaborationSession).where(CollaborationSession.module_id == mod.id)
+                )).scalars().first()
+                if held and await _dispatch_hold(db, held.id):
+                    continue
+            if not artifacts or (gate is None and mod.execution_mode != "human_driven"):
+                waiting.append(run.id)
+                break
+    return waiting
+
+
 async def advance_run(db: AsyncSession, run_id: str) -> Dict[str, Any]:
     async with get_run_lock(run_id):
         return await _advance(db, run_id)
+
+
+async def request_redispatch(db: AsyncSession, module_id: str) -> str:
+    """人要求把「没有产出」的工序再派一次。只清掉用尽标记，不提交关口。"""
+    mod, run, product = await _load_module_context(db, module_id)
+    if mod is None:
+        return "module_not_found"
+    if _run_block_reason(run, product):
+        return "blocked"
+    if await _module_artifacts(db, module_id):
+        return "has_artifact"
+    session = await _get_or_create_session(db, module_id)
+    if not await _dispatch_hold(db, session.id):
+        return "not_exhausted"
+    db.add(SessionMessage(
+        session_id=session.id,
+        sender=ORCH_SENDER,
+        sender_role="system",
+        role_code="lead",
+        message_type="instruction",
+        content="请重新派活",
+        metadata_json={"orchestrator": "redispatch"},
+    ))
+    await db.commit()
+    return "ready"
 
 
 async def on_artifact_created(db: AsyncSession, module_id: str, origin: str = "agent") -> str:
@@ -1178,6 +1418,8 @@ async def get_run_orchestration_status(db: AsyncSession, run_id: str) -> Dict[st
             state, detail = "gate_returned", gate.review_comment or "关口被打回，等待修订"
         elif artifacts and m.execution_mode == "human_driven" and gate is None:
             state, detail = "awaiting_human_confirm", "真人主导工序：请上传或确认交付物后提交检查"
+        elif not artifacts and session and await _dispatch_hold(db, session.id):
+            state, detail = "dispatch_failed", "这一次执行没有产出"
         elif not artifacts:
             state, detail = "ready", "等待派活"
         else:
@@ -1192,6 +1434,21 @@ async def get_run_orchestration_status(db: AsyncSession, run_id: str) -> Dict[st
             "gate_id": gate.id if gate else None,
         })
 
+    from backend.app.services.job_queue import queue_snapshot
+
+    queue = await queue_snapshot(db, run_id)
+    if queue["running"]:
+        for stage in stages:
+            if stage["state"] != "ready":
+                continue
+            stage["state"] = "running"
+            stage["detail"] = (
+                "正在派给这一工序的主责"
+                if stage["detail"] == "等待派活"
+                else "正在检查这一版交付物"
+            )
+            break
+
     return {
         "run_id": run_id,
         "found": True,
@@ -1200,21 +1457,5 @@ async def get_run_orchestration_status(db: AsyncSession, run_id: str) -> Dict[st
         "run_block_reason": run_block,
         "current_stage": stages[0] if stages else None,
         "active_stages": stages,
+        "queue": queue,
     }
-
-
-async def run_in_fresh_session(func, *args, **kwargs) -> Any:
-    """BackgroundTasks 入口：请求结束后用新的 DB 会话执行编排。"""
-    from backend.app.core.database import get_db
-    from backend.app.main import app
-
-    provider = app.dependency_overrides.get(get_db, get_db)
-    agen = provider()
-    db = await agen.__anext__()
-    try:
-        return await func(db, *args, **kwargs)
-    except Exception:
-        traceback.print_exc()
-        return None
-    finally:
-        await agen.aclose()

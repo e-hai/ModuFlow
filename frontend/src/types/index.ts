@@ -108,6 +108,7 @@ export type OrchestrationStageState =
   | 'awaiting_human_gate'
   | 'gate_returned'
   | 'awaiting_human_confirm'
+  | 'dispatch_failed'
   | 'ready';
 
 export interface OrchestrationStage {
@@ -120,6 +121,13 @@ export interface OrchestrationStage {
   gate_id?: string | null;
 }
 
+export interface OrchestrationQueue {
+  queued: number;
+  running: number;
+  runner_alive: boolean;
+  current?: { task: string; worker?: string | null; started_at?: string | null } | null;
+}
+
 export interface RunOrchestrationStatus {
   run_id: string;
   found: boolean;
@@ -128,6 +136,7 @@ export interface RunOrchestrationStatus {
   run_block_reason?: string | null;
   current_stage?: OrchestrationStage | null;
   active_stages: OrchestrationStage[];
+  queue?: OrchestrationQueue | null;
 }
 
 export interface SessionMessage {

@@ -39,3 +39,4 @@ data/*.db*
 data/backup/
 data/workspaces/
 data/sandbox_profiles/
+data/runner.pulse

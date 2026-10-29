@@ -137,7 +137,7 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
       return stageDecision(mod);
     }
     if (code.startsWith('ORCH_STUCK_')) {
-      return `${stageName(code.replace('ORCH_STUCK_', ''))}改了两次仍没通过`;
+      return `${stageName(code.replace('ORCH_STUCK_', ''))}还不能往下走`;
     }
     if (code.startsWith('ORCH_DISPUTE_')) {
       return `${stageName(code.replace('ORCH_DISPUTE_', ''))}的评审意见还没定`;
@@ -238,11 +238,25 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
     }
   };
 
+  const waitForRecheck = async (jobId: string) => {
+    const deadline = Date.now() + 10 * 60 * 1000;
+    for (;;) {
+      const job = await api.getOrchestrationJob(jobId);
+      if (job.status !== 'queued' && job.status !== 'running') return;
+      if (job.status === 'queued' && !job.runner_alive) {
+        throw new Error('检查已排队，但执行器没在跑');
+      }
+      if (Date.now() > deadline) return;
+      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+    }
+  };
+
   const handleRecheck = async (item: DecisionInboxItem) => {
     try {
       setInboxBusy(`${item.module_id}:recheck`);
       setErrorMsg(null);
-      await api.submitModuleForGate(item.module_id);
+      const queued = await api.submitModuleForGate(item.module_id);
+      if (queued.job_id) await waitForRecheck(queued.job_id);
       await refreshLeaderQueue();
     } catch (err: any) {
       setErrorMsg(err.message || '重新检查失败');
@@ -498,7 +512,7 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
                           onClick={() => handleRecheck(queueItem)}
                           className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white transition shadow-xs cursor-pointer disabled:opacity-50"
                         >
-                          {inboxBusy === `${queueItem.module_id}:recheck` ? '处理中...' : '重新检查'}
+                          {inboxBusy === `${queueItem.module_id}:recheck` ? '检查中...' : '重新检查'}
                         </button>
                       ) : risk.rule_code.startsWith('ORCH_DISPUTE_') || risk.rule_code.startsWith('ORCH_STUCK_') ? (
                         <span className="text-[11px] text-slate-500">正在读取可执行操作</span>

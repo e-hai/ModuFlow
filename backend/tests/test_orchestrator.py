@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import and_, select
 
 from backend.app.adapters.base import AgentEventType, AgentStreamEvent, BaseAgentAdapter
 from backend.app.core.config import settings
@@ -19,7 +19,7 @@ from backend.app.models.entities import (
     Product,
     StrategicInitiative,
 )
-from backend.app.services import agent_runner, orchestrator
+from backend.app.services import agent_runner, job_queue, orchestrator
 from backend.app.services.agent_roles import seed_agent_roles_if_empty
 from backend.app.services.gate_keeper import review_gate_application
 from backend.app.services.lead_service import (
@@ -255,6 +255,8 @@ async def test_auto_advance_switch_is_human_only_and_stops_dispatch(monkeypatch)
         res = await ac.post(f"/api/v1/runs/{run.id}/advance")
         assert res.status_code == 200
         assert res.json()["status"] == "auto_advance_off"
+        async with AsyncSessionLocal() as db:
+            assert await job_queue.drain(db) == []
         assert adapter.calls == []
 
         on = await ac.patch(
@@ -263,19 +265,11 @@ async def test_auto_advance_switch_is_human_only_and_stops_dispatch(monkeypatch)
             headers={"X-ModuFlow-Actor": "human:sponsor"},
         )
         assert on.status_code == 200
-        for _ in range(50):
-            if adapter.calls[:1] == ["01"]:
-                break
-            await asyncio.sleep(0.02)
-        assert adapter.calls[:1] == ["01"]
 
-    for _ in range(50):
-        async with AsyncSessionLocal() as db:
-            if (await _module(db, run.id, "01")).phase == "baselined":
-                break
-        await asyncio.sleep(0.05)
-
+    # The request only queues; the runner process executes. Drain it here instead.
     async with AsyncSessionLocal() as db:
+        assert len(await job_queue.drain(db)) == 1
+        assert adapter.calls[:1] == ["01"]
         assert (await _module(db, run.id, "01")).phase == "baselined"
 
 
@@ -370,3 +364,155 @@ async def test_shadow_stats_never_flip_the_switch():
         assert stats["ready_to_disable"] is True
         await db.refresh(prod)
         assert prod.shadow_mode is True
+
+
+@pytest.mark.asyncio
+async def test_human_recheck_stops_when_the_current_draft_still_fails(monkeypatch):
+    adapter = _use_adapter(monkeypatch, {"01": _SOM_DOC})
+    async with AsyncSessionLocal() as db:
+        _prod, run = await _make_run(db, "recheck-fail", shadow_mode=False)
+        m01 = await _module(db, run.id, "01")
+        db.add(Artifact(
+            module_id=m01.id, version=1, title="工序 01", content=_THIN_DOC, content_hash="thin",
+        ))
+        await db.commit()
+
+        status = await orchestrator.on_artifact_created(db, m01.id, origin="human_confirmed")
+        assert status == "stuck"
+        assert adapter.calls == []
+        risk = (await db.execute(select(ExecutiveRisk).where(
+            ExecutiveRisk.rule_code == "ORCH_STUCK_01", ExecutiveRisk.is_resolved == False  # noqa: E712
+        ))).scalar_one()
+        assert "重新检查仍未通过" in risk.title
+
+
+@pytest.mark.asyncio
+async def test_human_recheck_finalizes_a_signed_gate_without_asking_again(monkeypatch):
+    adapter = _use_adapter(monkeypatch, {})
+    async with AsyncSessionLocal() as db:
+        prod, run = await _make_run(db, "recheck-signed", shadow_mode=True)
+        m01 = await _module(db, run.id, "01")
+        db.add(Artifact(
+            module_id=m01.id, version=1, title="工序 01", content=_SOM_DOC, content_hash="som",
+        ))
+        db.add(GateApplication(
+            module_id=m01.id, run_id=run.id, product_code=prod.code, module_code="01",
+            gate_name="门禁自检", base_level="green", effective_level="green",
+            recommendation="继续", evidence=[], risk_assessment="无",
+            decision_options=["approve"], submitted_by="agent:mr",
+            status="approved", reviewed_by="human:负责人", reviewer_role="human",
+            decision_action="approve",
+        ))
+        await db.commit()
+
+        status = await orchestrator.on_artifact_created(db, m01.id, origin="human_confirmed")
+        assert status == "baselined"
+
+
+class _EmptyAdapter(BaseAgentAdapter):
+    def __init__(self, text: str):
+        self.text = text
+        self.calls: List[str] = []
+
+    async def execute_task(self, task_id, workspace_dir, system_context, user_instruction,
+                           message_type="instruction", metadata: Optional[Dict[str, Any]] = None):
+        self.calls.append((metadata or {}).get("module_code", ""))
+        yield AgentStreamEvent(event_type=AgentEventType.ERROR, content=self.text)
+
+    async def cancel_task(self, task_id: str) -> bool:
+        return True
+
+
+@pytest.mark.asyncio
+async def test_empty_dispatch_retries_then_offers_redispatch(monkeypatch):
+    long_error = "Agent CLI 执行出错 " + ("x" * 400)
+    adapter = _EmptyAdapter(long_error)
+    monkeypatch.setattr(agent_runner, "get_agent_adapter", lambda adapter_type=None: adapter)
+    async with AsyncSessionLocal() as db:
+        prod, run = await _make_run(db, "empty", shadow_mode=False)
+        result = await orchestrator.advance_run(db, run.id)
+
+        assert adapter.calls == ["01", "01"]
+        assert result["task_error"] == long_error
+        assert result["processed"] == []
+        open_risks = (await db.execute(select(ExecutiveRisk).where(and_(
+            ExecutiveRisk.product_code == prod.code,
+            ExecutiveRisk.is_resolved == False,  # noqa: E712
+        )))).scalars().all()
+        assert open_risks == []
+
+        status = await orchestrator.get_run_orchestration_status(db, run.id)
+        assert status["current_stage"]["state"] == "dispatch_failed"
+        assert status["current_stage"]["detail"] == "这一次执行没有产出"
+        assert long_error not in status["current_stage"]["detail"]
+        assert run.id not in await orchestrator.runs_waiting_for_push(db)
+
+        again = await orchestrator.advance_run(db, run.id)
+        assert adapter.calls == ["01", "01"]
+        assert "task_error" not in again
+
+        m01 = await _module(db, run.id, "01")
+        assert await orchestrator.request_redispatch(db, m01.id) == "ready"
+        await orchestrator.advance_run(db, run.id)
+        assert adapter.calls == ["01", "01", "01", "01"]
+
+
+@pytest.mark.asyncio
+async def test_newest_stuck_wins_and_abandon_closes_them(monkeypatch):
+    from datetime import datetime, timedelta
+
+    adapter = _use_adapter(monkeypatch, {"01": _THIN_DOC})
+    async with AsyncSessionLocal() as db:
+        prod, run = await _make_run(db, "scope", shadow_mode=False)
+        await orchestrator.advance_run(db, run.id)
+        older = (await db.execute(select(ExecutiveRisk).where(
+            ExecutiveRisk.product_code == prod.code, ExecutiveRisk.rule_code == "ORCH_STUCK_01"
+        ))).scalar_one()
+        older.created_at = datetime.utcnow() - timedelta(days=2)
+        older.description = "旧迭代的卡住说明"
+        db.add(ExecutiveRisk(
+            initiative_id=older.initiative_id,
+            rule_code="ORCH_STUCK_01",
+            title="较新",
+            severity="major",
+            description="较新的卡住说明",
+            product_code=prod.code,
+            is_resolved=False,
+            created_at=datetime.utcnow(),
+        ))
+        await db.commit()
+
+        status = await orchestrator.get_run_orchestration_status(db, run.id)
+        assert status["current_stage"]["detail"] == "较新的卡住说明"
+
+        closed = await orchestrator.close_iteration_risks(db, prod, "迭代已结束，本轮卡住与分歧记录关闭。")
+        assert closed == 2
+        still_open = (await db.execute(select(ExecutiveRisk).where(and_(
+            ExecutiveRisk.product_code == prod.code,
+            ExecutiveRisk.is_resolved == False,  # noqa: E712
+        )))).scalars().all()
+        assert still_open == []
+
+
+_CONFLICTING_SOM = (
+    "monthly_search_volume: 350000\n"
+    "target_capture_rate: 0.008\n"
+    "blended_arpu_usd: 66.86\n"
+    "source: 测试夹具：假设/待验证\n"
+    "首年现实有效营收盘子（SOM）为 **$187,200 USD**\n"
+)
+
+
+@pytest.mark.asyncio
+async def test_conflicting_prose_som_is_sent_back_as_a_revision(monkeypatch):
+    adapter = _use_adapter(monkeypatch, {"01": _CONFLICTING_SOM})
+    async with AsyncSessionLocal() as db:
+        prod, run = await _make_run(db, "som", shadow_mode=False)
+        await orchestrator.advance_run(db, run.id)
+        m01 = await _module(db, run.id, "01")
+        assert m01.phase != "baselined"
+        risk = (await db.execute(select(ExecutiveRisk).where(
+            ExecutiveRisk.product_code == prod.code, ExecutiveRisk.rule_code == "ORCH_STUCK_01"
+        ))).scalar_one()
+        assert "187,200" in risk.description
+        assert "2,246,496.00" in risk.description

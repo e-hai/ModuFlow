@@ -216,14 +216,19 @@ ModuFlow 严密定义 **10 大专业智能体**（包括项目总控与合规风
   - **严禁擅改业务规格**：若外测转化不及预期，应向上游提 Pivot 建议，严禁私自修改 PRD。
 
 ### 5. 【设计与用研 Agent (`ux`)】—— 工序 06 设计实现
-- **角色定位**：Apple HIG / Material 体验守护者、设计系统规范师、高保真 HTML 标注与资产包交付者。
+- **角色定位**：Apple HIG / Material 体验守护者、设计系统规范师、高保真视觉稿交付者。
 - **标准输入**：工序 05 封版 PRD（视图索引 `V-01~V-05`、组件清单、交互分支、文案字典）。
-- **标准输出**：Design Tokens 规范文档、平台安全区合规矩阵、逐视图四态规范（Default/Loading/Empty/Error）、生产级资产包（`index.html` 标注台、`assets/icons/*.svg`、`design_tokens.json`）。
-- **允许能力**：生成 UI 视觉规范、输出 Design Tokens、打包 SVG 图标、向工序 05 提体验层 CR。安全区检查为 `audit_hig_safe_area`（iOS）或 `audit_material_spec`（Android），读取交付物中的实测值。
+- **标准输出**：一个**可在成果交付库直接点开体验的设计交付包**，形态等同设计师导出的设计稿文件夹，外加一份设计说明：
+  - `index.html` 设计工作台：画板切换、平台切换、四态切换、标注层、点选检视（尺寸/字号/圆角/颜色）、色板与图标库；
+  - `tokens.json`：设计令牌唯一真理源（color / typography / spacing / radius），工序 07 直接读取；
+  - `screens/V-xx.html`：工序 05 每个视图一张**完整高保真视觉稿**（不是线框），iOS / Android 设备外框、Default/Loading/Empty/Error 四态，页面之间可点击跳转；
+  - `assets/icons/*.svg`：图标资源。
+- **允许能力**：生成 UI 视觉规范、输出 Design Tokens、打包 SVG 图标、向工序 05 提体验层 CR。工序 06 不接受只有文字的规范：`delivery.manifest.json` 的 `design` 清单与设计包文件由 `design_bundle.py` 做确定性静态校验，读取画板里的 `data-device` / `data-safe-top` / `data-safe-bottom` / `data-hit` / `data-state` 标注，不采信交付物自报数值。
 - 🚫 **严格边界与禁区 (Redlines)**：
   - **严禁私自魔改业务逻辑**：发现交互痛点必须提交需求变更单 (CR) 驱动 PRD 修订，严禁私自增加业务分支；
   - **严禁编写生产代码**：只提供前端样式与高保真原型，不编写生产级状态机与数据持久化（归属 `eng`）；
-  - **严禁违反平台安全区**：根据项目 profile 严格留出顶部与底部安全区，触控热区不得小于平台最小规范。
+  - **严禁违反平台安全区**：根据项目 profile 严格留出顶部与底部安全区，触控热区不得小于平台最小规范；
+  - **设计包硬性检查**（任何一项不过不放行）：工序 05 视图索引每个 `V-xx` 都有画板；页面颜色只能来自 `tokens.json`；每张画板四态齐全、可点击元素带 `data-hit` 且达标、跳转目标真实存在；零外部依赖；`index.html` 收录全部画板。校验为静态检查，不做像素级实测。
 
 ### 6. 【研发架构 Agent (`eng`)】—— 工序 07 开发实现
 - **角色定位**：工程实现操盘手、物理数据模型与核心业务代码架构师。

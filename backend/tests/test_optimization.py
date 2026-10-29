@@ -63,15 +63,15 @@ async def test_bundle_upload_and_preview_flow():
         m07 = next(m for m in run_data["modules"] if m["module_code"] == "07")
 
         # 3. Create a zip archive simulating a design prototype bundle
+        from backend.app.services.delivery_contract import build_stage_manifest
+        from backend.app.services.design_bundle_sim import build_design_bundle
+
         zip_buf = io.BytesIO()
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr(
-                "index.html",
-                "top_safe_padding_pt: 74\nmin_touch_target_pt: 44\nstatus_bar_safe_dp: 32\nmin_touch_target_dp: 48\n"
-                "<!DOCTYPE html><html><body><h1>Prototype v1</h1><div class='nav'>Home</div></body></html>",
-            )
-            zf.writestr("assets/style.css", "body { background: #fafafa; }")
-            zf.writestr("preview/screen1.png", b"fake-png-bytes")
+            for rel, content in build_design_bundle("原型包测试", "cross_platform").items():
+                zf.writestr(rel, content)
+            zf.writestr("交付物_06.md", "# 设计实现说明\nDesign Tokens 见 tokens.json，覆盖 V-01 V-02 V-03 V-04。")
+            zf.writestr("delivery.manifest.json", build_stage_manifest("06", "交付物_06.md", "cross_platform"))
         zip_bytes = zip_buf.getvalue()
 
         # 4. Upload bundle to module 06 (Design)
@@ -94,11 +94,11 @@ async def test_bundle_upload_and_preview_flow():
         # 5. Test static preview endpoint
         preview_res = await client.get(f"/api/v1/artifacts/{artifact_id}/preview")
         assert preview_res.status_code == 200
-        assert "Prototype v1" in preview_res.text
+        assert "设计工作台" in preview_res.text
 
-        css_res = await client.get(f"/api/v1/artifacts/{artifact_id}/preview/assets/style.css")
-        assert css_res.status_code == 200
-        assert "background: #fafafa" in css_res.text
+        screen_res = await client.get(f"/api/v1/artifacts/{artifact_id}/preview/screens/V-01.html")
+        assert screen_res.status_code == 200
+        assert 'data-device="ios"' in screen_res.text and 'data-device="android"' in screen_res.text
 
         # 6. Test change reviews query
         reviews_res = await client.get(f"/api/v1/change-reviews?module_id={m06['id']}&status=pending_approval")

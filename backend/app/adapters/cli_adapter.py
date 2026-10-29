@@ -9,6 +9,8 @@ from pathlib import Path
 from backend.app.adapters.base import BaseAgentAdapter, AgentStreamEvent, AgentEventType
 from backend.app.core.config import settings
 from backend.app.services.security_guard import sanitize_agent_environment
+from backend.app.services.stage_memory import deliverable_filename
+from backend.app.services.delivery_contract import manifest_instruction
 from backend.app.services.workspace_sandbox import (
     os_sandbox_available,
     sandbox_layers,
@@ -16,6 +18,29 @@ from backend.app.services.workspace_sandbox import (
     verify_and_restore,
     wrap_command,
 )
+
+_live_processes: "Dict[int, asyncio.subprocess.Process]" = {}
+
+
+async def terminate_live_cli_processes(grace_seconds: float = 3.0) -> int:
+    """结束本进程启动的所有 Agent CLI。执行器退出时调用，别把子进程留成孤儿。"""
+    procs = [p for p in _live_processes.values() if p.returncode is None]
+    for proc in procs:
+        try:
+            proc.terminate()
+        except ProcessLookupError:
+            pass
+    for proc in procs:
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=grace_seconds)
+        except (asyncio.TimeoutError, ProcessLookupError):
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+    _live_processes.clear()
+    return len(procs)
+
 
 def get_cli_search_path() -> str:
     """Construct a comprehensive PATH including common CLI install locations on macOS/Linux."""
@@ -26,6 +51,22 @@ def get_cli_search_path() -> str:
     ]
     current_path = os.environ.get("PATH", "")
     return os.pathsep.join([p for p in extra_paths if p not in current_path] + [current_path])
+
+async def apply_saved_cli_settings(db) -> None:
+    """Copy the settings-page CLI and model onto this process. The runner is a separate process, so it has to read the same row."""
+    from sqlalchemy import select
+    from backend.app.models.entities import AgentSettingsModel
+
+    row = (await db.execute(
+        select(AgentSettingsModel).where(AgentSettingsModel.id == "default")
+    )).scalar_one_or_none()
+    if row is None:
+        return
+    settings.AGENT_ADAPTER_TYPE = row.adapter_type
+    settings.AGENT_CLI_COMMAND = row.cli_command
+    settings.AGENT_CLI_MODEL = row.cli_model or ""
+    settings.AGENT_CLI_TIMEOUT = row.timeout
+
 
 def find_cli_binary(command: str) -> Optional[str]:
     """Find the full executable path of a given CLI command."""
@@ -38,6 +79,29 @@ _MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+-]{0,119}$")
 _CLAUDE_MODEL_RE = re.compile(r"\bclaude-(?:opus|sonnet|haiku|fable)-\d+(?:-\d+)?\b")
 _MODEL_LIST_CACHE: Dict[str, tuple] = {}
 _MODEL_LIST_TTL_SECONDS = 120
+
+
+def continuation_preamble(has_draft: bool) -> str:
+    """Tell the harness whether this stage already has a file to revise."""
+    if has_draft:
+        return (
+            "本目录的 `.moduflow_agent_context.md` 已包含前序基线和本工序当前稿。"
+            "直接依据它和下面的清单，在现有交付物上修改。\n"
+        )
+    return "本目录的 `.moduflow_agent_context.md` 已包含前序基线。直接依据它和下面的清单写交付物。\n"
+
+
+def deliverable_write_rule(filename: str, has_draft: bool) -> str:
+    """Write a new file on the first pass. Later passes revise that file in place."""
+    if has_draft:
+        return (
+            f"3. 在现有文件 `{filename}` 上按未关闭事项修改，没被点名的段落保持原样，写完就结束。"
+            "不要把全文再打印到 stdout，不要另起一份新稿。"
+        )
+    return (
+        f"3. 把交付物一次写入当前工作区的 `{filename}`，写完就结束。"
+        "不要把全文再打印到 stdout，不要为了核对而重读或改写这个文件。"
+    )
 
 
 def deliverable_length_guideline(mod_code: str) -> str:
@@ -60,6 +124,75 @@ def usable_cli_model(model: Optional[str]) -> Optional[str]:
     if not text or not _MODEL_ID_RE.match(text):
         return None
     return text
+
+
+_QUOTA_RE = re.compile(
+    r"quota|resource_exhausted|rate[_ ]limit|insufficient[_\s]quota",
+    re.IGNORECASE,
+)
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+PROBE_PROMPT = "Reply with the single word ok. Do not create or modify any files."
+PROBE_TIMEOUT_SECONDS = 45
+
+
+def classify_cli_probe(returncode: Optional[int], stdout: str, stderr: str) -> Dict[str, str]:
+    """Tell a one-word model probe apart from a quota rejection and other CLI failures."""
+    stdout = _ANSI_RE.sub("", stdout or "")
+    stderr = _ANSI_RE.sub("", stderr or "")
+    blob = "\n".join(part.strip() for part in (stderr, stdout) if part and part.strip())
+    failed = returncode not in (0, None)
+    quota_hit = bool(_QUOTA_RE.search(blob)) and (failed or "429" in blob or "error" in blob.lower())
+    if quota_hit:
+        return {"kind": "quota", "detail": _probe_detail(blob)}
+    if failed:
+        return {"kind": "error", "detail": _probe_detail(blob) or f"退出码 {returncode}"}
+    if not stdout.strip() or "API Error:" in stdout:
+        return {"kind": "error", "detail": _probe_detail(blob) or "模型没有返回内容"}
+    return {"kind": "ok", "detail": stdout.strip()[:120]}
+
+
+def _probe_detail(blob: str) -> str:
+    lines = [ln.strip() for ln in blob.splitlines() if ln.strip()]
+    picked = [ln for ln in lines if _QUOTA_RE.search(ln) or ln.lower().startswith("error")]
+    return " ".join(picked or lines[:2])[:500]
+
+
+async def probe_selected_model(
+    cmd_path: str,
+    model: Optional[str] = None,
+    timeout: float = PROBE_TIMEOUT_SECONDS,
+) -> Dict[str, str]:
+    """Send one short prompt with the selected model so a quota rejection is visible."""
+    import tempfile
+
+    args = build_cli_arguments(cmd_path, PROBE_PROMPT, model)
+    env = {
+        **sanitize_agent_environment(dict(os.environ)),
+        "PATH": get_cli_search_path(),
+    }
+    with tempfile.TemporaryDirectory(prefix="moduflow-probe-") as workspace:
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            cwd=workspace,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            await proc.wait()
+            return {"kind": "timeout", "detail": f"模型在 {int(timeout)} 秒内没有回应，无法确认额度"}
+    return classify_cli_probe(
+        proc.returncode,
+        (stdout or b"").decode(errors="replace"),
+        (stderr or b"").decode(errors="replace"),
+    )
 
 
 def build_cli_arguments(cmd_path: str, prompt: str, model: Optional[str] = None) -> List[str]:
@@ -287,7 +420,21 @@ class CliSubprocessAdapter(BaseAgentAdapter):
         target_mkt = (metadata or {}).get("target_market") or "目标市场"
         strat_intent = (metadata or {}).get("strategic_intent") or ""
         role_code = (metadata or {}).get("role_code") or "pm"
-        output_filename = f"交付物_{mod_code}_{mod_name}.md"
+        output_filename = deliverable_filename(mod_code, mod_name)
+        has_stage_draft = bool((metadata or {}).get("has_stage_draft"))
+
+        # Initialize delivery.manifest.json if not present
+        from backend.app.services.delivery_contract import CONTRACT_STAGES, MANIFEST_FILENAME, build_stage_manifest
+        manifest_file = workspace_dir / MANIFEST_FILENAME
+        if mod_code in CONTRACT_STAGES and not manifest_file.exists():
+            seed_platform = str((metadata or {}).get("platform") or "cross_platform")
+            seed_views = None
+            if mod_code == "06":
+                from backend.app.services.design_bundle import upstream_prd_views
+                seed_views = upstream_prd_views(workspace_dir) or None
+            manifest_content = build_stage_manifest(mod_code, output_filename, seed_platform, seed_views)
+            if manifest_content:
+                manifest_file.write_text(manifest_content, encoding="utf-8")
 
         # Resolve project profile (platform & client_zero_inference)
         from backend.app.services.profile_guard import is_dual_platform, resolve_project_profile
@@ -396,6 +543,7 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                     env=env
                 )
                 self._active_processes[task_id] = proc
+                _live_processes[proc.pid] = proc
 
                 async def drain_stream(stream: asyncio.StreamReader, sink: List[str]):
                     while True:
@@ -497,7 +645,9 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                 )
                 return
             finally:
-                self._active_processes.pop(task_id, None)
+                stale = self._active_processes.pop(task_id, None)
+                if stale is not None:
+                    _live_processes.pop(stale.pid, None)
 
         # =========================================================================
         # Case B: User gave an INSTRUCTION or FEEDBACK (指令生成或反馈修订)
@@ -561,38 +711,38 @@ class CliSubprocessAdapter(BaseAgentAdapter):
             )
         elif mod_code == "06":
             if is_dual_platform(target_platform):
-                extra_methodology = (
-                    f"\n【工序 06（设计实现）专项作业红线 —— iOS 与 Android 两端都要交付】\n"
-                    f"- 同一份交付物必须同时给出两端实测值，缺一端不能放行。\n"
-                    f"- iOS：灵动岛顶部 ≥71pt、底部 ≥34pt、触控热区 ≥44×44pt。json 字段 `top_safe_padding_pt`、`bottom_safe_padding_pt`、`min_touch_target_pt`。\n"
-                    f"- Android：状态栏/挖孔顶部 ≥24dp、触控热区 ≥48×48dp。json 字段 `status_bar_safe_dp`、`min_touch_target_dp`。\n"
-                    f"- 覆盖工序 05 的全部视图，每个视图给出 Default/Loading/Empty/Error。\n"
-                    f"- 工作区同时保留 `check_hig.py` 与 `check_material.py`。体验冲突向工序 05 提 CR，不私自改业务流程。\n"
+                platform_rules = (
+                    "- 双端项目：每张画板同时画 iOS 与 Android 两个设备外框，缺一端不能放行。\n"
+                    "- iOS：`data-device=\"ios\"`，`data-safe-top` ≥ 71（灵动岛）、`data-safe-bottom` ≥ 34，可点击元素 `data-hit` ≥ 44x44（pt）。\n"
+                    "- Android：`data-device=\"android\"`，`data-safe-top` ≥ 24（状态栏/挖孔，dp），可点击元素 `data-hit` ≥ 48x48（dp）。\n"
                 )
             elif target_platform == "android":
-                extra_methodology = (
-                    f"\n【工序 06（设计实现）专项作业红线 —— Google Material 3 规范文档 + Sketch/Figma 级全画板 HTML 标注包与资产库】\n"
-                    f"- 1. 交付物规范文档（`{output_filename}`）：完整输出全局 Material 3 Design Tokens（色彩/字阶/圆角/间距及 Compose/Tailwind 代码契约）、Android 状态栏/挖孔避让安全区（顶部 ≥ 24~48dp、底部导航栏避让、最小触控热区 48×48dp）合规矩阵、工序 05 封版的全部核心视图（V-01 ~ V-05）逐页面图层树与四态（Default/Loading/Empty/Error）交互规范。\n"
-                    f"- 2. 【强制真交付要求 —— Sketch 级 HTML 标注工作台与设计资产包】：你必须在当前工作区下同步创建并落盘：\n"
-                    f"  - `index.html`：高保真多画板交互原型与 Sketch 级点选标注检视工作台（涵盖 V-01 ~ V-05 全画板切换、点击任意组件在右侧面板实时检视宽高/圆角/字阶并一键复制 Compose 与 Tailwind 代码、Material 3 标尺开关、图标库预览、字阶表与 Design Tokens 调色板）；\n"
-                    f"  - `assets/icons/*.svg`：全套独立矢量 SVG 图标文件；\n"
-                    f"  - `assets/fonts/fonts.css` 与 `typography.json`：字体排印样式表与字阶映射配置；\n"
-                    f"  - `assets/tokens/design_tokens.json`：标准设计令牌 JSON 字典及打包好的 `.zip` 离线资产包。\n"
-                    f"- 3. 【需求合理性反馈】：在设计过程中，如发现工序 05 PRD 存在用户体验割裂、交互路径过深或平台规范冲突，严禁私自绕过，应通过向工序 05 提需求变更单 (CR) 驱动上游基线闭环演进。\n"
-                    f"- 【硬性禁区】：严禁私自增删改产品业务流程；严禁编写生产业务逻辑代码（归属于 eng）；严禁违背 Material 3 状态栏避让与 48dp 触控热区规范（无需执行 iOS 灵动岛检查）。\n"
+                platform_rules = (
+                    "- Android 项目：每张画板只画 Android 设备外框 `data-device=\"android\"`，`data-safe-top` ≥ 24（dp），可点击元素 `data-hit` ≥ 48x48（dp）。无需任何 iOS 检查。\n"
                 )
             else:
-                extra_methodology = (
-                    f"\n【工序 06（设计实现）专项作业红线 —— 完整设计规范文档 + Sketch/Figma 级全画板 HTML 标注包与资产库】\n"
-                    f"- 1. 交付物规范文档（`{output_filename}`）：完整输出全局 Design Tokens（色彩/字阶/圆角/间距及 SwiftUI 代码契约）、iOS 灵动岛安全区（顶部 ≥ 71pt、底部 ≥ 34pt、最小触控热区 44×44pt）合规矩阵、工序 05 封版的全部核心视图（V-01 ~ V-05）逐页面图层树与四态（Default/Loading/Empty/Error）交互规范。\n"
-                    f"- 2. 【强制真交付要求 —— Sketch 级 HTML 标注工作台与设计资产包】：你必须在当前工作区下同步创建并落盘：\n"
-                    f"  - `index.html`：高保真多画板交互原型与 Sketch 级点选标注检视工作台（涵盖 V-01 ~ V-05 全画板切换、点击任意组件在右侧面板实时检视宽高/圆角/字阶并一键复制 SwiftUI 与 Tailwind 代码、74pt 灵动岛安全区标尺开关、图标库预览、字阶表与 Design Tokens 调色板）；\n"
-                    f"  - `assets/icons/*.svg`：全套独立矢量 SVG 图标文件；\n"
-                    f"  - `assets/fonts/fonts.css` 与 `typography.json`：字体排印样式表与字阶映射配置；\n"
-                    f"  - `assets/tokens/design_tokens.json`：标准设计令牌 JSON 字典及打包好的 `.zip` 离线资产包。\n"
-                    f"- 3. 【需求合理性反馈】：在设计过程中，如发现工序 05 PRD 存在用户体验割裂、交互路径过深或平台 HIG 规范冲突，严禁私自绕过，应通过向工序 05 提需求变更单 (CR) 驱动上游基线闭环演进。\n"
-                    f"- 【硬性禁区】：严禁私自增删改产品业务流程；严禁编写生产业务逻辑代码（归属于 eng）；严禁违背 HIG 灵动岛安全区与触控热区规范。\n"
+                platform_rules = (
+                    "- iOS 项目：每张画板只画 iOS 设备外框 `data-device=\"ios\"`，`data-safe-top` ≥ 71、`data-safe-bottom` ≥ 34，可点击元素 `data-hit` ≥ 44x44（pt）。\n"
                 )
+            extra_methodology = (
+                f"\n【工序 06（设计实现）专项作业红线 —— 交付的是可以直接点开体验的设计稿文件夹，不是文字规范】\n"
+                f"- 1. 工作区必须落盘这套设计交付包（文件名固定）：\n"
+                f"  - `index.html`：设计工作台（入口）。左侧列出全部画板，顶部切换平台与 Default/Loading/Empty/Error 状态，可开关标注层（高亮安全区与热区），点选画板里的任意元素在右侧查看尺寸、字号、圆角、颜色，并展示色板、字阶与图标库。必须内联收录每张画板的路径 `screens/V-xx.html`。\n"
+                f"  - `tokens.json`：设计令牌唯一真理源，必须含 `color`（十六进制）、`typography`、`spacing`、`radius` 四组。\n"
+                f"  - `screens/V-xx.html`：工序 05 视图索引里每个视图一张完整高保真视觉稿（真实文案、真实布局、品牌配色，不是线框、不是占位），页面之间可点击跳转（`data-nav-target=\"V-xx\"`），按钮有按下与状态反馈。\n"
+                f"  - `assets/icons/*.svg`：图标资源，合法 SVG。\n"
+                f"  - `{output_filename}`：设计说明，写拍板摘要卡、Design Tokens 摘要、逐视图四态说明。不要在里面自报安全区数值，校验器直接读画板标注。\n"
+                f"- 2. 画板标注约定（校验器逐项读取）：\n"
+                f"  - 设备外框元素带 `data-device`、`data-safe-top`、`data-safe-bottom`。\n"
+                f"  - 每个可点击元素（button、a[href]、role=button、带 onclick 或 data-nav-target）都带 `data-hit=\"宽x高\"`，声明的是 CSS（min-width/min-height）保证的最小热区。\n"
+                f"  - 四态各一个面板：`data-state=\"default|loading|empty|error\"`。\n"
+                f"  - 页面里出现的所有颜色必须来自 `tokens.json`，建议在 `:root` 定义 CSS 变量后统一引用。\n"
+                f"  - 零外部依赖：不得引用 http(s) 脚本、样式、字体或图片，所有资源本地相对路径。\n"
+                f"{platform_rules}"
+                f"- 3. `delivery.manifest.json` 的 `design` 块照实填写：platform、entry（index.html）、tokens_path、screens（view_id、path、platforms）、icons。清单和文件一起改。\n"
+                f"- 4. 【需求合理性反馈】：发现工序 05 PRD 体验割裂、路径过深或与平台规范冲突，严禁私自绕过，向工序 05 提需求变更单 (CR)。\n"
+                f"- 【硬性禁区】：严禁私自增删改业务流程；严禁写生产业务逻辑、网络请求与持久化代码（归属于 eng）；颜色、字阶不得写进工序 05 的 PRD。\n"
+            )
         elif mod_code == "07":
             inference_redline = (
                 "死守“客户端零推理成本”红线（AI 离线或云端预处理）"
@@ -638,6 +788,9 @@ class CliSubprocessAdapter(BaseAgentAdapter):
             )
 
         length_guideline = deliverable_length_guideline(mod_code)
+        contract_line = manifest_instruction(mod_code, output_filename)
+        if contract_line:
+            contract_line = f"4. {contract_line}\n"
 
         prompt_for_cli = (
             f"【当前战略工程与单品上下文】\n"
@@ -647,7 +800,7 @@ class CliSubprocessAdapter(BaseAgentAdapter):
             f"- 当前工序环节：{mod_name} (编号: {mod_code})\n"
             f"- 当前工作区已挂载独有 Skill：`{', '.join(arsenal_info['mounted_skills'])}` (位于 `.agents/skills/`)\n"
             f"- 当前工作区已挂载专属 MCP：`{', '.join(arsenal_info['mounted_mcp_servers'])}` (位于 `.agents/mcp_config.json`)\n\n"
-            f"本目录的 `.moduflow_agent_context.md` 已包含前序基线。直接依据它和下面的清单写交付物。\n"
+            f"{continuation_preamble(has_stage_draft)}"
             f"不要阅读本工序目录以外的文件，忽略上级目录的 AGENTS.md。不要先搜索仓库，不要启动与清单无关的技能、MCP 或终端命令。\n\n"
             f"【本次工序任务要求】\n"
             f"{user_instruction}\n"
@@ -655,7 +808,8 @@ class CliSubprocessAdapter(BaseAgentAdapter):
             f"【双层分层与反冗余交付要求（强制执行）】\n"
             f"1. 第一层（置顶首屏给人类负责人拍板）：文档标题下方第一章必须固定为 `## 负责人 30 秒拍板摘要卡 (Executive Gate)`（控制在 300 字内，含：3条核心量化结论 + 需负责人拍板的 2~3 个开关/选项 + 下游传参锚点）。\n"
             f"2. 第二层（给下游 AI 传参的执行干货）：严禁重复抄写前序工序已定稿的用户画像、竞品常识或价格表（直接写“继承工序 XX 基线”），剔除废话；{length_guideline}\n"
-            f"3. 把交付物一次写入当前工作区的 `{output_filename}`，写完就结束。不要把全文再打印到 stdout，不要为了核对而重读或改写这个文件。"
+            f"{deliverable_write_rule(output_filename, has_stage_draft)}\n"
+            f"{contract_line}"
         )
 
         args = build_cli_arguments(cmd_path, prompt_for_cli, settings.AGENT_CLI_MODEL)
@@ -682,6 +836,7 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                 env=env
             )
             self._active_processes[task_id] = proc
+            _live_processes[proc.pid] = proc
 
             async def drain_stream(stream: asyncio.StreamReader, sink: List[str]):
                 while True:
@@ -808,7 +963,9 @@ class CliSubprocessAdapter(BaseAgentAdapter):
             )
             return
         finally:
-            self._active_processes.pop(task_id, None)
+            stale = self._active_processes.pop(task_id, None)
+            if stale is not None:
+                _live_processes.pop(stale.pid, None)
 
     async def cancel_task(self, task_id: str) -> bool:
         proc = self._active_processes.get(task_id)
@@ -819,6 +976,7 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                 if proc.returncode is None:
                     proc.kill()
                 self._active_processes.pop(task_id, None)
+                _live_processes.pop(proc.pid, None)
                 return True
             except Exception:
                 return False

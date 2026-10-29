@@ -13,6 +13,15 @@ from backend.app.models.entities import (
     Artifact,
     AgentRoleDefinition,
     GateApplication,
+    Issue,
+    CollaborationSession,
+    SessionMessage,
+)
+from backend.app.services.stage_memory import (
+    deliverable_filename,
+    issue_summary_text,
+    pending_revision_notes,
+    render_stage_progress,
 )
 from backend.app.services.workspace_sync import sanitize_dirname
 from backend.app.services.agent_roles import render_persona
@@ -28,11 +37,19 @@ async def _handoff_anchor_lines(
     import re
     from backend.app.services.collaboration import HANDOFF_REQUIREMENTS, handoff_anchor_fields
 
+    from backend.app.services.deliverable_audit import audit_som
+
     by_code = {b["module_code"]: b for b in baselined_artifacts}
     lines: List[str] = []
     for req in HANDOFF_REQUIREMENTS.get(str(module_code), []):
         base = by_code.get(req["upstream"])
         if not base:
+            continue
+        if req.get("computed") == "som":
+            audit = audit_som([base["content"] or ""])
+            som = audit.get("first_year_som_usd")
+            shown = f"{float(som):,.2f} 美元（由月搜索量、取得比例和客单价算出）" if som is not None else "未找到"
+            lines.append(f"- 工序 {req['upstream']} · {req['anchor']}：{shown}")
             continue
         hits = [ln.strip() for ln in (base["content"] or "").splitlines() if re.search(req["pattern"], ln)]
         lines.append(f"- 工序 {req['upstream']} · {req['anchor']}：" + (" / ".join(hits[:6])[:600] if hits else "未找到"))
@@ -73,7 +90,8 @@ async def assemble_module_context(
     - Layer 1: Mother Strategic Initiative Blueprint (Macro intent, target market, business model hypothesis)
     - Layer 2: Product Role & Commercial Positioning
     - Layer 3: Upstream Baselined Artifacts (PRD, Architecture, etc. that have been locked)
-    - Layer 4: Current Module Requirements & Human Instruction
+    - Layer 4: This stage's own draft, open issues, and feedback not yet written into that draft
+    - Layer 5: Current Module Requirements & Human Instruction
 
     Returns:
     - context_markdown: Full context string to feed into Agent CLI / LLM
@@ -117,12 +135,18 @@ async def assemble_module_context(
             if not baseline_art and m.artifacts:
                 baseline_art = m.artifacts[0]
             if baseline_art:
+                from backend.app.services.delivery_contract import read_manifest_text
+
+                content = baseline_art.content or ""
+                manifest_text = read_manifest_text(getattr(baseline_art, "storage_rel_path", None))
+                if manifest_text.strip() and manifest_text.strip() not in content:
+                    content = f"{content}\n```json\n{manifest_text.strip()}\n```\n"
                 baselined_artifacts.append({
                     "module_name": m.name,
                     "module_code": m.module_code,
                     "title": baseline_art.title,
                     "version": baseline_art.version,
-                    "content": baseline_art.content
+                    "content": content,
                 })
 
     # 3. Compute physical workspace directory
@@ -203,11 +227,16 @@ async def assemble_module_context(
     ])
 
     if baselined_artifacts:
+        from backend.app.services.deliverable_audit import handoff_som_text
+
         for b in baselined_artifacts:
+            content = b["content"].strip()
+            if b["module_code"] == "01":
+                content = handoff_som_text(content).strip()
             context_lines.extend([
                 f"### 📍 工序 {b['module_code']}：{b['module_name']} (基线: {b['title']} v{b['version']})",
                 "```markdown",
-                b["content"].strip(),
+                content,
                 "```",
                 ""
             ])
@@ -235,6 +264,51 @@ async def assemble_module_context(
             render_persona(primary_role.role_code, primary_role.system_persona, prod.platform, prod.client_zero_inference),
         ])
 
+    current_mod = next((m for m in all_mods if m.id == mod.id), None)
+    latest = None
+    if current_mod and current_mod.artifacts:
+        latest = max(current_mod.artifacts, key=lambda item: item.version or 0)
+    draft_text = (latest.content or "") if latest else ""
+    draft_filename = deliverable_filename(mod.module_code, mod.name)
+    open_issue_rows = (await db.execute(
+        select(Issue).where(Issue.target_module_id == mod.id, Issue.status != "closed")
+    )).scalars().all()
+    message_rows = (await db.execute(
+        select(SessionMessage)
+        .join(CollaborationSession, CollaborationSession.id == SessionMessage.session_id)
+        .where(CollaborationSession.module_id == mod.id)
+        .order_by(SessionMessage.created_at.asc())
+    )).scalars().all()
+    progress = render_stage_progress(
+        filename=draft_filename,
+        draft_version=latest.version if latest else None,
+        draft_content=draft_text,
+        issues=[
+            {
+                "title": row.title,
+                "category": row.category,
+                "severity": row.severity,
+                "status": row.status,
+                "summary": issue_summary_text(row.description),
+            }
+            for row in open_issue_rows
+        ],
+        pending_notes=pending_revision_notes(
+            [
+                {
+                    "message_type": row.message_type,
+                    "content": row.content,
+                    "created_at": row.created_at,
+                }
+                for row in message_rows
+            ],
+            draft_created_at=latest.created_at if latest else None,
+            current_instruction=user_instruction,
+        ),
+        current_instruction=user_instruction,
+    )
+    context_lines.extend(["", "---", progress])
+
     context_lines.extend([
         "",
         "---",
@@ -246,8 +320,13 @@ async def assemble_module_context(
         "1. 【置顶 30 秒拍板摘要卡】：交付物最顶部（标题正下方）必须固定输出 `## 负责人 30 秒拍板摘要卡 (Executive Gate)`（严格控制在 300 字以内），用极简要点列出：①本工序 3 条核心量化结论；②需人类负责人拍板确认的 2~3 个关键决策项；③移交下游的核心指标锚点。",
         "2. 【严禁跨工序复述抄写】：前序已封版基线中定稿的内容（如用户画像、竞品背景、价格阶梯），本工序直接写“继承工序 XX 基线”，绝对禁止再次画表重复抄写！",
         "3. 【篇幅克制与高密度干货】：剔除一切教科书式的长篇铺垫，工序 01~05 全文总篇幅严格控制在 2,000~3,500 字以内，下方执行层仅保留供下游 AI 读取的高密度表格与关键参数。",
-        "4. 如发现前序基线与当前需求存在重大逻辑漏洞或商业风险，必须明确指出并建议提报问题单。"
+        "4. 如发现前序基线与当前需求存在重大逻辑漏洞或商业风险，必须明确指出并建议提报问题单。",
     ])
+    from backend.app.services.delivery_contract import manifest_instruction
+
+    contract_rule = manifest_instruction(mod.module_code, draft_filename)
+    if contract_rule:
+        context_lines.append(contract_rule)
 
     context_markdown = "\n".join(context_lines)
 
@@ -273,6 +352,9 @@ async def assemble_module_context(
         "role_title": primary_role.title if primary_role else "高级产品总监",
         "mounted_skills": arsenal_info["mounted_skills"],
         "mounted_mcp_servers": arsenal_info["mounted_mcp_servers"],
+        "has_stage_draft": bool(draft_text.strip()),
+        "draft_filename": draft_filename,
+        "draft_version": latest.version if latest and draft_text.strip() else None,
     }
 
     return context_markdown, workspace_path, metadata

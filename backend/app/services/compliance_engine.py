@@ -89,7 +89,8 @@ def audit_stage_compliance(
     stage_code: str,
     content: str,
     target_market: str = "global",
-    platform: str = "all"
+    platform: str = "all",
+    manifest: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Audits deliverable text for stage 03, 05, or 09.
@@ -197,31 +198,78 @@ def audit_stage_compliance(
                     risk_level = "medium"
                     status = "needs_fix"
 
-        # 2.3 Platform-specific Tracking
+        # 2.3 Platform-specific Tracking. A manifest owns this check; prose keywords are the fallback.
         norm_platform = (platform or "all").lower()
+        from backend.app.services.delivery_contract import stage_code as _stage_code
+        from backend.app.services.delivery_contract import tracking_findings
         from backend.app.services.profile_guard import covers_android, covers_ios
-        if covers_ios(norm_platform):
-            if "idfa" in content_lower or "广告追踪" in content_lower or "att" in content_lower:
+        manifest_owns_tracking = (
+            manifest is not None and _stage_code(manifest.get("stage")) == "05"
+        )
+        if manifest_owns_tracking:
+            for finding in tracking_findings(manifest, norm_platform):
+                findings.append(finding)
+                if not finding.get("passed") and risk_level == "low":
+                    risk_level = "medium"
+                    status = "needs_fix"
+        elif covers_ios(norm_platform):
+            uses_att = any(key in content_lower for key in ("idfa", "广告追踪", "att"))
+            if uses_att:
+                missing = []
+                if not any(key in content_lower for key in (
+                    "nsusertrackingusagedescription", "授权弹窗文案", "att 授权弹窗文案",
+                )):
+                    missing.append("原生授权弹窗文案")
+                if not (
+                    any(key in content_lower for key in ("denied", "拒绝追踪", "ask app not to track"))
+                    and "降级" in content_lower
+                ):
+                    missing.append("用户拒绝后的降级分支")
                 findings.append({
                     "category": "platform_policy",
                     "item": "Apple App Tracking Transparency (ATT) 弹窗规格",
-                    "severity": "medium",
-                    "passed": False,
-                    "advice": "如需采集 IDFA 进行跨应用广告归因，PRD 必须包含 ATT 授权弹窗文案与用户拒绝后的降级分支。"
+                    "severity": "medium" if missing else "info",
+                    "passed": not missing,
+                    "advice": (
+                        "ATT 授权文案与拒绝后的降级分支已在 PRD 中声明。"
+                        if not missing else
+                        f"如需采集 IDFA 进行跨应用广告归因，请补充：{'、'.join(missing)}。"
+                    ),
                 })
-                if risk_level == "low":
+                if missing and risk_level == "low":
                     risk_level = "medium"
                     status = "needs_fix"
-        if covers_android(norm_platform):
-            if "广告追踪" in content_lower or "ad_id" in content_lower or "gaid" in content_lower:
+        if not manifest_owns_tracking and covers_android(norm_platform):
+            uses_ad_id = any(key in content_lower for key in ("广告追踪", "ad_id", "gaid", "advertising id"))
+            if uses_ad_id:
+                missing = []
+                if not any(key in content_lower for key in (
+                    "com.google.android.gms.permission.ad_id", "ad_id 权限", "广告标识符 (`ad_id`)",
+                )):
+                    missing.append("AD_ID 权限声明")
+                if not any(key in content_lower for key in (
+                    "家庭政策", "families policy", "目标受众年龄", "13 岁及以上", "13+",
+                )):
+                    missing.append("家庭政策或目标受众声明")
+                if not (
+                    any(key in content_lower for key in (
+                        "停用个性化广告", "opted_out", "opt out", "删除广告 id",
+                    ))
+                    and "降级" in content_lower
+                ):
+                    missing.append("用户停用广告标识符后的降级分支")
                 findings.append({
                     "category": "platform_policy",
                     "item": "Google Play Advertising ID (AD_ID) 权限声明与家庭政策",
-                    "severity": "medium",
-                    "passed": False,
-                    "advice": "如需使用 Google Play 广告标识符，PRD 必须声明 AD_ID 权限并符合家庭政策规范。"
+                    "severity": "medium" if missing else "info",
+                    "passed": not missing,
+                    "advice": (
+                        "AD_ID 权限、家庭政策与停用后的降级分支已在 PRD 中声明。"
+                        if not missing else
+                        f"如需使用 Google Play 广告标识符，请补充：{'、'.join(missing)}。"
+                    ),
                 })
-                if risk_level == "low":
+                if missing and risk_level == "low":
                     risk_level = "medium"
                     status = "needs_fix"
 
@@ -326,6 +374,7 @@ async def audit_module_compliance(
     module_code: str,
     product: Optional[Product],
     content: str,
+    manifest: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     """cmp checkpoint for stages 03/05/09; None for stages without a checkpoint."""
     if module_code not in COMPLIANCE_STAGES:
@@ -335,6 +384,7 @@ async def audit_module_compliance(
         content=content,
         target_market=await resolve_target_market(db, product),
         platform=(getattr(product, "platform", None) or "ios") if product else "ios",
+        manifest=manifest,
     )
 
 

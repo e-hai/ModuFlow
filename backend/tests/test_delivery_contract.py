@@ -18,11 +18,7 @@ from backend.app.services.delivery_contract import (
 from backend.app.services.simulator_deliverables import build_simulated_deliverable
 
 ROOT = Path(__file__).resolve().parents[2]
-SM01_PRD = (
-    ROOT
-    / "data/workspaces/init-stillminute-20261028/products/SM01/v1.0.0"
-    / "05_05_产品需求定义/交付物_05_产品需求定义.md"
-)
+SM01_PRD = Path(__file__).resolve().parent / "fixtures" / "sm01_stage05_prd.md"
 
 
 def _flags(**overrides):
@@ -201,6 +197,8 @@ def test_prompt_tells_all_stages_to_keep_the_manifest():
 
 def test_simulator_builds_valid_manifests_for_all_11_stages():
     for i in range(1, 12):
+        if i == 6:
+            continue  # 工序 06 的清单指向设计交付包，见 test_design_bundle.py
         code = f"{i:02d}"
         raw = build_stage_manifest(code, f"交付物_{code}.md")
         assert raw, f"Stage {code} should have non-empty manifest"
@@ -208,12 +206,12 @@ def test_simulator_builds_valid_manifests_for_all_11_stages():
         assert manifest["contract_version"] == "1"
         assert manifest["stage"] == code
         # Stage 04 references index.html which is tested separately with HTML content
-        if code != "04":
+        if code not in ("04", "06"):
             reasons = validate_manifest(manifest, platform="cross_platform", client_zero_inference=True)
             assert reasons == [], f"Stage {code} manifest failed validation: {reasons}"
 
 
-def test_simulated_deliverables_pass_audit_across_all_11_stages():
+def test_simulated_deliverables_pass_audit_across_all_11_stages(tmp_path):
     for i in range(1, 12):
         code = f"{i:02d}"
         prose, extra = build_simulated_deliverable(code, {"product_name": "全局清单测试", "platform": "cross_platform"})
@@ -221,7 +219,17 @@ def test_simulated_deliverables_pass_audit_across_all_11_stages():
         texts = [prose, extra["delivery.manifest.json"]]
         if "index.html" in extra:
             texts.append(extra["index.html"])
-        res = audit_stage(code, texts, platform="cross_platform", client_zero_inference=True)
+        stage_root = None
+        if code == "06":
+            stage_root = tmp_path / "06_06_设计实现"
+            for rel, content in extra.items():
+                target = stage_root / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+            (stage_root / "交付物_06.md").write_text(prose, encoding="utf-8")
+        res = audit_stage(
+            code, texts, platform="cross_platform", client_zero_inference=True, manifest_root=stage_root,
+        )
         assert res["passed"] is True, f"Stage {code} failed audit: {res['reasons']}"
         assert res["contract"] == "delivery.manifest.json"
 
@@ -260,13 +268,6 @@ def test_stage03_manifest_negative_validation():
     data["direction"]["hypotheses"] = [{"id": "H2", "hypothesis": "测试"}]
     reasons = validate_manifest(data)
     assert any("H1" in r for r in reasons)
-
-
-def test_stage06_manifest_negative_validation():
-    data = json.loads(build_stage_manifest("06", "交付物_06.md"))
-    data["design"]["safe_area"]["top_safe_padding_pt"] = 50
-    reasons = validate_manifest(data, platform="ios")
-    assert any("top_safe_padding_pt" in r for r in reasons)
 
 
 def test_stage07_manifest_negative_validation():

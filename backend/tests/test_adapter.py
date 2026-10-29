@@ -27,6 +27,7 @@ from backend.app.services.context_assembler import assemble_module_context
 from backend.app.adapters.cli_adapter import (
     CliSubprocessAdapter,
     build_cli_arguments,
+    classify_cli_probe,
     find_cli_binary
 )
 from backend.app.adapters.simulator_adapter import SimulatorAdapter
@@ -435,5 +436,72 @@ async def test_role_exclusive_skill_and_mcp_mounting(tmp_path):
     assert "calculate_bottom_up_som" in tool_names
     call_output = json.loads(lines[2]["result"]["content"][0]["text"])
     assert call_output["first_year_som_usd"] == 222000.0
+
+
+@pytest.mark.asyncio
+async def test_runner_reads_the_model_saved_in_settings():
+    from backend.app.adapters.cli_adapter import apply_saved_cli_settings
+    from backend.app.core.config import settings as app_settings
+    from backend.app.models.entities import AgentSettingsModel
+
+    previous = (
+        app_settings.AGENT_ADAPTER_TYPE,
+        app_settings.AGENT_CLI_COMMAND,
+        app_settings.AGENT_CLI_MODEL,
+        app_settings.AGENT_CLI_TIMEOUT,
+    )
+    async with AsyncSessionLocal() as db:
+        db.add(AgentSettingsModel(
+            id="default", adapter_type="cli", cli_command="agy",
+            cli_model="gemini-3.8-flash-medium", timeout=90,
+        ))
+        await db.commit()
+        await apply_saved_cli_settings(db)
+    assert app_settings.AGENT_CLI_MODEL == "gemini-3.8-flash-medium"
+    assert app_settings.AGENT_CLI_TIMEOUT == 90
+    (
+        app_settings.AGENT_ADAPTER_TYPE,
+        app_settings.AGENT_CLI_COMMAND,
+        app_settings.AGENT_CLI_MODEL,
+        app_settings.AGENT_CLI_TIMEOUT,
+    ) = previous
+
+
+def test_cli_probe_reports_quota_separately_from_a_live_reply():
+    quota = classify_cli_probe(
+        3, "", "error: Individual quota reached. Resets in 24h\nRESOURCE_EXHAUSTED 429"
+    )
+    assert quota["kind"] == "quota"
+    assert "Individual quota reached" in quota["detail"]
+
+    ok = classify_cli_probe(0, "ok", "")
+    assert ok["kind"] == "ok"
+
+    other = classify_cli_probe(1, "", "error: not logged in")
+    assert other["kind"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_connectivity_check_surfaces_model_quota(monkeypatch):
+    async def _quota(cmd_path, model=None, timeout=45):
+        return {"kind": "quota", "detail": "error: Individual quota reached. Resets in 2h"}
+
+    monkeypatch.setattr("backend.app.adapters.cli_adapter.find_cli_binary", lambda command: "/bin/echo")
+    monkeypatch.setattr("backend.app.adapters.cli_adapter.probe_selected_model", _quota)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        patched = await ac.patch(
+            "/api/v1/settings/agent",
+            json={"adapter_type": "cli", "cli_command": "agy", "cli_model": "gemini-3.8-flash-medium", "timeout": 60},
+        )
+        assert patched.status_code == 200
+        res = await ac.post("/api/v1/settings/agent/test")
+        body = res.json()
+        assert res.status_code == 200
+        assert body["success"] is False
+        assert body["kind"] == "quota"
+        assert "quota reached" in body["detail"]
+        assert body["model"] == "gemini-3.8-flash-medium"
+        await ac.patch("/api/v1/settings/agent", json={"adapter_type": "simulator", "cli_model": ""})
 
 

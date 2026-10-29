@@ -50,7 +50,7 @@ interface WorkflowViewProps {
   onOpenDecisionCenter?: () => void;
 }
 
-type NextActionKind = 'seal' | 'decisions' | 'advance' | 'enable-auto' | 'confirm' | 'accept' | 'override';
+type NextActionKind = 'seal' | 'decisions' | 'advance' | 'enable-auto' | 'confirm' | 'accept' | 'override' | 'redispatch';
 
 interface NextStepAction {
   label: string;
@@ -104,6 +104,16 @@ function buildNextStep(
       body: '评审意见和当前交付物不一致。采纳评审意见会发回主责修订；按当前交付物继续，则会带着现稿进入检查。',
       primary: { label: '采纳评审意见', kind: 'accept', moduleId: dispute.module_id },
       secondary: { label: '按当前交付物继续', kind: 'override', moduleId: dispute.module_id },
+    };
+  }
+
+  const missed = pick('dispatch_failed');
+  if (missed) {
+    return {
+      tone: 'act',
+      title: `${stageTitle(missed)} 这一次没有产出`,
+      body: '执行没有写出交付物。重新派活只会再排一次任务，不会提交关口。',
+      primary: { label: '重新派活', kind: 'redispatch', moduleId: missed.module_id },
     };
   }
 
@@ -365,6 +375,20 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
     }
   };
 
+  const handleRedispatch = async (moduleId: string) => {
+    if (!selectedRun) return;
+    try {
+      setOrchestrationBusy(true);
+      await api.redispatchModule(moduleId);
+      await loadOrchestration(selectedRun.id);
+      setSelectedRun(await api.getRun(selectedRun.id));
+    } catch (err: any) {
+      alert(`重新派活失败: ${err.message}`);
+    } finally {
+      setOrchestrationBusy(false);
+    }
+  };
+
   const handleSubmitForGate = async (moduleId: string) => {
     if (!selectedRun) return;
     try {
@@ -394,7 +418,7 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
   };
 
   const stageStateLabel: Record<OrchestrationStageState, { text: string; cls: string }> = {
-    running: { text: 'Agent 执行中', cls: 'bg-sky-50 text-sky-800 border-sky-200' },
+    running: { text: '推进中', cls: 'bg-sky-50 text-sky-800 border-sky-200' },
     paused: { text: '已熔断暂停', cls: 'bg-rose-50 text-rose-800 border-rose-200' },
     revision_failed: { text: '自动修订未通过', cls: 'bg-orange-50 text-orange-800 border-orange-200' },
     in_review: { text: '协作评审中', cls: 'bg-indigo-50 text-indigo-800 border-indigo-200' },
@@ -403,6 +427,7 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
     awaiting_human_gate: { text: '等待人类审批', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
     gate_returned: { text: '被退回修改', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
     awaiting_human_confirm: { text: '等待人工确认交付物', cls: 'bg-violet-50 text-violet-800 border-violet-200' },
+    dispatch_failed: { text: '没有产出', cls: 'bg-slate-50 text-slate-700 border-slate-200' },
     ready: { text: '待推进', cls: 'bg-slate-50 text-slate-700 border-slate-200' },
   };
 
@@ -556,6 +581,8 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
       if (orchestration && !orchestration.auto_advance) handleToggleAutoAdvance();
     } else if (action.kind === 'confirm' && action.moduleId) {
       handleSubmitForGate(action.moduleId);
+    } else if (action.kind === 'redispatch' && action.moduleId) {
+      handleRedispatch(action.moduleId);
     } else if (action.kind === 'accept' && action.moduleId) {
       handleResolveDispute(action.moduleId, 'accept_review');
     } else if (action.kind === 'override' && action.moduleId) {
@@ -841,6 +868,20 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
                     {runBlockLabel[orchestration.run_block_reason] || orchestration.run_block_reason}
                   </span>
                 )}
+                {orchestration.queue && orchestration.queue.running > 0 && (
+                  <span className="text-sky-700 font-medium">
+                    {orchestration.current_stage
+                      ? `正在推进：${orchestration.current_stage.name}`
+                      : '正在推进这一迭代'}
+                  </span>
+                )}
+                {orchestration.queue && orchestration.queue.running === 0 && orchestration.queue.queued > 0 && (
+                  <span className={orchestration.queue.runner_alive ? 'text-sky-700 font-medium' : 'text-rose-700 font-medium'}>
+                    {orchestration.queue.runner_alive
+                      ? `排队中（${orchestration.queue.queued}）`
+                      : '工序已排队，但执行器没在跑'}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -883,6 +924,15 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
                         </span>
                         <span className="text-slate-500 truncate">{stage.detail}</span>
                       </div>
+                      {stage.state === 'dispatch_failed' && (
+                        <button
+                          onClick={() => handleRedispatch(stage.module_id)}
+                          disabled={orchestrationBusy}
+                          className="shrink-0 px-3 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold transition cursor-pointer disabled:opacity-50"
+                        >
+                          重新派活
+                        </button>
+                      )}
                       {(stage.state === 'awaiting_human_confirm' || stage.state === 'revision_failed') && (
                         <button
                           onClick={() => handleSubmitForGate(stage.module_id)}

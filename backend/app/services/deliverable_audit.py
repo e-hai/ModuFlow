@@ -561,8 +561,8 @@ _PRICING_CONTEXT = re.compile(
     flags=re.I,
 )
 _NON_PRICING_CONTEXT = re.compile(
-    r"预算|成本|花费|支出|收入|营收|cac|cpi|cpm|cpc|arpu|arppu|ltv|som|tam|sam|budget|spend|revenue|cost|"
-    r"竞品|competitor",
+    r"预算|成本|花费|支出|收入|营收|投放|渠道|广告|测试|外测|cac|cpi|cpm|cpc|arpu|arppu|ltv|som|tam|sam|budget|spend|revenue|cost|ad|ads|"
+    r"竞品|competitor|劳务|合作|测评|分镜|脚本|素材|hook|钩子|博主|kol|账单|销量|销售额|单量|笔数|件数|转化|比例|占比",
     flags=re.I,
 )
 
@@ -620,7 +620,12 @@ def _audit_stage_text(
     if code == "05":
         return audit_prd(texts)
     if code == "06":
-        return audit_design(texts, platform=platform)
+        return _result(
+            False,
+            ["工序 06 必须交付设计交付包：delivery.manifest.json 的 design 清单、index.html 设计工作台、tokens.json、screens/V-xx.html 和 assets/icons。只写文字规范不能放行"],
+            evidence_found=False,
+            platform=platform,
+        )
     if code == "07":
         inference = audit_inference(texts, enforce_zero=client_zero_inference)
         coverage = audit_coverage(texts)
@@ -731,15 +736,18 @@ def audit_stage(
             if not prd.get("passed"):
                 reasons.extend(prd.get("reasons") or [])
         elif code == "06":
+            from backend.app.services.design_bundle import inspect_design_bundle, upstream_prd_views
+
             des = manifest.get("design") or {}
-            safe_area = des.get("safe_area") or {}
-            touch = des.get("touch_targets") or {}
+            _, measured = inspect_design_bundle(manifest_root, des, platform, upstream_prd_views(manifest_root))
             extra.update({
                 "platform": des.get("platform", platform),
-                "dynamic_island_safe_pt": safe_area.get("top_safe_padding_pt"),
-                "min_touch_pt": touch.get("min_touch_target_pt"),
-                "status_bar_cutout_safe_dp": safe_area.get("status_bar_safe_dp"),
-                "min_touch_target_dp": touch.get("min_touch_target_dp"),
+                "screens": [item.get("view_id") for item in (des.get("screens") or []) if isinstance(item, dict)],
+                "dynamic_island_safe_pt": measured.get("ios_top"),
+                "bottom_safe_pt": measured.get("ios_bottom"),
+                "min_touch_pt": measured.get("ios_touch"),
+                "status_bar_cutout_safe_dp": measured.get("android_top"),
+                "min_touch_target_dp": measured.get("android_touch"),
             })
         elif code == "07":
             eng = manifest.get("engineering") or {}

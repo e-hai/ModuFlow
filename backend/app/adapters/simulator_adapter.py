@@ -110,7 +110,9 @@ class SimulatorAdapter(BaseAgentAdapter):
         for rel_name, file_content in extra_files.items():
             if rel_name == MANIFEST_FILENAME:
                 file_content = bind_manifest_report_path(file_content, filename)
-            (workspace_dir / rel_name).write_text(file_content, encoding="utf-8")
+            target = workspace_dir / rel_name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(file_content, encoding="utf-8")
 
         yield AgentStreamEvent(
             event_type=event_type,
