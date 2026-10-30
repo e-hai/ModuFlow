@@ -1,0 +1,319 @@
+package com.moduflow.ui.icons
+
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.unit.dp
+
+/**
+ * ModuFlow Canonical Vector Icons directly derived from Stage 06 Slices.
+ * Zero-dependency pure Compose ImageVectors matching 24x24 HIG / Material 3 specs.
+ */
+object MfIcons {
+
+    val Timer: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "Timer",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(
+                stroke = SolidColor(Color.White),
+                strokeLineWidth = 2f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round
+            ) {
+                // Circle r=10 at (12,12)
+                moveTo(22f, 12f)
+                arcTo(10f, 10f, 0f, isMoreThanHalf = true, isPositiveArc = true, 2f, 12f)
+                arcTo(10f, 10f, 0f, isMoreThanHalf = true, isPositiveArc = true, 22f, 12f)
+                close()
+                // Clock hands
+                moveTo(12f, 6f)
+                lineTo(12f, 12f)
+                lineTo(16f, 14f)
+            }
+        }.build()
+    }
+
+    val Sounds: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "Sounds",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(
+                stroke = SolidColor(Color.White),
+                strokeLineWidth = 2f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round
+            ) {
+                // Speaker body
+                moveTo(11f, 5f)
+                lineTo(6f, 9f)
+                lineTo(2f, 9f)
+                lineTo(2f, 15f)
+                lineTo(6f, 15f)
+                lineTo(11f, 19f)
+                close()
+                // Sound wave arc
+                moveTo(15.54f, 8.46f)
+                arcTo(5f, 5f, 0f, isMoreThanHalf = false, isPositiveArc = true, 15.54f, 15.54f)
+                // Outer wave arc
+                moveTo(19.07f, 4.93f)
+                arcTo(10f, 10f, 0f, isMoreThanHalf = false, isPositiveArc = true, 19.07f, 19.07f)
+            }
+        }.build()
+    }
+
+    val Lock: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "Lock",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(
+                stroke = SolidColor(Color.White),
+                strokeLineWidth = 2f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round
+            ) {
+                // Shackle
+                moveTo(7f, 11f)
+                lineTo(7f, 7f)
+                arcTo(5f, 5f, 0f, isMoreThanHalf = false, isPositiveArc = true, 17f, 7f)
+                lineTo(17f, 11f)
+                // Lock Body Box
+                moveTo(3f, 11f)
+                lineTo(21f, 11f)
+                lineTo(21f, 22f)
+                lineTo(3f, 22f)
+                close()
+            }
+        }.build()
+    }
+
+    val Insights: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "Insights",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(
+                stroke = SolidColor(Color.White),
+                strokeLineWidth = 2f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round
+            ) {
+                // 3 Bar charts
+                moveTo(18f, 20f)
+                lineTo(18f, 10f)
+                moveTo(12f, 20f)
+                lineTo(12f, 4f)
+                moveTo(6f, 20f)
+                lineTo(6f, 14f)
+            }
+        }.build()
+    }
+
+    val Crown: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "Crown",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(
+                stroke = SolidColor(Color.White),
+                strokeLineWidth = 2f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round
+            ) {
+                // Crown outline
+                moveTo(2f, 4f)
+                lineTo(5f, 16f)
+                lineTo(19f, 16f)
+                lineTo(22f, 4f)
+                lineTo(16f, 11f)
+                lineTo(12f, 4f)
+                lineTo(8f, 11f)
+                close()
+                // Base
+                moveTo(5f, 20f)
+                lineTo(19f, 20f)
+            }
+        }.build()
+    }
+
+    val Play: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "Play",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(
+                fill = SolidColor(Color.White)
+            ) {
+                moveTo(5f, 3f)
+                lineTo(19f, 12f)
+                lineTo(5f, 21f)
+                close()
+            }
+        }.build()
+    }
+
+    val Pause: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "Pause",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(
+                fill = SolidColor(Color.White)
+            ) {
+                moveTo(6f, 4f)
+                lineTo(10f, 4f)
+                lineTo(10f, 20f)
+                lineTo(6f, 20f)
+                close()
+                moveTo(14f, 4f)
+                lineTo(18f, 4f)
+                lineTo(18f, 20f)
+                lineTo(14f, 20f)
+                close()
+            }
+        }.build()
+    }
+
+    val Close: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "Close",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(
+                stroke = SolidColor(Color.White),
+                strokeLineWidth = 2f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round
+            ) {
+                moveTo(18f, 6f)
+                lineTo(6f, 18f)
+                moveTo(6f, 6f)
+                lineTo(18f, 18f)
+            }
+        }.build()
+    }
+
+    val Back: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "Back",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(
+                stroke = SolidColor(Color.White),
+                strokeLineWidth = 2f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round
+            ) {
+                moveTo(15f, 18f)
+                lineTo(9f, 12f)
+                lineTo(15f, 6f)
+            }
+        }.build()
+    }
+
+    val Check: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "Check",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(
+                stroke = SolidColor(Color.White),
+                strokeLineWidth = 2f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round
+            ) {
+                moveTo(20f, 6f)
+                lineTo(9f, 17f)
+                lineTo(4f, 12f)
+            }
+        }.build()
+    }
+
+    val Shield: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "Shield",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(
+                stroke = SolidColor(Color.White),
+                strokeLineWidth = 2f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round
+            ) {
+                moveTo(12f, 2f)
+                lineTo(4f, 5f)
+                lineTo(4f, 12f)
+                arcTo(8f, 8f, 0f, isMoreThanHalf = false, isPositiveArc = false, 12f, 22f)
+                arcTo(8f, 8f, 0f, isMoreThanHalf = false, isPositiveArc = false, 20f, 12f)
+                lineTo(20f, 5f)
+                close()
+            }
+        }.build()
+    }
+
+    val Share: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "Share",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(
+                stroke = SolidColor(Color.White),
+                strokeLineWidth = 2f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round
+            ) {
+                moveTo(4f, 12f)
+                lineTo(4f, 20f)
+                lineTo(20f, 20f)
+                lineTo(20f, 12f)
+                moveTo(16f, 6f)
+                lineTo(12f, 2f)
+                lineTo(8f, 6f)
+                moveTo(12f, 2f)
+                lineTo(12f, 15f)
+            }
+        }.build()
+    }
+}

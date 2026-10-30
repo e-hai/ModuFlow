@@ -6,52 +6,85 @@ import androidx.compose.ui.unit.sp
 
 /**
  * ModuFlow Canonical Design Tokens (Kotlin Multiplatform & Compose)
- * Single Source of Truth directly derived from Stage 06 tokens.json.
- * Hard Rule: Do not hardcode raw hex values in UI; reference MfTokens.* instead.
+ * Single Source of Truth directly derived from Stage 06 tokens.json and HIG / Material 3 specs.
  */
 object MfTokens {
     object Colors {
-        // Brand & System Colors
+        // Pure Zen Minimalist Monochromatic & Functional Palette
         val Primary = Color(0xFF0E8A5A)
         val PrimaryDark = Color(0xFF0A6B46)
         val PrimarySoft = Color(0xFFE3F4EC)
-        val Background = Color(0xFFF8FAFC)
-        val Surface = Color(0xFFFFFFFF)
-        val Text = Color(0xFF0F172A)
-        val TextMuted = Color(0xFF64748B)
-        val Border = Color(0xFFE2E8F0)
+
+        val BackgroundDark = Color(0xFF121212)
+        val BackgroundLight = Color(0xFFF8FAFC)
+
+        val SurfaceDark = Color(0xFF18181B)
+        val SurfaceLight = Color(0xFFFFFFFF)
+        val SurfaceSubtle = Color(0xFF27272A)
+
+        val TextPrimaryDark = Color(0xFFF4F4F5)
+        val TextPrimaryLight = Color(0xFF0F172A)
+        val TextMutedDark = Color(0xFFA1A1AA)
+        val TextMutedLight = Color(0xFF64748B)
+
+        val ZenRing = Color(0xFF3F3F46)
+        val BorderDark = Color(0xFF27272A)
+        val BorderLight = Color(0xFFE2E8F0)
+
+        // Brand & Accents
+        val ZenAccent = Color(0xFF0E8A5A)
+        val ZenAccentSoft = Color(0xFFE3F4EC)
+
+        val Gold = Color(0xFFD97706)
+        val GoldSoft = Color(0xFFFEF3C7)
+
+        val Warning = Color(0xFFF59E0B)
+        val WarningSoft = Color(0xFFFEF3C7)
+
         val Danger = Color(0xFFDC2626)
         val DangerSoft = Color(0xFFFEE2E2)
+
+        val Accent = Color(0xFF3B82F6)
+        val AccentSoft = Color(0xFFDBEAFE)
+
+        val BorderMuted = Color(0xFF27272A)
     }
 
     object Metrics {
         // Physical touch target constraints (Apple HIG >= 44pt, Material 3 >= 48dp)
-        val MinTouchTarget = 48.dp
-        val MinTouchTargetIos = 44.dp
-
-        // Radii
-        val RadiusCard = 12.dp
-        val RadiusBtn = 12.dp
-        val RadiusChip = 999.dp
-
-        // Spacing
-        val SpacingXs = 4.dp
-        val SpacingSm = 8.dp
-        val SpacingMd = 16.dp
-        val SpacingLg = 24.dp
-        val SpacingXl = 32.dp
+        val MinTouchTargetMaterial = 48.dp
+        val MinTouchTargetHig = 44.dp
 
         // Hardware Safe Areas
-        val SafeTopDynamicIsland = 74.dp
-        val SafeTopPunchHole = 32.dp
-        val SafeBottomHomeIndicator = 34.dp
+        val SafeTopDynamicIsland = 74.dp   // Apple HIG: >= 71pt
+        val SafeTopPunchHole = 32.dp       // Material 3: >= 24dp
+        val SafeBottomGestureBar = 34.dp   // iOS Home Indicator >= 34pt
+
+        // Radii
+        val RadiusCard = 16.dp
+        val RadiusButton = 28.dp // Pill Capsule
+        val RadiusSheet = 24.dp
+
+        // Spacing
+        val SpacingXxs = 2.dp
+        val SpacingXs = 4.dp
+        val SpacingSm = 8.dp
+        val SpacingMd = 14.dp
+        val SpacingLg = 20.dp
+        val SpacingXl = 28.dp
+        val SpacingXxl = 36.dp
     }
 
     object Typography {
+        val DisplayTimer = 54.sp
+        val TitleXl = 28.sp
         val TitleLarge = 22.sp
         val TitleMedium = 18.sp
-        val BodyMedium = 15.sp
-        val BodySmall = 13.sp
-        val Caption = 11.sp
+        val Headline = 17.sp
+        val BodyLarge = 15.sp
+        val BodyMedium = 14.sp
+        val BodySmall = 12.sp
+        val Caption = 12.sp
+        val Footnote = 11.sp
     }
 }
