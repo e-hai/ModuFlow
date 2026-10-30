@@ -23,7 +23,11 @@ from backend.app.services.stage_memory import (
     pending_revision_notes,
     render_stage_progress,
 )
-from backend.app.services.workspace_sync import sanitize_dirname
+from backend.app.services.workspace_sync import (
+    sanitize_dirname,
+    get_stage_dir_name,
+    get_run_dir_name,
+)
 from backend.app.services.agent_roles import render_persona
 
 
@@ -152,10 +156,16 @@ async def assemble_module_context(
     # 3. Compute physical workspace directory
     init_dir_name = sanitize_dirname(init.id if init else "standalone")
     prod_code_name = sanitize_dirname(prod.code)
-    run_name = sanitize_dirname(run.name)
-    mod_dir_name = f"{mod.order_index:02d}_{mod.module_code}_{sanitize_dirname(mod.name)}"
+    run_name = get_run_dir_name(run.name, run.id)
+    mod_dir_name = get_stage_dir_name(mod.order_index, mod.module_code, mod.name)
 
     workspace_path = settings.WORKSPACE_DIR / init_dir_name / "products" / prod_code_name / run_name / mod_dir_name
+    if not workspace_path.exists():
+        legacy_run_name = sanitize_dirname(run.name)
+        legacy_mod_dir = f"{mod.order_index:02d}_{mod.module_code}_{sanitize_dirname(mod.name)}"
+        legacy_path = settings.WORKSPACE_DIR / init_dir_name / "products" / prod_code_name / legacy_run_name / legacy_mod_dir
+        if legacy_path.exists():
+            workspace_path = legacy_path
     workspace_path.mkdir(parents=True, exist_ok=True)
 
     # 4. Retrieve Agent Role Persona and Collaboration Bundle

@@ -1,0 +1,33 @@
+package com.moduflow.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+/**
+ * 4-State UI State Contract aligning with Stage 06 screen states:
+ * - Ready: Default operational state with data
+ * - Loading: Skeleton pulse shimmer state
+ * - Empty: Zero data state with CTA
+ * - Error: Network / local error with retry action
+ */
+sealed interface UiState<out T> {
+    data object Loading : UiState<Nothing>
+    data object Empty : UiState<Nothing>
+    data class Error(val message: String, val canRetry: Boolean = true) : UiState<Nothing>
+    data class Ready<T>(val data: T) : UiState<T>
+}
+
+/**
+ * Base StateViewModel managing deterministic state flow.
+ */
+abstract class BaseViewModel<T> : ViewModel() {
+    protected val _uiState = MutableStateFlow<UiState<T>>(UiState.Loading)
+    val uiState: StateFlow<UiState<T>> = _uiState.asStateFlow()
+
+    abstract fun loadData()
+    abstract fun retry()
+}

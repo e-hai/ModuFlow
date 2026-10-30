@@ -259,10 +259,42 @@ def execute_role_tool(role_code: str, workspace_dir: Path, tool_name: str, args:
         return result
     elif tool_name == "verify_fakedoor_h5_bundle":
         return audit.audit_fakedoor_workspace(workspace_dir, claimed=claimed)
-    elif tool_name == "audit_hig_safe_area":
-        return audit.audit_design_workspace(workspace_dir, platform="ios", claimed=claimed)
-    elif tool_name == "audit_material_spec":
-        return audit.audit_design_workspace(workspace_dir, platform="android", claimed=claimed)
+    elif tool_name in ["verify_design_bundle", "audit_hig_safe_area", "audit_material_spec"]:
+        target_plat = "ios" if tool_name == "audit_hig_safe_area" else ("android" if tool_name == "audit_material_spec" else ((claimed or {}).get("platform") or "cross_platform"))
+        if (workspace_dir / "delivery.manifest.json").is_file() or (workspace_dir / "screens").is_dir():
+            from backend.app.services.design_bundle import inspect_design_bundle, upstream_prd_views
+            from backend.app.services.design_bundle_sim import design_manifest_block
+            upstream_views = upstream_prd_views(workspace_dir)
+            manifest_path = workspace_dir / "delivery.manifest.json"
+            design_block = None
+            if manifest_path.is_file():
+                try:
+                    m_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    design_block = m_data.get("design")
+                except Exception:
+                    design_block = None
+            if not design_block:
+                design_block = design_manifest_block(target_plat, upstream_views)
+            reasons, measured = inspect_design_bundle(workspace_dir, design_block, target_plat, upstream_views)
+            passed = len(reasons) == 0
+            res = {
+                "passed": passed,
+                "errors": reasons,
+                "reasons": reasons,
+                "measured": measured,
+                "checked_platform": target_plat,
+                "upstream_views": upstream_views,
+                "advice": f"通过 {target_plat} 设计交付包规范检查。" if passed else f"未通过检查，发现 {len(reasons)} 项问题，请在本地修复后再次自检。"
+            }
+            if target_plat == "ios":
+                res["dynamic_island_safe_pt"] = measured.get("ios_top")
+                res["min_touch_pt"] = measured.get("ios_touch")
+            elif target_plat == "android":
+                res["status_bar_cutout_safe_dp"] = measured.get("android_top")
+                res["min_touch_target_dp"] = measured.get("android_touch")
+            return res
+        else:
+            return audit.audit_design_workspace(workspace_dir, platform=target_plat, claimed=claimed)
     elif tool_name in ["estimate_cloud_marginal_cost", "audit_client_zero_inference"]:
         enforce_zero = os.getenv("MODUFLOW_ZERO_INFERENCE", "true").lower() != "false"
         result = audit.audit_inference_workspace(workspace_dir, claimed=claimed, enforce_zero=enforce_zero)

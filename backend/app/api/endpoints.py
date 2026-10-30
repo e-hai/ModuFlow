@@ -2,7 +2,7 @@ import asyncio
 import json
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Header, Request
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Header, Request, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
@@ -1056,6 +1056,61 @@ async def submit_module_for_gate(
         return {"module_id": module_id, "status": "queued", "job_id": job.id if job else None}
     result = await orchestrator.on_artifact_created(db, module_id, origin="human_confirmed")
     return {"module_id": module_id, "status": result}
+
+
+@api_router.get("/modules/{module_id}/codebase-tree")
+async def get_module_codebase_tree(
+    module_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Retrieve the physical directory structure and file summary of the module codebase."""
+    from backend.app.services.codebase_explorer import resolve_module_codebase_dir, get_codebase_summary_and_tree
+    try:
+        _mod, _workspace, codebase_dir = await resolve_module_codebase_dir(db, module_id)
+        return get_codebase_summary_and_tree(codebase_dir)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to scan codebase: {e}")
+
+
+@api_router.get("/modules/{module_id}/codebase-file")
+async def get_module_codebase_file(
+    module_id: str,
+    path: str = Query(..., description="Relative file path within codebase"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Retrieve file content and syntax metadata for the code viewer."""
+    from backend.app.services.codebase_explorer import resolve_module_codebase_dir, read_codebase_file
+    try:
+        _mod, _workspace, codebase_dir = await resolve_module_codebase_dir(db, module_id)
+        return read_codebase_file(codebase_dir, path)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read file: {e}")
+
+
+@api_router.post("/modules/{module_id}/open-ide")
+async def open_module_in_ide(
+    module_id: str,
+    ide: str = Query("android_studio", description="Target IDE: android_studio | xcode"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Trigger native launch of local Android Studio or Xcode for this module codebase."""
+    from backend.app.services.codebase_explorer import resolve_module_codebase_dir, open_codebase_in_local_ide
+    try:
+        _mod, _workspace, codebase_dir = await resolve_module_codebase_dir(db, module_id)
+        return await open_codebase_in_local_ide(codebase_dir, ide)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to launch IDE: {e}")
+
 
 @api_router.post("/modules/{module_id}/resolve-dispute")
 async def resolve_module_dispute(

@@ -23,7 +23,10 @@ import {
   HotfixFollowupTask,
   PortfolioWeeklyReport,
   ProjectDailyDigest,
-  RunOrchestrationStatus
+  RunOrchestrationStatus,
+  CodebaseSummaryAndTree,
+  CodebaseFileContent,
+  OpenIdeResult
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -326,4 +329,15 @@ export const api = {
     fetchJSON<PortfolioWeeklyReport>(
       initiativeId ? `/portfolio/weekly-report?initiative_id=${initiativeId}` : '/portfolio/weekly-report'
     ),
+
+  // --- Stage 07 Codebase Explorer & IDE Integration ---
+  getCodebaseTree: (moduleId: string) =>
+    fetchJSON<CodebaseSummaryAndTree>(`/modules/${moduleId}/codebase-tree`),
+  getCodebaseFile: (moduleId: string, path: string) =>
+    fetchJSON<CodebaseFileContent>(`/modules/${moduleId}/codebase-file?path=${encodeURIComponent(path)}`),
+  openCodebaseInIde: (moduleId: string, ide: 'android_studio' | 'xcode' | 'system_default') =>
+    fetchJSON<OpenIdeResult>(`/modules/${moduleId}/open-ide`, {
+      method: 'POST',
+      body: JSON.stringify({ ide }),
+    }),
 };

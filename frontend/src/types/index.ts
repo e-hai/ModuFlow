@@ -584,3 +584,38 @@ export interface ProjectDailyDigest {
   };
 }
 
+export interface CodebaseTreeNode {
+  name: string;
+  type: 'file' | 'directory';
+  path: string;
+  language?: string;
+  size?: number;
+  children?: CodebaseTreeNode[];
+}
+
+export interface CodebaseSummaryAndTree {
+  root_name: string;
+  codebase_path: string;
+  exists: boolean;
+  total_files: number;
+  total_lines: number;
+  tree: CodebaseTreeNode[];
+}
+
+export interface CodebaseFileContent {
+  path: string;
+  name: string;
+  size: number;
+  language: string;
+  content: string;
+}
+
+export interface OpenIdeResult {
+  success: boolean;
+  ide: string;
+  app_name: string;
+  opened_path: string;
+  message: string;
+}
+
+

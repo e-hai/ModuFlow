@@ -6,6 +6,7 @@ import { NewIssueModal } from '../components/NewIssueModal';
 import { MarkdownViewer } from '../components/MarkdownViewer';
 import { GateBadge } from '../components/gate/GateBadge';
 import { GateApplicationModal } from '../components/gate/GateApplicationModal';
+import { CodeExplorer } from '../components/CodeExplorer';
 import {
   Send,
   Bot,
@@ -51,7 +52,8 @@ import {
   Columns2,
   GitPullRequest,
   ArrowLeftRight,
-  Settings
+  Settings,
+  Laptop
 } from 'lucide-react';
 
 interface ModuleSpaceProps {
@@ -98,7 +100,9 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
   const [moduleGateConfig, setModuleGateConfig] = useState<GateConfig | null>(null);
   const [moduleGateApp, setModuleGateApp] = useState<GateApplication | null>(null);
   const [prototypeViewport, setPrototypeViewport] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
-  const [artifactViewMode, setArtifactViewMode] = useState<'preview' | 'content'>('preview');
+  const [artifactViewMode, setArtifactViewMode] = useState<'preview' | 'content' | 'codebase'>(
+    module.module_code === '07' ? 'codebase' : 'preview'
+  );
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadSummary, setUploadSummary] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -172,6 +176,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
 
   useEffect(() => {
     setMessageType(module.module_code === '01' ? 'question' : 'instruction');
+    setArtifactViewMode(module.module_code === '07' ? 'codebase' : 'preview');
     loadSessionAndArtifacts();
     api.getAgentSettings().then(s => {
       if (s?.cli_command) setAgentCommand(s.cli_command);
@@ -1401,6 +1406,38 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
             </div>
           </div>
 
+          {/* 若为 Stage 07 开发实现工序，展示 [💻 代码工程浏览器] 与 [📋 架构规范文档] 切换条 */}
+          {moduleState.module_code === '07' && (
+            <div className="px-4 py-2 border-b border-slate-200 bg-slate-100/70 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-1 bg-slate-200/80 p-0.5 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setArtifactViewMode('codebase')}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                    artifactViewMode === 'codebase'
+                      ? 'bg-white text-indigo-700 shadow-2xs font-semibold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Laptop className="w-3.5 h-3.5 text-indigo-600" />
+                  代码工程浏览器
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setArtifactViewMode('content')}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                    artifactViewMode === 'content'
+                      ? 'bg-white text-slate-900 shadow-2xs font-semibold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5 text-slate-500" />
+                  架构规范文档
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* 若为 HTML 原型包，展示视图切换条与视口缩放控制 */}
           {selectedArtifact && selectedArtifact.artifact_type === 'html_bundle' && (
             <div className="px-4 py-2 border-b border-slate-200 bg-slate-100/70 flex items-center justify-between text-xs">
@@ -1482,7 +1519,13 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
 
           {/* 产物内容实时渲染 */}
           <div className="flex-1 overflow-y-auto bg-white flex flex-col">
-            {selectedArtifact ? (
+            {moduleState.module_code === '07' && artifactViewMode === 'codebase' ? (
+              <CodeExplorer
+                moduleId={moduleState.id}
+                moduleName={moduleState.name}
+                moduleCode={moduleState.module_code}
+              />
+            ) : selectedArtifact ? (
               selectedArtifact.artifact_type === 'html_bundle' && artifactViewMode === 'preview' ? (
                 <div className="flex-1 bg-slate-100/80 p-2.5 flex items-center justify-center overflow-auto min-h-[720px]">
                   <div
@@ -1646,6 +1689,12 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                   </div>
                 </div>
               )
+            ) : moduleState.module_code === '07' ? (
+              <div className="text-center py-24 text-slate-400 text-xs flex-1 flex flex-col items-center justify-center">
+                <FileText className="w-10 h-10 text-slate-300 mb-2" />
+                <span className="font-semibold text-slate-700 mb-1">《交付物_07_开发实现.md》生成中</span>
+                研发 Agent 将在完成代码架构后输出详细的架构规范与测试报告。<br />您可点击上方【代码工程浏览器】实时查看代码树与源码。
+              </div>
             ) : (
               <div className="text-center py-24 text-slate-400 text-xs flex-1 flex flex-col items-center justify-center">
                 当前暂无成果交付物。<br />可在左侧输入需求让 AI 智能体生成，或点击上方【上传新版本】提交原型与文档。

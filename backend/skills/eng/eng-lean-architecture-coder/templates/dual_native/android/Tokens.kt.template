@@ -1,0 +1,29 @@
+package com.moduflow.nativeapp.ui.theme
+
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+
+/**
+ * ModuFlow Canonical Android Native Design Tokens
+ * Derived from Stage 06 tokens.json.
+ */
+object MfTokens {
+    object Colors {
+        val Primary = Color(0xFF0E8A5A)
+        val PrimaryDark = Color(0xFF0A6B46)
+        val PrimarySoft = Color(0xFFE3F4EC)
+        val Background = Color(0xFFF8FAFC)
+        val Surface = Color(0xFFFFFFFF)
+        val Text = Color(0xFF0F172A)
+        val TextMuted = Color(0xFF64748B)
+        val Border = Color(0xFFE2E8F0)
+        val Danger = Color(0xFFDC2626)
+    }
+
+    object Metrics {
+        val MinTouchTarget = 48.dp // Material 3 minimum
+        val RadiusCard = 12.dp
+        val RadiusBtn = 12.dp
+        val SafeTopPunchHole = 32.dp
+    }
+}

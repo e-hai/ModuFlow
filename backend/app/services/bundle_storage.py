@@ -17,7 +17,11 @@ from backend.app.models.entities import (
     Artifact,
     ChangeReview
 )
-from backend.app.services.workspace_sync import sanitize_dirname
+from backend.app.services.workspace_sync import (
+    sanitize_dirname,
+    get_stage_dir_name,
+    get_run_dir_name,
+)
 from backend.app.services.diff_engine import analyze_changes_and_impact
 from backend.app.services.workflow_engine import calculate_sha256
 
@@ -66,8 +70,8 @@ async def process_and_save_bundle_artifact(
     # Workspace directory setup
     init_dir = sanitize_dirname(init.id if init else "standalone")
     prod_dir = sanitize_dirname(prod.code)
-    run_dir = sanitize_dirname(run.name)
-    mod_dir = f"{mod.order_index:02d}_{mod.module_code}_{sanitize_dirname(mod.name)}"
+    run_dir = get_run_dir_name(run.name, run.id)
+    mod_dir = get_stage_dir_name(mod.order_index, mod.module_code, mod.name)
     
     version_dir = settings.WORKSPACE_DIR / init_dir / "products" / prod_dir / run_dir / mod_dir / "versions" / f"v{next_ver}"
     version_dir.mkdir(parents=True, exist_ok=True)

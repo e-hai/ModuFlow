@@ -97,7 +97,13 @@
           "minItems": 1,
           "items": {
             "type": "string",
-            "pattern": "^assets/icons/.+\\.svg$"
+            "pattern": "^(assets/icons|slices)/.+\\.svg$"
+          }
+        },
+        "slices": {
+          "type": "array",
+          "items": {
+            "type": "string"
           }
         }
       },

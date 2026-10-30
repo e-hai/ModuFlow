@@ -193,6 +193,12 @@
           "type": "boolean",
           "default": true,
           "description": "Whether client-side zero inference cost is strictly enforced"
+        },
+        "architecture_strategy": {
+          "type": "string",
+          "enum": ["kmp_cmp", "dual_native"],
+          "default": "kmp_cmp",
+          "description": "Mobile engineering architecture strategy (kmp_cmp or dual_native)"
         }
       }
     }

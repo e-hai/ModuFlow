@@ -1,0 +1,47 @@
+{
+  "contract_version": "1.0",
+  "strategy": "dual_native",
+  "platform": "cross_platform",
+  "client_zero_inference": true,
+  "compatibility": {
+    "ios": {
+      "min_deployment_target": "16.0",
+      "target_sdk": "18.0",
+      "swift_version": "5.10",
+      "xcode_min": "15.0"
+    },
+    "android": {
+      "min_sdk": 24,
+      "target_sdk": 34,
+      "compile_sdk": 34,
+      "jdk_version": "17"
+    },
+    "toolchain": {
+      "kotlin": "2.0.20",
+      "gradle": "8.9",
+      "agp": "8.5.2"
+    }
+  },
+  "ios": {
+    "framework": "SwiftUI",
+    "package_manager": "SPM",
+    "storage": "SQLite / SwiftData (Offline First)",
+    "commands": {
+      "build": "swift build",
+      "test": "swift test"
+    }
+  },
+  "android": {
+    "framework": "Jetpack Compose",
+    "build_system": "Gradle KTS",
+    "storage": "Room DB (Offline First)",
+    "commands": {
+      "build": "./gradlew assembleDebug",
+      "test": "./gradlew test"
+    }
+  },
+  "constraints": {
+    "zero_client_inference": true,
+    "min_test_coverage": 80
+  }
+}

@@ -124,7 +124,10 @@ def test_workbench_must_list_every_screen(tmp_path):
 def test_missing_tokens_and_icons_are_rejected(tmp_path):
     root = _write(tmp_path)
     (root / "tokens.json").unlink()
-    (root / "assets/icons/grid.svg").unlink()
+    if (root / "assets/icons/grid.svg").exists():
+        (root / "assets/icons/grid.svg").unlink()
+    if (root / "slices/grid.svg").exists():
+        (root / "slices/grid.svg").unlink()
     reasons = validate_design_bundle(root, design_manifest_block("cross_platform"), "cross_platform", VIEWS)
     assert any("tokens_path" in r for r in reasons)
     assert any("grid.svg" in r for r in reasons)

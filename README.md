@@ -10,7 +10,7 @@
 [![React](https://img.shields.io/badge/React-18.3-61DAFB.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6.svg)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-5.4-646CFF.svg)](https://vitejs.dev/)
-[![Tests](https://img.shields.io/badge/Tests-81%20Passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-225%20Passed-brightgreen.svg)]()
 
 </div>
 
@@ -90,7 +90,7 @@ ModuFlow 严格实施 **「人类战略层 → 项目总控层 (Lead) → 专业
 | **`04 假门验证`** | **G2 外测** | 🟡 | 人类审批 | 单文件移动端 H5 真实着陆页；外测数据严禁凭空虚构，触碰止损线自动暂停。 |
 | **`05 需求定义`** | prd_linter | 🟢 | `lead` | 纯业务 PRD 契约（**严禁编写建表 DDL**）；**涉及内购支付或隐私时自动升为 🔴**。 |
 | **`06 设计实现`** | HIG / M3 | 🟢 | `lead` | 依据平台自动执行 iOS HIG（灵动岛 $\ge 71\text{pt}$、触控 $\ge 44\text{pt}$）或 Android M3 审计。 |
-| **`07 开发实现`** | 零推理审计 | 🟢 | `lead` | 单测覆盖率 $\ge 80\%$；**纯客户端项目客户端在线 AI 调用必须为 0**（严控边际成本）。 |
+| **`07 开发实现`** | 零推理审计 | 🟢 | `lead` | 单测覆盖率 $\ge 80\%$；代码浏览器支持与本地 Android Studio / Xcode 原生调起；**纯客户端项目客户端在线 AI 调用必须为 0**（严控边际成本）。 |
 | **`08 测试 QA`** | **G3 质量门** | 🟢 | `qa` | P0/P1 阻塞缺陷全部清零；行使质量一票否决权。 |
 | **`09 发布上线`** | **G4 提审发布** | 🔴 | **人类必批** | **绝对硬红线：必须有人类确认记录方可提审**！具备合规审查、降级开关与回滚预案。 |
 | **`10 推广获客`** | 买量门禁 | 🟡 | 人类审批 | 首次买量投放或开辟新国家市场审批；eCAC 超标自动熔断。 |
@@ -125,6 +125,10 @@ ModuFlow 严格实施 **「人类战略层 → 项目总控层 (Lead) → 专业
 - **项目 Profile 参数化驱动**：
   - **`platform: ios | android`**：iOS 项目自动匹配 HIG 规范校验（灵动岛/刘海顶部 $\ge 71\text{pt}$、触控热区 $\ge 44\text{pt}$、Apple 4.3 查重）；Android 项目自动匹配 Material 3 规范校验，**杜绝全局一刀切**。
   - **`client_zero_inference: bool`**：工具类产品死守“客户端零在线推理成本”红线，AI 资产离线预处理，保障 $90\%+$ 高毛利；端侧友好型项目则允许 CoreML / ONNX 端侧轻量运算。
+- **物理工作区纯 ASCII 规范与无空格目录隔离**：
+  文件系统物理工作区严格遵循 `run_{slug}/{order_index}_{slug}` 命名准则（如 `07_development`），彻底根除 Android AAPT2、Gradle daemon、Xcode LLDB/SPM 在含中文或空格路径下的编译阻断与索引崩溃；业务界面保留友好中文，物理层保持纯英文 ASCII。
+- **长耗时重工序空闲看门狗与断点续跑 (Idle Watchdog & Continuation)**：
+  对工序 06（设计）与工序 07（研发）等复杂长耗时工序彻底移除单一死板的短硬超时限制。仅在无标准输出且无文件变动超阈值时判定假死；重工序生命周期上限放宽至 7200 秒（2 小时）；断点唤醒时自动扫描已完工资产，精准注入断点上下文续跑。
 
 ---
 
@@ -166,10 +170,10 @@ ModuFlow 提供专为创始人与业务负责人打造的 **6 大核心板块战
 ## 🧪 验证与演练
 
 ### 1. 运行自动化测试套件
-全量测试套件覆盖三层架构、10 大角色、关口矩阵、只读防护与 Profile 校验：
+全量测试套件覆盖三层架构、10 大角色、关口矩阵、只读防护、Profile 校验与代码浏览器：
 ```bash
 PYTHONPATH=. backend/.venv/bin/pytest backend/tests/ -v
-# 输出：81 passed in ~4s
+# 输出：225 passed in ~23s
 ```
 
 ### 2. 运行出海标杆项目端到端实战演练 (FocusZen FZ01)
@@ -190,27 +194,28 @@ ModuFlow/
 │   │   ├── core/                  # 配置项、异步数据库会话
 │   │   ├── models/                # SQLAlchemy ORM 持久化实体
 │   │   ├── schemas/               # Pydantic v2 统一契约模式
-│   │   └── services/              # 10 大角色引擎、关口守护、安全拦截器
-│   └── tests/                     # 81 项高覆盖率单元与集成测试
+│   │   └── services/              # 10 大角色引擎、关口守护、代码浏览器服务与安全拦截器
+│   └── tests/                     # 225 项高覆盖率单元与集成测试
 │
 ├── frontend/                      # React 18 + Vite + Tailwind CSS 前端
 │   ├── src/
-│   │   ├── components/            # 战略驾驶舱 Tab、关口确认弹窗、速报模态框
+│   │   ├── components/            # 战略驾驶舱 Tab、关口确认弹窗、CodeExplorer 代码浏览器
 │   │   ├── pages/                 # 战略看板、11 道工序工作台、协同研讨室
-│   │   ├── services/              # API 统一封装客户端
+│   │   ├── services/              # API 统一封装客户端 (支持 IDE 原生调起)
 │   │   └── types/                 # TypeScript 统一类型契约
 │   └── package.json
 │
 ├── data/                          # 数据持久化目录
 │   ├── moduflow.db                # SQLite 数据库文件
-│   └── workspaces/                # 产品独立物理工作区与产物落地区
+│   └── workspaces/                # 产品独立物理工作区与产物落地区 (纯 ASCII 规范)
 │       └── {initiative_id}/
 │           └── products/{code}/
 │               ├── authorization.yaml  # 只读保护授权包
-│               └── decisions/          # 人机重大决议审计记录 (*.json)
+│               ├── decisions/          # 人机重大决议审计记录 (*.json)
+│               └── run_{slug}/         # 各迭代纯英文工序工作区 (01_market_research ~ 11_operations_iteration)
 │
 ├── schemas/                       # JSON Schema 规范 (授权包规范定义)
-├── scripts/                       # 自动化验证与端到端实战演练脚本
+├── scripts/                       # 自动化验证、端到端实战演练与纯 ASCII 路径迁移脚本
 ├── AGENTS.md                      # 智能体工程与系统架构开发指南
 ├── run.sh                         # 一键并行启动脚本
 └── README.md                      # 项目说明文档

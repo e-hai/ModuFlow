@@ -399,27 +399,44 @@ table{{width:100%;border-collapse:collapse}}td{{padding:3px 0;border-bottom:1px 
 
 
 def build_design_bundle(name: str, platform: str, views: Optional[List[str]] = None) -> Dict[str, str]:
-    """返回 {相对路径: 文件内容}，包含设计工作台、令牌、画板和图标。"""
+    """返回 {相对路径: 文件内容}，包含设计工作台、令牌、MeaXure manifest、画板和切片资源。"""
     views = views or ["V-01", "V-02", "V-03", "V-04"]
     platforms = required_platforms(platform) or ["ios"]
     files: Dict[str, str] = {
         "tokens.json": json.dumps(TOKENS, ensure_ascii=False, indent=2) + "\n",
+        "manifest.json": json.dumps(
+            {
+                "project": name,
+                "scale": 3,
+                "unit": "pt",
+                "colors": TOKENS["color"],
+                "artboards": [{"id": v, "name": f"{v} 画板", "width": 393, "height": 852} for v in views],
+                "slices": [f"{icon}.svg" for icon in ICONS],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
         "index.html": _workbench_html(name, views, platforms),
     }
     for view_id in views:
         files[f"screens/{view_id}.html"] = build_screen_html(view_id, name, platforms)
     for icon in ICONS:
-        files[f"assets/icons/{icon}.svg"] = icon_svg(icon)
+        svg = icon_svg(icon)
+        files[f"slices/{icon}.svg"] = svg
+        files[f"assets/icons/{icon}.svg"] = svg
     return files
 
 
 def design_manifest_block(platform: str, views: Optional[List[str]] = None) -> Dict[str, Any]:
     views = views or ["V-01", "V-02", "V-03", "V-04"]
     platforms = required_platforms(platform) or ["ios"]
+    slice_paths = [f"slices/{icon}.svg" for icon in ICONS]
     return {
         "platform": platform,
         "entry": "index.html",
         "tokens_path": "tokens.json",
         "screens": [{"view_id": v, "path": f"screens/{v}.html", "platforms": platforms} for v in views],
-        "icons": [f"assets/icons/{icon}.svg" for icon in ICONS],
+        "icons": slice_paths,
+        "slices": slice_paths,
     }

@@ -224,7 +224,7 @@ def _load_tokens(root: Path, tokens_path: str, reasons: List[str]) -> set:
 
 def _check_icons(root: Path, icons: Any, reasons: List[str]) -> None:
     if not isinstance(icons, list) or not icons:
-        reasons.append("design.icons：至少列出 1 个 SVG 图标")
+        reasons.append("design.icons：至少列出 1 个 SVG 图标（在 slices/ 或 assets/icons/）")
         return
     for item in icons:
         path = _confined(root, str(item))
@@ -358,7 +358,7 @@ def inspect_design_bundle(
         reasons.append(f"design.platform：声明 {declared_platform} 与项目 Profile {platform} 不一致")
 
     token_colors = _load_tokens(root, str(design.get("tokens_path") or ""), reasons)
-    _check_icons(root, design.get("icons"), reasons)
+    _check_icons(root, design.get("slices") or design.get("icons"), reasons)
 
     screens = design.get("screens")
     known_views: set = set()

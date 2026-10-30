@@ -1,0 +1,416 @@
+/* ==============================================================================
+   ModuFlow MeaXure Canonical Design System & Hardware Shell CSS
+   此文件定义硬件安全区、物理触控热区强制约束与四态状态机，杜绝违背平台规范
+   ============================================================================== */
+
+:root {
+  --color-primary: #0E8A5A;
+  --color-primary-dark: #0A6B46;
+  --color-primary-soft: #E3F4EC;
+  --color-background: #F8FAFC;
+  --color-surface: #FFFFFF;
+  --color-text: #0F172A;
+  --color-text-muted: #64748B;
+  --color-border: #E2E8F0;
+  --color-danger: #DC2626;
+  --color-danger-soft: #FEE2E2;
+  --color-stage: #1E293B;
+
+  --r-card: 12px;
+  --r-btn: 12px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, "SF Pro Text", "Roboto", "PingFang SC", sans-serif;
+  background: var(--color-stage);
+  color: var(--color-text);
+  min-height: 100vh;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 顶部预览控制条 */
+.stagebar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--color-surface);
+  font-size: 13px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.stagebar b { font-size: 15px; }
+.stagebar button {
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-surface);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  cursor: pointer;
+  min-height: 32px;
+}
+.stagebar button.on {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+/* 设备画布舞台 */
+.stage {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+}
+body[data-platform="ios"] .device.android,
+body[data-platform="android"] .device.ios {
+  display: none;
+}
+
+/* 设备外框容器与物理尺寸 */
+.device {
+  position: relative;
+  width: 393px;
+  height: 852px;
+  background: var(--color-background);
+  border-radius: 44px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 0 0 10px var(--color-text), 0 24px 60px rgba(0,0,0,0.45);
+}
+.device.ios { --hit: 44px; }
+.device.android {
+  width: 412px;
+  height: 892px;
+  border-radius: 28px;
+  --hit: 48px;
+}
+
+.plat {
+  position: absolute;
+  top: 6px;
+  right: 14px;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  z-index: 3;
+}
+
+/* 硬件安全区与挖孔避让物理硬约束 */
+.safe-top {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 0 28px 8px;
+  background: var(--color-surface);
+  flex: none;
+}
+.safe-top .clock { font-size: 15px; font-weight: 600; }
+.island {
+  position: absolute;
+  left: 50%;
+  top: 11px;
+  width: 120px;
+  height: 34px;
+  margin-left: -60px;
+  background: var(--color-text);
+  border-radius: 20px;
+}
+.punch {
+  position: absolute;
+  left: 50%;
+  top: 10px;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  background: var(--color-text);
+  border-radius: 50%;
+}
+.safe-bottom {
+  background: var(--color-surface);
+  flex: none;
+}
+
+/* 导航栏 Appbar */
+.appbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  flex: none;
+}
+.appbar h1 {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 24px;
+}
+.android .appbar h1 {
+  font-size: 22px;
+  font-weight: 500;
+}
+
+/* 图标与按钮 */
+.icon-btn {
+  min-width: var(--hit);
+  min-height: var(--hit);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.icon-btn.ghosted { cursor: default; }
+.ico {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+
+/* 内容滚动区与四态状态机 */
+.content {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.panel {
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+}
+body[data-state="default"] .panel[data-state="default"],
+body[data-state="loading"] .panel[data-state="loading"],
+body[data-state="empty"] .panel[data-state="empty"],
+body[data-state="error"] .panel[data-state="error"] {
+  display: flex;
+}
+
+/* 物理触控热区强制约束（硬选择器，绝不妥协） */
+[data-hit="44x44"] {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+[data-hit="48x48"] {
+  min-width: 48px;
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 常用基础组件样式 */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-card);
+  padding: 12px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+button.card {
+  width: 100%;
+  min-width: var(--hit);
+  min-height: var(--hit);
+  cursor: pointer;
+}
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  background: var(--color-primary-soft);
+  flex: none;
+  border: 1px solid var(--color-border);
+}
+.thumb.t1 { background: var(--color-border); }
+.thumb.t2 { background: var(--color-danger-soft); }
+
+.meta { display: flex; flex-direction: column; gap: 2px; }
+.meta b { font-size: 15px; font-weight: 600; }
+.meta em { font-style: normal; font-size: 12px; color: var(--color-text-muted); }
+
+.chips { display: flex; gap: 8px; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: var(--hit);
+  min-height: var(--hit);
+  padding: 0 16px;
+  border-radius: var(--r-btn);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn.primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-surface);
+  width: 100%;
+}
+.btn.primary:active { background: var(--color-primary-dark); }
+.btn.ghost {
+  background: transparent;
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+.btn.chip {
+  border-radius: 999px;
+  font-size: 13px;
+  padding: 0 14px;
+}
+.btn.chip.on {
+  background: var(--color-primary-soft);
+  border-color: var(--color-primary);
+  color: var(--color-primary-dark);
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-card);
+  padding: 6px 6px 6px 14px;
+  font-size: 15px;
+}
+
+/* 异常状态面板样式 */
+.notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 40px 16px;
+}
+.notice h3 { font-size: 17px; }
+.notice p { font-size: 14px; color: var(--color-text-muted); }
+.notice.danger h3 { color: var(--color-danger); }
+
+/* 加载骨架屏 */
+.ring {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 4px solid var(--color-primary-soft);
+  border-top-color: var(--color-primary);
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.skeleton { flex-direction: column; align-items: stretch; }
+.skeleton i {
+  display: block;
+  height: 14px;
+  border-radius: 6px;
+  background: var(--color-border);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.skeleton i.short { width: 55%; }
+@keyframes pulse { 50% { opacity: 0.45; } }
+
+/* 底部标签栏 */
+.tabbar {
+  display: flex;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+  flex: none;
+}
+.tab {
+  flex: 1;
+  min-height: var(--hit);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 6px 0;
+}
+.tab.on { color: var(--color-primary); }
+.android .tab { font-size: 12px; }
+
+/* 悬浮 Toast 提示 */
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 110px;
+  transform: translateX(-50%);
+  background: var(--color-text);
+  color: var(--color-surface);
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+  max-width: 80%;
+  z-index: 10;
+}
+.toast.show { opacity: 1; }
+
+/* MeaXure 标注层红框高亮 */
+.mf-inspect-outline,
+body[data-anno="1"] [data-hit] {
+  outline: 1.5px dashed var(--color-danger) !important;
+  outline-offset: -1px !important;
+}
+body[data-anno="1"] .safe-top,
+body[data-anno="1"] .safe-bottom {
+  background: var(--color-danger-soft);
+}
+body[data-anno="1"] .safe-top::after,
+body[data-anno="1"] .safe-bottom::after {
+  content: attr(data-label);
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--color-danger);
+  white-space: nowrap;
+}
+body[data-anno="1"] .safe-top::after { bottom: 2px; }
+body[data-anno="1"] .safe-bottom { position: relative; }
+body[data-anno="1"] .safe-bottom::after { top: 2px; }

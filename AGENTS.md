@@ -121,6 +121,24 @@ ModuFlow 支持精细化的项目 Profile 驱动，杜绝全局一刀切：
   - **`false` (端侧 AI 友好型)**：允许在边缘端运行轻量化离线模型（如 CoreML / ONNX Runtime 端侧推理）。
 - **角色人设也跟随 Profile**：`ux` / `eng` / `qa` 的静态人设不写死平台阈值，上下文装配时由 `agent_roles.render_persona` 追加【本项目 Profile 红线】，阈值与 `deliverable_audit.py` 一致。
 
+### 3. 物理工作区命名规范与跨平台安全 (Workspace Naming & ASCII Path Security)
+为杜绝 Android AAPT2、Gradle daemon、Xcode LLDB/SPM 以及跨平台 Shell 脚本在非 ASCII 字符或空格路径下的编译与断点崩溃，ModuFlow 物理工作区严格遵循**业务展示与文件系统解耦**准则：
+- **纯 ASCII Slug 原则**：UI 上展示亲切的中文业务名称（如“开发实现”、“FocusZen V1.0 首发全流程产研迭代”），而底层物理工作区路径强制为**纯英文 ASCII 且无空格**。
+- **废除双重编号冗余**：废除旧有的 `01_01_`、`07_07_` 重复编号，标准化为单一的两位工序序号 + 英文 Slug：
+  - `01_market_research`（工序 01 赛道摸底）
+  - `02_business_model`（工序 02 变现精算）
+  - `03_product_direction`（工序 03 精益决策）
+  - `04_fake_door`（工序 04 假门外测）
+  - `05_product_requirement`（工序 05 需求定义）
+  - `06_design_implementation`（工序 06 设计实现）
+  - `07_development`（工序 07 开发实现）
+  - `08_testing_qa`（工序 08 测试保障）
+  - `09_release_deployment`（工序 09 发布上线）
+  - `10_growth_marketing`（工序 10 推广获客）
+  - `11_operations_iteration`（工序 11 运营迭代）
+- **迭代 Run 目录 Slug 化**：格式为 `run_{slug}`（如 `run_focuszen_v1.0`），保证终端与主流 IDE 打开即用。
+- **向后兼容机制**：历史工作区保留符号链接（Symlink），`codebase_explorer` 与上下文装配器内置新旧路径双向自动回退，确保旧项目与资产无损访问。
+
 ---
 
 ## 三、标准产研 11 道工序与关口分级模型 (11-Stage Pipeline & Gate Classification)
@@ -162,6 +180,16 @@ ModuFlow 支持精细化的项目 Profile 驱动，杜绝全局一刀切：
 4. **财务预算超支**：累计支出超出当前工序授权额度或总预算硬止损线；
 5. **权限与架构篡改**：试图修改 `lead` 自身权限、修改红线规则或修改 `authorization.yaml`；
 6. **对外公开公关**：对外公开发布市场宣传言论、商店对外公开公告或应用提审声明。
+
+### 4. 长耗时重工序的心跳守护与断点续跑 (Idle Heartbeat Watchdog & Breakpoint Continuation)
+针对工序 06（设计实现）与工序 07（开发实现）等复杂工程工序，系统彻底废除了单调死板的固定短时超时（如 600 秒硬超时），引入两项生产级韧性机制：
+- **空闲看门狗 (Idle Watchdog)**：
+  - 判定超时的唯一依据是“进程持续静默”：仅在**既无标准输出/标准错误刷新、工作区内也无任何产物文件增删改动**达到空闲阈值（默认 600 秒）时，才判定 Agent 假死；
+  - 只要 Agent 正在连续输出代码或在磁盘生成画板/源文件，计时器自动复位重置；
+  - 重工序整体最大生命周期放宽至 7200 秒（2 小时），充分支撑复杂工程与自动化构建。
+- **断点续跑引导 (Checkpoint Continuation Guidance)**：
+  - 当 Agent 执行中断或需要多轮增量推进时，Runner 会在唤醒前深度扫描当前工作区已完成的资产（如已就绪的 `V-01.html`、`V-02.html`、KMP 项目骨架等）；
+  - 自动向 Agent 的 Prompt 中注入【断点现场与未完成清单】，明确指示 Agent 严禁从头覆写已有完工产物，直接衔接未完画板与未写业务代码，实现零重复浪费的高效断点续写。
 
 ---
 
@@ -218,12 +246,12 @@ ModuFlow 严密定义 **10 大专业智能体**（包括项目总控与合规风
 ### 5. 【设计与用研 Agent (`ux`)】—— 工序 06 设计实现
 - **角色定位**：Apple HIG / Material 体验守护者、设计系统规范师、高保真视觉稿交付者。
 - **标准输入**：工序 05 封版 PRD（视图索引 `V-01~V-05`、组件清单、交互分支、文案字典）。
-- **标准输出**：一个**可在成果交付库直接点开体验的设计交付包**，形态等同设计师导出的设计稿文件夹，外加一份设计说明：
-  - `index.html` 设计工作台：画板切换、平台切换、四态切换、标注层、点选检视（尺寸/字号/圆角/颜色）、色板与图标库；
-  - `tokens.json`：设计令牌唯一真理源（color / typography / spacing / radius），工序 07 直接读取；
+- **标准输出**：对齐 **Sketch MeaXure 工业标准**的**可在成果交付库直接点开体验的设计交付包**，经由 `DesignAdapter` 归一化输出，外加一份设计说明：
+  - `index.html`：MeaXure 经典三栏设计工作台（画板切换、平台切换、四态切换、标注层、点选检视尺寸/字号/圆角/色值，并一键复制 SwiftUI/Compose/Tailwind 代码契约）；
+  - `tokens.json` 与 `manifest.json`：设计令牌唯一真理源（color/typography/spacing/radius）及 MeaXure 画板元数据；
   - `screens/V-xx.html`：工序 05 每个视图一张**完整高保真视觉稿**（不是线框），iOS / Android 设备外框、Default/Loading/Empty/Error 四态，页面之间可点击跳转；
-  - `assets/icons/*.svg`：图标资源。
-- **允许能力**：生成 UI 视觉规范、输出 Design Tokens、打包 SVG 图标、向工序 05 提体验层 CR。工序 06 不接受只有文字的规范：`delivery.manifest.json` 的 `design` 清单与设计包文件由 `design_bundle.py` 做确定性静态校验，读取画板里的 `data-device` / `data-safe-top` / `data-safe-bottom` / `data-hit` / `data-state` 标注，不采信交付物自报数值。
+  - `slices/*.svg`：统一切图与图标资产库。
+- **允许能力**：生成 UI 视觉规范、输出 Design Tokens、打包 SVG 切图、向工序 05 提体验层 CR。在落盘提报前**强制调用 MCP 工具 `verify_design_bundle` 进行本地静态自检**。工序 06 不接受只有文字的规范：`delivery.manifest.json` 的 `design` 清单与设计包文件由 `design_bundle.py` 做确定性静态校验，读取画板里的 `data-device` / `data-safe-top` / `data-safe-bottom` / `data-hit` / `data-state` 标注，不采信交付物自报数值。
 - 🚫 **严格边界与禁区 (Redlines)**：
   - **严禁私自魔改业务逻辑**：发现交互痛点必须提交需求变更单 (CR) 驱动 PRD 修订，严禁私自增加业务分支；
   - **严禁编写生产代码**：只提供前端样式与高保真原型，不编写生产级状态机与数据持久化（归属 `eng`）；
@@ -233,7 +261,13 @@ ModuFlow 严密定义 **10 大专业智能体**（包括项目总控与合规风
 ### 6. 【研发架构 Agent (`eng`)】—— 工序 07 开发实现
 - **角色定位**：工程实现操盘手、物理数据模型与核心业务代码架构师。
 - **标准输入**：工序 05 纯业务 PRD；工序 06 设计资产包。
-- **标准输出**：轻量架构选型说明、**物理数据模型与持久化实现**（数据库 DDL、主外键、复合索引、ORM 映射、加密读写、迁移脚本）、核心业务逻辑代码交付、单元测试覆盖率报告（核心逻辑 ≥80%）。
+- **标准输出**：轻量架构选型说明、**物理数据模型与持久化实现**（数据库 DDL、主外键、复合索引、ORM 映射、加密读写、迁移脚本）、核心业务逻辑代码交付、单元测试覆盖率报告（核心逻辑 ≥80%），以及**生产级现代化工程脚手架（Gradle 9.7+ / AGP 9.0+ / Kotlin 2.1+）**：
+  - **交付物双重视图**：在 ModuFlow 控制台可自由切换 `[ 📋 架构规范文档 ]` 与 `[ 💻 代码工程浏览器 ]`（多级目录树、语法高亮、行号与搜索过滤）；
+  - **本地 IDE 一键调起**：工程顶栏统一提供 **`[💻 在本地 Android Studio / Xcode 打开]`**，通过 macOS 原生 `open -a` 调起 Android Studio (主入口) 或 Xcode (`iosApp` 原生工程)；
+  - **工程规范底座**：
+    - 严格采用纯英文 ASCII 物理工作区路径（`07_development`），杜绝中文与空格对构建工具链的干扰；
+    - 必须内置 `gradle/wrapper/gradle-wrapper.properties`，杜绝缺少 wrapper 导致 IDE 随机降级崩溃；
+    - 必须包含标准 `AndroidManifest.xml` 与 Compose 跨平台资源管理契约。
 - **允许能力**：技术栈选型、建表 DDL 编写、构建单元测试、发现技术不可行时向工序 05 提 CR。推理审计工具为 `audit_client_zero_inference` 与 `estimate_cloud_marginal_cost`，以工作区代码和审计记录为准。
 - 🚫 **严格边界与禁区 (Redlines)**：
   - **严禁私自阉割产品功能**：遭遇技术限制严禁直接砍功能，必须向工序 05 提 CR 闭环确认；
@@ -467,6 +501,8 @@ backend/app/
     ├── skill_mcp_mounter.py      # 角色专属 Skill 与 MCP 动态挂载器
     ├── agent_runner.py           # 多阶段推演调度器
     ├── stale_checker.py          # 上下游基线变更追踪与过时预警检查器
+    ├── codebase_explorer.py      # 代码工程树解析、只读安全读取与本地 IDE (AS/Xcode) 调起服务
+    ├── design_adapter.py         # MeaXure 标准设计交付包适配与状态机解析器
     ├── diff_engine.py            # 产物版本 Diff 生成与下游受影响推演
     ├── bundle_storage.py         # HTML 原型包解压与静态预览资源托管
     └── market_research_engine.py # 全球赛道研究、TAM/SAM/SOM 测算与竞品分析
@@ -512,12 +548,15 @@ PYTHONPATH=. backend/.venv/bin/python -m backend.app.runner
 - FastAPI Swagger 接口文档：`http://127.0.0.1:8000/docs`
 - 执行器没启动时，派活只会排队不会推进，工序页会显示「执行器没在跑」。
 
-### 2. 自动化测试套件 (179 项全绿保证)
+### 2. 自动化测试套件 (225 项全绿保证)
 ```bash
-# 运行后端全量异步测试 (覆盖授权包、关口分级、安全防护、Lead 影子模式、合规风控、Profile、热修与组合)
+# 运行后端全量异步测试 (覆盖授权包、关口分级、安全防护、Lead 影子模式、合规风控、Profile、热修、代码浏览器与重构)
 PYTHONPATH=. backend/.venv/bin/pytest backend/tests/ -v
 
 # 单独运行指定核心测试
+PYTHONPATH=. backend/.venv/bin/pytest backend/tests/test_codebase_explorer.py -v
+PYTHONPATH=. backend/.venv/bin/pytest backend/tests/test_adapter.py -v
+PYTHONPATH=. backend/.venv/bin/pytest backend/tests/test_design_bundle.py -v
 PYTHONPATH=. backend/.venv/bin/pytest backend/tests/test_authorization_package.py -v
 PYTHONPATH=. backend/.venv/bin/pytest backend/tests/test_gate_system.py -v
 PYTHONPATH=. backend/.venv/bin/pytest backend/tests/test_readonly_security.py -v
@@ -541,4 +580,7 @@ backend/.venv/bin/python scripts/validate_authorization.py data/workspaces/{init
 
 # 为旧项目自动补齐与升级默认规范授权包
 backend/.venv/bin/python scripts/migrate_legacy_project_auth.py
+
+# 历史工作区纯英文 ASCII Slug 平滑迁移 (消除中文与重复 01_01 / 07_07 编号)
+backend/.venv/bin/python scripts/migrate_workspace_ascii_paths.py
 ```

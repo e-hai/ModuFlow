@@ -1,0 +1,57 @@
+package com.moduflow.theme
+
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+/**
+ * ModuFlow Canonical Design Tokens (Kotlin Multiplatform & Compose)
+ * Single Source of Truth directly derived from Stage 06 tokens.json.
+ * Hard Rule: Do not hardcode raw hex values in UI; reference MfTokens.* instead.
+ */
+object MfTokens {
+    object Colors {
+        // Brand & System Colors
+        val Primary = Color(0xFF0E8A5A)
+        val PrimaryDark = Color(0xFF0A6B46)
+        val PrimarySoft = Color(0xFFE3F4EC)
+        val Background = Color(0xFFF8FAFC)
+        val Surface = Color(0xFFFFFFFF)
+        val Text = Color(0xFF0F172A)
+        val TextMuted = Color(0xFF64748B)
+        val Border = Color(0xFFE2E8F0)
+        val Danger = Color(0xFFDC2626)
+        val DangerSoft = Color(0xFFFEE2E2)
+    }
+
+    object Metrics {
+        // Physical touch target constraints (Apple HIG >= 44pt, Material 3 >= 48dp)
+        val MinTouchTarget = 48.dp
+        val MinTouchTargetIos = 44.dp
+
+        // Radii
+        val RadiusCard = 12.dp
+        val RadiusBtn = 12.dp
+        val RadiusChip = 999.dp
+
+        // Spacing
+        val SpacingXs = 4.dp
+        val SpacingSm = 8.dp
+        val SpacingMd = 16.dp
+        val SpacingLg = 24.dp
+        val SpacingXl = 32.dp
+
+        // Hardware Safe Areas
+        val SafeTopDynamicIsland = 74.dp
+        val SafeTopPunchHole = 32.dp
+        val SafeBottomHomeIndicator = 34.dp
+    }
+
+    object Typography {
+        val TitleLarge = 22.sp
+        val TitleMedium = 18.sp
+        val BodyMedium = 15.sp
+        val BodySmall = 13.sp
+        val Caption = 11.sp
+    }
+}

@@ -10,7 +10,7 @@ from backend.app.adapters.base import BaseAgentAdapter, AgentStreamEvent, AgentE
 from backend.app.core.config import settings
 from backend.app.services.security_guard import sanitize_agent_environment
 from backend.app.services.stage_memory import deliverable_filename
-from backend.app.services.delivery_contract import manifest_instruction
+from backend.app.services.delivery_contract import manifest_instruction, stage_code
 from backend.app.services.workspace_sandbox import (
     os_sandbox_available,
     sandbox_layers,
@@ -89,6 +89,184 @@ def continuation_preamble(has_draft: bool) -> str:
             "直接依据它和下面的清单，在现有交付物上修改。\n"
         )
     return "本目录的 `.moduflow_agent_context.md` 已包含前序基线。直接依据它和下面的清单写交付物。\n"
+
+
+def checkpoint_continuation_guidance(workspace_dir: Path, mod_code: str) -> str:
+    """
+    Detect already completed components in workspace_dir to enable incremental completion.
+    Prevents Agent CLIs from redoing work that was already written to disk.
+    """
+    if not workspace_dir.exists():
+        return ""
+    code = stage_code(mod_code)
+    lines: List[str] = []
+
+    if code == "06":
+        completed = []
+        pending = []
+        tokens_file = workspace_dir / "tokens.json"
+        if tokens_file.exists() and tokens_file.stat().st_size > 50:
+            completed.append(f"tokens.json ({tokens_file.stat().st_size} bytes)")
+        else:
+            pending.append("tokens.json (设计变量)")
+
+        slices_dir = workspace_dir / "slices"
+        svgs = list(slices_dir.glob("*.svg")) if slices_dir.exists() else []
+        if svgs:
+            completed.append(f"slices/ ({len(svgs)} 个 SVG 矢量图标)")
+        else:
+            pending.append("slices/ 矢量图标切图")
+
+        screens_dir = workspace_dir / "screens"
+        device_shell = screens_dir / "device-shell.css" if screens_dir.exists() else None
+        if device_shell and device_shell.exists():
+            completed.append("screens/device-shell.css (设备壳外框样式)")
+        else:
+            pending.append("screens/device-shell.css (设备壳外框样式)")
+
+        expected_views = ["V-01", "V-02", "V-03", "V-04", "V-05"]
+        for v in expected_views:
+            v_html = screens_dir / f"{v}.html" if screens_dir.exists() else None
+            if v_html and v_html.exists() and v_html.stat().st_size > 100:
+                completed.append(f"screens/{v}.html ({round(v_html.stat().st_size / 1024, 1)} KB)")
+            else:
+                pending.append(f"screens/{v}.html")
+
+        workbench = workspace_dir / "index.html"
+        if workbench.exists() and workbench.stat().st_size > 200:
+            completed.append("index.html (设计工作台)")
+        else:
+            pending.append("index.html (设计工作台)")
+
+        spec_file = workspace_dir / "交付物_06_设计实现.md"
+        if spec_file.exists() and spec_file.stat().st_size > 200:
+            completed.append("交付物_06_设计实现.md (设计规范文档)")
+        else:
+            pending.append("交付物_06_设计实现.md (设计规范文档)")
+
+        if completed:
+            lines.append("【现场断点检测与增量续建指示（严禁推倒重做已完成文件）】")
+            lines.append("系统检测到本工序工作区已存在以下前期生成的有效成果：")
+            for c in completed:
+                lines.append(f"  ✅ [已就绪无需重写] {c}")
+            lines.append("\n【本次增量任务核心聚焦】：")
+            lines.append("1. 严禁重新生成、覆盖或推倒重做上述已标记 ✅ 的文件！")
+            if pending:
+                lines.append("2. 继承现有成果，集中攻坚以下尚未生成的剩余物料：")
+                for p in pending:
+                    lines.append(f"  👉 [待补齐] {p}")
+            lines.append("3. 维护 delivery.manifest.json，确保将全部交付物纳入清单。\n")
+
+    elif code == "07":
+        completed = []
+        pending = []
+        if (workspace_dir / "build.gradle.kts").exists():
+            completed.append("build.gradle.kts / settings.gradle.kts (工程脚手架)")
+        else:
+            pending.append("Gradle 根工程与模块配置")
+
+        shared_src = workspace_dir / "shared" / "src" / "commonMain"
+        if shared_src.exists():
+            kt_files = list(shared_src.rglob("*.kt"))
+            if kt_files:
+                completed.append(f"shared/ 核心业务逻辑代码 ({len(kt_files)} 个 Kotlin 文件)")
+        else:
+            pending.append("shared/ 领域核心模型与业务规则")
+
+        spec_file = workspace_dir / "交付物_07_开发实现.md"
+        if spec_file.exists() and spec_file.stat().st_size > 200:
+            completed.append("交付物_07_开发实现.md (技术架构交付报告)")
+        else:
+            pending.append("交付物_07_开发实现.md (技术架构交付报告)")
+
+        if completed:
+            lines.append("【现场断点检测与增量研发指示】")
+            lines.append("系统检测到研发工作区已有部分工程代码落盘：")
+            for c in completed:
+                lines.append(f"  ✅ [已就绪无需重构] {c}")
+            lines.append("\n【本次增量开发任务】：")
+            lines.append("1. 严格在现有工程结构上增量编码，严禁推倒已有目录结构！")
+            if pending:
+                lines.append("2. 重点补齐以下模块与单测：")
+                for p in pending:
+                    lines.append(f"  👉 [待补齐] {p}")
+            lines.append("3. 确保核心单测覆盖率 ≥ 80% 并通过零推理合规审计。\n")
+
+    return "\n".join(lines)
+
+
+async def drain_and_watch(
+    proc: asyncio.subprocess.Process,
+    stdout_lines: List[str],
+    stderr_lines: List[str],
+    workspace_dir: Path,
+    idle_timeout: float,
+    max_lifetime: float,
+) -> None:
+    """
+    Monitor an autonomous Agent CLI subprocess with:
+    1. Continuous stream draining into sinks without pipe buffering deadlocks.
+    2. Idle Heartbeat Watchdog: resets idle countdown on stdout/stderr output or filesystem changes.
+    3. Maximum Lifetime Guard: allows long-running heavy stages (e.g. 2 hours) while preventing zombies.
+    """
+    last_activity = time.monotonic()
+    start_time = time.monotonic()
+
+    def get_fs_state(dir_path: Path) -> Dict[str, float]:
+        state: Dict[str, float] = {}
+        try:
+            for item in dir_path.rglob("*"):
+                if item.is_file() and not item.name.startswith("."):
+                    state[str(item.relative_to(dir_path))] = item.stat().st_mtime
+        except Exception:
+            pass
+        return state
+
+    current_fs = get_fs_state(workspace_dir)
+
+    async def drain_stream(stream: asyncio.StreamReader, sink: List[str]):
+        nonlocal last_activity
+        while True:
+            line = await stream.readline()
+            if not line:
+                break
+            decoded = line.decode("utf-8", errors="replace").rstrip()
+            if decoded:
+                sink.append(decoded)
+                last_activity = time.monotonic()
+
+    drain_tasks = [
+        asyncio.create_task(drain_stream(proc.stdout, stdout_lines)),
+        asyncio.create_task(drain_stream(proc.stderr, stderr_lines)),
+    ]
+
+    try:
+        while drain_tasks:
+            done, pending = await asyncio.wait(drain_tasks, timeout=2.0, return_when=asyncio.ALL_COMPLETED)
+            if done == set(drain_tasks):
+                await proc.wait()
+                break
+
+            # Poll filesystem changes
+            new_fs = get_fs_state(workspace_dir)
+            if new_fs != current_fs:
+                current_fs = new_fs
+                last_activity = time.monotonic()
+
+            now = time.monotonic()
+            if now - last_activity > idle_timeout:
+                for t in drain_tasks:
+                    t.cancel()
+                raise asyncio.TimeoutError("idle_timeout")
+            if now - start_time > max_lifetime:
+                for t in drain_tasks:
+                    t.cancel()
+                raise asyncio.TimeoutError("max_lifetime")
+    except Exception:
+        for t in drain_tasks:
+            if not t.done():
+                t.cancel()
+        raise
 
 
 def deliverable_write_rule(filename: str, has_draft: bool) -> str:
@@ -545,24 +723,15 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                 self._active_processes[task_id] = proc
                 _live_processes[proc.pid] = proc
 
-                async def drain_stream(stream: asyncio.StreamReader, sink: List[str]):
-                    while True:
-                        line = await stream.readline()
-                        if not line:
-                            break
-                        decoded = line.decode("utf-8", errors="replace").rstrip()
-                        if decoded:
-                            sink.append(decoded)
-
                 try:
-                    await asyncio.wait_for(
-                        asyncio.gather(
-                            drain_stream(proc.stdout, stdout_lines),
-                            drain_stream(proc.stderr, stderr_lines)
-                        ),
-                        timeout=self.timeout
+                    await drain_and_watch(
+                        proc=proc,
+                        stdout_lines=stdout_lines,
+                        stderr_lines=stderr_lines,
+                        workspace_dir=workspace_dir,
+                        idle_timeout=float(self.timeout),
+                        max_lifetime=1800.0,
                     )
-                    await proc.wait()
                 except asyncio.TimeoutError:
                     try:
                         proc.kill()
@@ -728,9 +897,9 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                 f"\n【工序 06（设计实现）专项作业红线 —— 交付的是可以直接点开体验的设计稿文件夹，不是文字规范】\n"
                 f"- 1. 工作区必须落盘这套设计交付包（文件名固定）：\n"
                 f"  - `index.html`：设计工作台（入口）。左侧列出全部画板，顶部切换平台与 Default/Loading/Empty/Error 状态，可开关标注层（高亮安全区与热区），点选画板里的任意元素在右侧查看尺寸、字号、圆角、颜色，并展示色板、字阶与图标库。必须内联收录每张画板的路径 `screens/V-xx.html`。\n"
-                f"  - `tokens.json`：设计令牌唯一真理源，必须含 `color`（十六进制）、`typography`、`spacing`、`radius` 四组。\n"
+                f"  - `tokens.json` 与 `manifest.json`：`tokens.json` 为设计令牌唯一真理源（color/typography/spacing/radius）；`manifest.json` 对齐 MeaXure 画板与切图元数据。\n"
                 f"  - `screens/V-xx.html`：工序 05 视图索引里每个视图一张完整高保真视觉稿（真实文案、真实布局、品牌配色，不是线框、不是占位），页面之间可点击跳转（`data-nav-target=\"V-xx\"`），按钮有按下与状态反馈。\n"
-                f"  - `assets/icons/*.svg`：图标资源，合法 SVG。\n"
+                f"  - `slices/*.svg`：统一切图与矢量图标资源库（合法 SVG）。\n"
                 f"  - `{output_filename}`：设计说明，写拍板摘要卡、Design Tokens 摘要、逐视图四态说明。不要在里面自报安全区数值，校验器直接读画板标注。\n"
                 f"- 2. 画板标注约定（校验器逐项读取）：\n"
                 f"  - 设备外框元素带 `data-device`、`data-safe-top`、`data-safe-bottom`。\n"
@@ -739,8 +908,9 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                 f"  - 页面里出现的所有颜色必须来自 `tokens.json`，建议在 `:root` 定义 CSS 变量后统一引用。\n"
                 f"  - 零外部依赖：不得引用 http(s) 脚本、样式、字体或图片，所有资源本地相对路径。\n"
                 f"{platform_rules}"
-                f"- 3. `delivery.manifest.json` 的 `design` 块照实填写：platform、entry（index.html）、tokens_path、screens（view_id、path、platforms）、icons。清单和文件一起改。\n"
-                f"- 4. 【需求合理性反馈】：发现工序 05 PRD 体验割裂、路径过深或与平台规范冲突，严禁私自绕过，向工序 05 提需求变更单 (CR)。\n"
+                f"- 3. 【强制本地自检闭环】：生成画板与 tokens 后，必须调用 MCP 工具 `verify_design_bundle` 进行静态自测，根据报错列表就地修正所有色值漂移、热区过小与安全区违规，自检 100% 通过方可提报。\n"
+                f"- 4. `delivery.manifest.json` 的 `design` 块照实填写：platform、entry（index.html）、tokens_path、screens（view_id、path、platforms）、icons（指向 slices/*.svg）。清单和文件一起改。\n"
+                f"- 5. 【需求合理性反馈】：发现工序 05 PRD 体验割裂、路径过深或与平台规范冲突，严禁私自绕过，向工序 05 提需求变更单 (CR)。\n"
                 f"- 【硬性禁区】：严禁私自增删改业务流程；严禁写生产业务逻辑、网络请求与持久化代码（归属于 eng）；颜色、字阶不得写进工序 05 的 PRD。\n"
             )
         elif mod_code == "07":
@@ -792,6 +962,8 @@ class CliSubprocessAdapter(BaseAgentAdapter):
         if contract_line:
             contract_line = f"4. {contract_line}\n"
 
+        checkpoint_guidance = checkpoint_continuation_guidance(workspace_dir, mod_code)
+
         prompt_for_cli = (
             f"【当前战略工程与单品上下文】\n"
             f"- 所属战略工程：{init_name}\n"
@@ -800,7 +972,8 @@ class CliSubprocessAdapter(BaseAgentAdapter):
             f"- 当前工序环节：{mod_name} (编号: {mod_code})\n"
             f"- 当前工作区已挂载独有 Skill：`{', '.join(arsenal_info['mounted_skills'])}` (位于 `.agents/skills/`)\n"
             f"- 当前工作区已挂载专属 MCP：`{', '.join(arsenal_info['mounted_mcp_servers'])}` (位于 `.agents/mcp_config.json`)\n\n"
-            f"{continuation_preamble(has_stage_draft)}"
+            + (f"{checkpoint_guidance}\n\n" if checkpoint_guidance else "")
+            + f"{continuation_preamble(has_stage_draft)}"
             f"不要阅读本工序目录以外的文件，忽略上级目录的 AGENTS.md。不要先搜索仓库，不要启动与清单无关的技能、MCP 或终端命令。\n\n"
             f"【本次工序任务要求】\n"
             f"{user_instruction}\n"
@@ -838,25 +1011,20 @@ class CliSubprocessAdapter(BaseAgentAdapter):
             self._active_processes[task_id] = proc
             _live_processes[proc.pid] = proc
 
-            async def drain_stream(stream: asyncio.StreamReader, sink: List[str]):
-                while True:
-                    line = await stream.readline()
-                    if not line:
-                        break
-                    decoded = line.decode("utf-8", errors="replace").rstrip()
-                    if decoded:
-                        sink.append(decoded)
+            idle_timeout = float(self.timeout)
+            max_lifetime = 7200.0 if mod_code in ("06", "07", "08") else max(float(self.timeout) * 3, 1800.0)
 
             try:
-                await asyncio.wait_for(
-                    asyncio.gather(
-                        drain_stream(proc.stdout, stdout_lines),
-                        drain_stream(proc.stderr, stderr_lines)
-                    ),
-                    timeout=self.timeout
+                await drain_and_watch(
+                    proc=proc,
+                    stdout_lines=stdout_lines,
+                    stderr_lines=stderr_lines,
+                    workspace_dir=workspace_dir,
+                    idle_timeout=idle_timeout,
+                    max_lifetime=max_lifetime,
                 )
-                await proc.wait()
-            except asyncio.TimeoutError:
+            except asyncio.TimeoutError as te:
+                reason = str(te)
                 try:
                     proc.kill()
                 except Exception:
@@ -885,16 +1053,22 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                     except Exception:
                         pass
 
+                timeout_desc = (
+                    f"Agent CLI (`{self.cli_command}`) 连续 {int(idle_timeout)} 秒无任何前向进展（无控制台输出且工作区无文件变动），判定为进程假死，子进程已安全终止。"
+                    if reason == "idle_timeout"
+                    else f"Agent CLI (`{self.cli_command}`) 任务运行超过最大生存周期 ({int(max_lifetime)}秒)，子进程已安全终止。"
+                )
+
                 yield AgentStreamEvent(
                     event_type=AgentEventType.ERROR,
                     content=(
-                        f"Agent CLI (`{self.cli_command}`) 执行超时 (已耗时 {self.timeout}秒)。交付物未能按时生成，子进程已安全终止。\n\n"
+                        f"{timeout_desc}\n\n"
                         f"【优化排查建议】：\n"
                         f"1. 交付物应按本工序清单一次写入文件；若仍在反复检索，通常是模型在跑多余的工具回合；\n"
-                        f"2. 系统全局超时时限已默认调整为 300 秒（可在右上角设置中灵活配置）；\n"
+                        f"2. 当前空闲心跳阈值为 {int(idle_timeout)} 秒，重工序最长宽容周期为 {int(max_lifetime / 60)} 分钟；\n"
                         f"3. 如需毫秒级即时测算与无缝演示，亦可在右上角设置中切换为「内置模拟器 (Simulator)」模式。"
                     ),
-                    metadata={"command": self.cli_command, "timeout": self.timeout}
+                    metadata={"command": self.cli_command, "idle_timeout": idle_timeout, "max_lifetime": max_lifetime}
                 )
                 return
 

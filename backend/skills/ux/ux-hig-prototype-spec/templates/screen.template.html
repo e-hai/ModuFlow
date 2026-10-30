@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{VIEW_ID}} {{VIEW_TITLE}} · {{PRODUCT_NAME}}</title>
+  <style>
+    /* 引入或内联 device-shell.css */
+    {{DEVICE_SHELL_CSS}}
+  </style>
+</head>
+<body data-view="{{VIEW_ID}}" data-platform="all" data-state="default" data-anno="0">
+
+  <!-- 顶部状态与平台辅助栏 -->
+  <div class="stagebar">
+    <b>{{VIEW_ID}} {{VIEW_TITLE}}</b>
+    <span>预览状态：</span>
+    <button data-force-state="default" class="on">默认</button>
+    <button data-force-state="loading">加载</button>
+    <button data-force-state="empty">空态</button>
+    <button data-force-state="error">错误</button>
+  </div>
+
+  <!-- 主画布舞台 -->
+  <div class="stage">
+
+    <!-- iOS 设备画板 (Apple HIG) -->
+    <section class="device ios" data-device="ios" data-safe-top="74" data-safe-bottom="34">
+      <span class="plat">iOS · HIG</span>
+      
+      <!-- 74pt 灵动岛安全区留白 (硬指标 >= 71pt) -->
+      <div class="safe-top" data-label="安全区 74pt" style="height:74px">
+        <span class="island"></span>
+        <span class="clock">9:41</span>
+      </div>
+
+      <!-- 顶部导航栏 -->
+      <header class="appbar">
+        <button class="icon-btn" data-hit="44x44" data-nav-target="{{BACK_TARGET}}" aria-label="返回">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+        <h1>{{VIEW_TITLE}}</h1>
+        <span class="icon-btn ghosted"></span>
+      </header>
+
+      <!-- 四态业务面板容器 -->
+      <main class="content">
+        <!-- 默认业务态 -->
+        <div class="panel" data-state="default">
+          {{IOS_PANEL_DEFAULT}}
+        </div>
+
+        <!-- 加载中骨架屏态 -->
+        <div class="panel" data-state="loading">
+          {{IOS_PANEL_LOADING}}
+        </div>
+
+        <!-- 数据空态引导 -->
+        <div class="panel" data-state="empty">
+          {{IOS_PANEL_EMPTY}}
+        </div>
+
+        <!-- 错误与异常重试态 -->
+        <div class="panel" data-state="error">
+          {{IOS_PANEL_ERROR}}
+        </div>
+      </main>
+
+      <!-- 底部标签栏 -->
+      <nav class="tabbar">
+        {{IOS_TABBAR}}
+      </nav>
+
+      <!-- 34pt 底部安全区留白 (硬指标 >= 34pt) -->
+      <div class="safe-bottom" data-label="安全区 34pt" style="height:34px"></div>
+      <div class="toast" role="status"></div>
+    </section>
+
+
+    <!-- Android 设备画板 (Google Material 3) -->
+    <section class="device android" data-device="android" data-safe-top="32" data-safe-bottom="0">
+      <span class="plat">Android · Material 3</span>
+      
+      <!-- 32dp 挖孔状态栏避让留白 (硬指标 >= 24dp) -->
+      <div class="safe-top" data-label="安全区 32dp" style="height:32px">
+        <span class="punch"></span>
+        <span class="clock">9:41</span>
+      </div>
+
+      <!-- 顶部导航栏 -->
+      <header class="appbar">
+        <button class="icon-btn" data-hit="48x48" data-nav-target="{{BACK_TARGET}}" aria-label="返回">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+        <h1>{{VIEW_TITLE}}</h1>
+        <span class="icon-btn ghosted"></span>
+      </header>
+
+      <!-- 四态业务面板容器 -->
+      <main class="content">
+        <!-- 默认业务态 -->
+        <div class="panel" data-state="default">
+          {{ANDROID_PANEL_DEFAULT}}
+        </div>
+
+        <!-- 加载中骨架屏态 -->
+        <div class="panel" data-state="loading">
+          {{ANDROID_PANEL_LOADING}}
+        </div>
+
+        <!-- 数据空态引导 -->
+        <div class="panel" data-state="empty">
+          {{ANDROID_PANEL_EMPTY}}
+        </div>
+
+        <!-- 错误与异常重试态 -->
+        <div class="panel" data-state="error">
+          {{ANDROID_PANEL_ERROR}}
+        </div>
+      </main>
+
+      <!-- 底部标签栏 -->
+      <nav class="tabbar">
+        {{ANDROID_TABBAR}}
+      </nav>
+
+      <div class="safe-bottom" data-label="安全区 0dp" style="height:0px"></div>
+      <div class="toast" role="status"></div>
+    </section>
+
+  </div>
+
+  <!-- MeaXure 交互与点选检视核心运行时脚本 (自包含无外链) -->
+  <script>
+    (function(){
+      var b = document.body;
+      var hash = location.hash.replace('#','').split(',');
+      function apply(c){
+        if(c.platform) b.dataset.platform = c.platform;
+        if(c.state) b.dataset.state = c.state;
+        if(typeof c.anno !== 'undefined') b.dataset.anno = c.anno ? '1' : '0';
+        var bar = document.querySelectorAll('.stagebar [data-force-state]');
+        for(var i=0; i<bar.length; i++) {
+          bar[i].classList.toggle('on', bar[i].dataset.forceState === b.dataset.state);
+        }
+      }
+      apply({platform: hash[0]||'all', state: hash[1]||'default', anno: hash[2]==='anno'});
+      window.addEventListener('message', function(e){
+        if(e.data && e.data.type === 'mf-config') apply(e.data);
+      });
+      function cfgHash(){
+        return '#' + (b.dataset.platform||'all') + ',' + (b.dataset.state||'default') + (b.dataset.anno==='1' ? ',anno' : '');
+      }
+      function toast(el, msg){
+        var t = el.closest('.device').querySelector('.toast');
+        if(!t) return;
+        t.textContent = msg;
+        t.classList.add('show');
+        setTimeout(function(){ t.classList.remove('show'); }, 1600);
+      }
+      document.addEventListener('click', function(e){
+        var el = e.target.closest('[data-nav-target],[data-set-state],[data-toast]');
+        var pick = e.target.closest('[data-hit],.card,h1,h3,.thumb') || e.target;
+        if(window.parent !== window && pick.closest('.device')){
+          var cs = getComputedStyle(pick), r = pick.getBoundingClientRect();
+          window.parent.postMessage({
+            type: 'mf-pick',
+            tag: pick.tagName.toLowerCase(),
+            label: (pick.textContent || '').trim().slice(0, 24),
+            w: Math.round(r.width),
+            h: Math.round(r.height),
+            hit: pick.dataset.hit || '',
+            font: cs.fontSize + ' / ' + cs.fontWeight,
+            radius: cs.borderRadius,
+            color: cs.color,
+            bg: cs.backgroundColor
+          }, '*');
+        }
+        if(!el) return;
+        if(el.dataset.toast) toast(el, el.dataset.toast);
+        if(el.dataset.setState){
+          var go = el.dataset.setState;
+          apply({state: 'loading'});
+          setTimeout(function(){ apply({state: go}); }, 600);
+          return;
+        }
+        if(el.dataset.navTarget){
+          var next = el.dataset.navTarget;
+          apply({state: 'loading'});
+          setTimeout(function(){ location.href = next + '.html' + cfgHash(); }, 300);
+        }
+      });
+      document.querySelectorAll('[data-force-state]').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          document.body.dataset.state = btn.dataset.forceState;
+          document.querySelectorAll('[data-force-state]').forEach(function(o){
+            o.classList.toggle('on', o === btn);
+          });
+        });
+      });
+      if(window.parent !== window) {
+        window.parent.postMessage({type: 'mf-nav', view: document.body.dataset.view}, '*');
+      }
+    })();
+  </script>
+</body>
+</html>

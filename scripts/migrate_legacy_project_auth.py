@@ -28,7 +28,8 @@ def generate_default_authorization_dict(
     product_name: str,
     budget_allocated: float = 5000.0,
     platform: str = "ios",
-    client_zero_inference: bool = True
+    client_zero_inference: bool = True,
+    architecture_strategy: str = "kmp_cmp"
 ) -> dict:
     now = datetime.now(timezone.utc)
     today_str = now.strftime("%Y-%m-%d")
@@ -118,7 +119,8 @@ def generate_default_authorization_dict(
         },
         "profile": {
             "platform": platform,
-            "client_zero_inference": client_zero_inference
+            "client_zero_inference": client_zero_inference,
+            "architecture_strategy": architecture_strategy
         }
     }
 

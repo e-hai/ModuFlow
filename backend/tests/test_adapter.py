@@ -505,3 +505,104 @@ async def test_connectivity_check_surfaces_model_quota(monkeypatch):
         await ac.patch("/api/v1/settings/agent", json={"adapter_type": "simulator", "cli_model": ""})
 
 
+def test_checkpoint_continuation_guidance_detects_existing_screens(tmp_path):
+    from backend.app.adapters.cli_adapter import checkpoint_continuation_guidance
+
+    # Empty workspace -> no checkpoint guidance
+    assert checkpoint_continuation_guidance(tmp_path, "06") == ""
+
+    # Workspace with partial assets
+    tokens_file = tmp_path / "tokens.json"
+    tokens_file.write_text('{"color": {"primary": "#000000"}}' * 5, encoding="utf-8")
+
+    screens_dir = tmp_path / "screens"
+    screens_dir.mkdir()
+    (screens_dir / "V-01.html").write_text("<html><body>Zen View 1</body></html>" * 10, encoding="utf-8")
+
+    slices_dir = tmp_path / "slices"
+    slices_dir.mkdir()
+    (slices_dir / "grid.svg").write_text("<svg></svg>", encoding="utf-8")
+
+    guidance = checkpoint_continuation_guidance(tmp_path, "06")
+    assert "现场断点检测与增量续建指示" in guidance
+    assert "tokens.json" in guidance
+    assert "screens/V-01.html" in guidance
+    assert "slices/" in guidance
+    assert "screens/V-02.html" in guidance  # listed in pending
+
+
+@pytest.mark.asyncio
+async def test_drain_and_watch_idle_timeout(tmp_path):
+    import sys
+    import asyncio
+    from backend.app.adapters.cli_adapter import drain_and_watch
+
+    # Start a python process that sleeps for 5 seconds without outputting anything
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable, "-c", "import time; time.sleep(5)",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout_lines = []
+    stderr_lines = []
+
+    try:
+        with pytest.raises(asyncio.TimeoutError) as exc_info:
+            await drain_and_watch(
+                proc=proc,
+                stdout_lines=stdout_lines,
+                stderr_lines=stderr_lines,
+                workspace_dir=tmp_path,
+                idle_timeout=0.3,
+                max_lifetime=10.0,
+            )
+        assert str(exc_info.value) == "idle_timeout"
+    finally:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
+@pytest.mark.asyncio
+async def test_drain_and_watch_file_activity_resets_idle(tmp_path):
+    import sys
+    import asyncio
+    from backend.app.adapters.cli_adapter import drain_and_watch
+
+    # Subprocess runs for 0.8 seconds silently
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable, "-c", "import time; time.sleep(0.8)",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout_lines = []
+    stderr_lines = []
+
+    async def touch_file_at_half_time():
+        await asyncio.sleep(0.3)
+        (tmp_path / "new_file.txt").write_text("hello activity")
+
+    asyncio.create_task(touch_file_at_half_time())
+
+    # idle_timeout is 0.5s. If no file was touched, it would time out at 0.5s.
+    # Because file was touched at 0.3s, idle timer was reset and process finishes cleanly at 0.8s.
+    try:
+        await drain_and_watch(
+            proc=proc,
+            stdout_lines=stdout_lines,
+            stderr_lines=stderr_lines,
+            workspace_dir=tmp_path,
+            idle_timeout=0.5,
+            max_lifetime=10.0,
+        )
+    finally:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
+
+
+

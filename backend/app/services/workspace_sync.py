@@ -17,6 +17,56 @@ from backend.app.models.entities import (
     ExecutiveRisk
 )
 
+import re
+
+STAGE_SLUGS: Dict[str, str] = {
+    "01": "market_research",
+    "02": "business_model",
+    "03": "product_direction",
+    "04": "fake_door",
+    "05": "product_requirement",
+    "06": "design_implementation",
+    "07": "development",
+    "08": "testing_qa",
+    "09": "release_deployment",
+    "10": "growth_marketing",
+    "11": "operations_iteration",
+}
+
+def slugify_ascii(text: str, fallback: str = "item") -> str:
+    """
+    Convert arbitrary text to a clean ASCII-only slug (letters, numbers, underscores, dots, hyphens).
+    Eliminates spaces and non-ASCII characters.
+    """
+    if not text:
+        return fallback
+    s = re.sub(r'[\s/\\:*"<>|]+', '_', text.strip())
+    s = re.sub(r'[^a-zA-Z0-9_.-]', '', s)
+    s = re.sub(r'_+', '_', s).strip('._-')
+    return s.lower() if s else fallback
+
+def get_stage_dir_name(order_index: int, module_code: str, name: str = "") -> str:
+    """
+    Generate clean ASCII directory name for a stage module:
+    e.g. 01_market_research, 07_development
+    Never repeats index and code (avoids '01_01_' or '07_07_').
+    """
+    slug = STAGE_SLUGS.get(module_code)
+    if not slug:
+        slug = slugify_ascii(name or module_code, fallback=f"stage_{module_code}")
+    return f"{order_index:02d}_{slug}"
+
+def get_run_dir_name(run_name: str, run_id: str = "") -> str:
+    """
+    Generate clean ASCII directory name for a workflow run:
+    e.g. 'FocusZen V1.0 首发全流程产研迭代' -> 'run_focuszen_v1.0'
+    """
+    fallback = f"run_{run_id[:8]}" if run_id else "run_iteration"
+    slug = slugify_ascii(run_name, fallback=fallback)
+    if not slug.lower().startswith("run"):
+        slug = f"run_{slug}"
+    return slug
+
 def sanitize_dirname(name: str) -> str:
     """Sanitize names for directory paths."""
     for ch in ['/', '\\', ':', '*', '?', '"', '<', '>', '|']:
@@ -164,13 +214,14 @@ async def sync_strategic_initiative_workspace(db: AsyncSession, initiative_id: s
 """
         for run in prod.workflow_runs:
             status_emoji = "🟢" if run.status == "in_progress" else ("🏁" if run.status == "completed" else "⚪")
-            prod_readme += f"- {status_emoji} [{run.name}](./{sanitize_dirname(run.name)}) (状态: `{run.status}`)\n"
+            run_dirname = get_run_dir_name(run.name, run.id)
+            prod_readme += f"- {status_emoji} [{run.name}](./{run_dirname}) (状态: `{run.status}`)\n"
 
         (prod_dir / "README.md").write_text(prod_readme, encoding="utf-8")
 
         # 各迭代周期目录
         for run in prod.workflow_runs:
-            run_dirname = sanitize_dirname(run.name)
+            run_dirname = get_run_dir_name(run.name, run.id)
             run_dir = prod_dir / run_dirname
             run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -189,7 +240,8 @@ async def sync_strategic_initiative_workspace(db: AsyncSession, initiative_id: s
             for m in run.modules:
                 art_count = len(m.artifacts)
                 latest_ver = f"v{m.artifacts[0].version}" if art_count > 0 else "暂无"
-                run_readme += f"| {m.order_index:02d} | [{m.name}](./{m.order_index:02d}_{m.module_code}_{sanitize_dirname(m.name)}) | `{m.module_code}` | `{m.phase}` | {'已解锁' if m.is_unlocked else '锁定中'} | {latest_ver} |\n"
+                mod_dirname = get_stage_dir_name(m.order_index, m.module_code, m.name)
+                run_readme += f"| {m.order_index:02d} | [{m.name}](./{mod_dirname}) | `{m.module_code}` | `{m.phase}` | {'已解锁' if m.is_unlocked else '锁定中'} | {latest_ver} |\n"
 
             (run_dir / "README.md").write_text(run_readme, encoding="utf-8")
 
@@ -197,7 +249,7 @@ async def sync_strategic_initiative_workspace(db: AsyncSession, initiative_id: s
             from backend.app.services.agent_roles import STAGE_ROLE_CONFIGS
             from backend.app.services.skill_mcp_mounter import mount_role_skills_and_mcp
             for m in run.modules:
-                mod_dirname = f"{m.order_index:02d}_{m.module_code}_{sanitize_dirname(m.name)}"
+                mod_dirname = get_stage_dir_name(m.order_index, m.module_code, m.name)
                 mod_dir = run_dir / mod_dirname
                 mod_dir.mkdir(parents=True, exist_ok=True)
 

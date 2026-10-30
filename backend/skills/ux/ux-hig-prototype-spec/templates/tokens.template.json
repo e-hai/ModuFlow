@@ -1,0 +1,33 @@
+{
+  "color": {
+    "primary": "#0E8A5A",
+    "primary_dark": "#0A6B46",
+    "primary_soft": "#E3F4EC",
+    "background": "#F8FAFC",
+    "surface": "#FFFFFF",
+    "text": "#0F172A",
+    "text_muted": "#64748B",
+    "border": "#E2E8F0",
+    "danger": "#DC2626",
+    "danger_soft": "#FEE2E2",
+    "stage": "#1E293B"
+  },
+  "typography": {
+    "title": { "size": 24, "weight": 700, "line": 30 },
+    "headline": { "size": 17, "weight": 600, "line": 24 },
+    "body": { "size": 15, "weight": 400, "line": 22 },
+    "caption": { "size": 12, "weight": 400, "line": 16 }
+  },
+  "spacing": {
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24
+  },
+  "radius": {
+    "card": 12,
+    "button": 12,
+    "chip": 999
+  }
+}

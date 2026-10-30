@@ -1,0 +1,42 @@
+{
+  "contract_version": "1.0",
+  "strategy": "kmp_cmp",
+  "platform": "cross_platform",
+  "client_zero_inference": true,
+  "compatibility": {
+    "ios": {
+      "min_deployment_target": "16.0",
+      "target_sdk": "18.0",
+      "swift_version": "5.10",
+      "xcode_min": "15.0"
+    },
+    "android": {
+      "min_sdk": 24,
+      "target_sdk": 34,
+      "compile_sdk": 34,
+      "jdk_version": "17"
+    },
+    "toolchain": {
+      "kotlin": "2.0.20",
+      "gradle": "8.9",
+      "agp": "8.5.2",
+      "compose_multiplatform": "1.7.0"
+    }
+  },
+  "shared_core": {
+    "language": "Kotlin 2.0",
+    "storage": "Room KMP / SQLite (Offline First, 0 Cloud)",
+    "state_management": "StateFlow / MVVM",
+    "test_runner": "kotlin.test (JUnit 5 + MockK)"
+  },
+  "ui_framework": "Compose Multiplatform (Material 3 + Adaptive Navigation)",
+  "ios_bridge": "ComposeUIViewController / SwiftUI Bridge",
+  "commands": {
+    "build": "./gradlew assembleDebug",
+    "test": "./gradlew check"
+  },
+  "constraints": {
+    "zero_client_inference": true,
+    "min_test_coverage": 80
+  }
+}
