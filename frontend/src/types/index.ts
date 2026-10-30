@@ -8,9 +8,32 @@ export interface StrategicInitiative {
   strategic_intent?: string;
   target_market?: string;
   business_model_hypothesis?: string;
+  initiative_rationale?: any;
   created_at: string;
   updated_at: string;
   product_count?: number;
+}
+
+export interface IntakeProposal {
+  name: string;
+  description?: string;
+  strategic_intent?: string;
+  target_market?: string;
+  business_model_hypothesis?: string;
+  budget: number;
+  suggested_budget?: number;
+  hard_stop_loss?: number;
+  currency?: string;
+  signals?: Array<{ type: string; claim: string; status?: string; source?: string }>;
+  unverified_assumptions?: Array<{ claim: string; risk_level?: string; validation_stage?: string }>;
+  kill_criteria?: string[];
+  stage_allocations?: Record<string, number>;
+}
+
+export interface IntakeChatResponse {
+  reply: string;
+  proposal: IntakeProposal;
+  quick_prompts: string[];
 }
 
 export interface Product {

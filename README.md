@@ -10,7 +10,7 @@
 [![React](https://img.shields.io/badge/React-18.3-61DAFB.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6.svg)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-5.4-646CFF.svg)](https://vitejs.dev/)
-[![Tests](https://img.shields.io/badge/Tests-225%20Passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-228%20Passed-brightgreen.svg)]()
 
 </div>
 
@@ -173,7 +173,7 @@ ModuFlow 提供专为创始人与业务负责人打造的 **6 大核心板块战
 全量测试套件覆盖三层架构、10 大角色、关口矩阵、只读防护、Profile 校验与代码浏览器：
 ```bash
 PYTHONPATH=. backend/.venv/bin/pytest backend/tests/ -v
-# 输出：225 passed in ~23s
+# 输出：228 passed in ~30s
 ```
 
 ### 2. 运行出海标杆项目端到端实战演练 (FocusZen FZ01)
@@ -195,11 +195,11 @@ ModuFlow/
 │   │   ├── models/                # SQLAlchemy ORM 持久化实体
 │   │   ├── schemas/               # Pydantic v2 统一契约模式
 │   │   └── services/              # 10 大角色引擎、关口守护、代码浏览器服务与安全拦截器
-│   └── tests/                     # 225 项高覆盖率单元与集成测试
+│   └── tests/                     # 228 项高覆盖率单元与集成测试
 │
 ├── frontend/                      # React 18 + Vite + Tailwind CSS 前端
 │   ├── src/
-│   │   ├── components/            # 战略驾驶舱 Tab、关口确认弹窗、CodeExplorer 代码浏览器
+│   │   ├── components/            # 战略驾驶舱 Tab、LeadIntakeModal 智能立项前置模态框、关口确认弹窗、CodeExplorer
 │   │   ├── pages/                 # 战略看板、11 道工序工作台、协同研讨室
 │   │   ├── services/              # API 统一封装客户端 (支持 IDE 原生调起)
 │   │   └── types/                 # TypeScript 统一类型契约

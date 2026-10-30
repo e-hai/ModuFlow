@@ -713,3 +713,8 @@ async def get_decision_inbox(db: AsyncSession, initiative_id: str) -> Dict[str, 
                 "detail": summary or issue.title,
             })
     return {"initiative_id": initiative_id, "items": items}
+
+
+# Re-export Lead intake dialogue
+from backend.app.services.lead_intake import intake_lead_dialogue
+

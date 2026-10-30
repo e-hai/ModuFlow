@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { SettingsModal } from './components/SettingsModal';
+import { LeadIntakeModal } from './components/LeadIntakeModal';
 import { Dashboard } from './pages/Dashboard';
 import { WorkflowView } from './pages/WorkflowView';
 import { ModuleSpace } from './pages/ModuleSpace';
@@ -30,13 +31,6 @@ export const App: React.FC = () => {
 
   // Modals
   const [showNewInitModal, setShowNewInitModal] = useState(false);
-  const [initName, setInitName] = useState('');
-  const [initDesc, setInitDesc] = useState('');
-  const [initOwner, setInitOwner] = useState('负责人');
-  const [initBudget, setInitBudget] = useState(0);
-  const [initStrategicIntent, setInitStrategicIntent] = useState('');
-  const [initTargetMarket, setInitTargetMarket] = useState('');
-  const [initBusinessHypothesis, setInitBusinessHypothesis] = useState('');
 
   const [showNewProdModal, setShowNewProdModal] = useState(false);
   const [prodName, setProdName] = useState('');
@@ -154,34 +148,6 @@ export const App: React.FC = () => {
     setActiveModule(mod);
     setRunModules(allModules);
     setCurrentView('module');
-  };
-
-  // Create Initiative submit
-  const handleCreateInitiative = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!initName.trim()) return;
-    try {
-      const created = await api.createInitiative({
-        name: initName.trim(),
-        description: initDesc.trim() || undefined,
-        owner: initOwner.trim() || '负责人',
-        budget: Number(initBudget) || 0,
-        status: 'active',
-        strategic_intent: initStrategicIntent.trim() || undefined,
-        target_market: initTargetMarket.trim() || undefined,
-        business_model_hypothesis: initBusinessHypothesis.trim() || undefined,
-      });
-      setShowNewInitModal(false);
-      setInitName('');
-      setInitDesc('');
-      setInitStrategicIntent('');
-      setInitTargetMarket('');
-      setInitBusinessHypothesis('');
-      await loadInitiativesAndProducts(created.id);
-      setCockpitRefreshTrigger(k => k + 1);
-    } catch (err: any) {
-      alert(`创建战略工程失败: ${err.message}`);
-    }
   };
 
   // Create Product submit
@@ -347,121 +313,15 @@ export const App: React.FC = () => {
         </main>
       </div>
 
-      {/* 弹窗 1: 新建战略工程 */}
-      {showNewInitModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 w-full max-w-lg rounded-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
-              <h3 className="font-semibold text-slate-900 text-base flex items-center gap-2">
-                <Compass className="w-5 h-5 text-emerald-600" />
-                新建顶层战略工程 (Strategic Initiative)
-              </h3>
-              <button onClick={() => setShowNewInitModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <form onSubmit={handleCreateInitiative} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">战略工程名称 *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="例：北美跨境电商独立站矩阵战略"
-                  value={initName}
-                  onChange={e => setInitName(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">战略目标描述</label>
-                <textarea
-                  rows={2}
-                  placeholder="例：2026 年度拓展北美服装及家居品类出海，建立品牌站点与配套 AI 客服系统。"
-                  value={initDesc}
-                  onChange={e => setInitDesc(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">责任人</label>
-                  <input
-                    type="text"
-                    value={initOwner}
-                    onChange={e => setInitOwner(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">战略预算 (元)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={initBudget}
-                    onChange={e => setInitBudget(Number(e.target.value))}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              {/* 战略底稿三要素 (可选) */}
-              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block font-mono">
-                  战略底稿设定 (可选，后续可在驾驶舱随时补充)
-                </span>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1">战略定性 (Strategic Intent)</label>
-                  <input
-                    type="text"
-                    placeholder="例：以独立站高频单品切入，构建私域用户池与变现闭环"
-                    value={initStrategicIntent}
-                    onChange={e => setInitStrategicIntent(e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1">目标市场 (Target Market)</label>
-                  <input
-                    type="text"
-                    placeholder="例：北美千禧一代与 Z 世代高性价比快消及生活方式群体"
-                    value={initTargetMarket}
-                    onChange={e => setInitTargetMarket(e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1">商业模式假设 (Business Model Hypothesis)</label>
-                  <input
-                    type="text"
-                    placeholder="例：首单 CAC ≤ $20，复购率 ≥ 30%，综合 LTV/CAC ≥ 3.0x"
-                    value={initBusinessHypothesis}
-                    onChange={e => setInitBusinessHypothesis(e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setShowNewInitModal(false)}
-                  className="px-3 py-1.5 rounded-lg text-xs text-slate-600 hover:bg-slate-100 cursor-pointer"
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
-                >
-                  确认创建战略工程
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* 弹窗 1: 新建战略工程 (Lead Agent 智能引导 / 立项前置模式) */}
+      <LeadIntakeModal
+        isOpen={showNewInitModal}
+        onClose={() => setShowNewInitModal(false)}
+        onCreated={async (created) => {
+          await loadInitiativesAndProducts(created.id);
+          setCockpitRefreshTrigger(k => k + 1);
+        }}
+      />
 
       {/* 弹窗 2: 新增产品 */}
       {showNewProdModal && (

@@ -1,5 +1,7 @@
 import {
   StrategicInitiative,
+  IntakeProposal,
+  IntakeChatResponse,
   Product,
   WorkflowTemplate,
   WorkflowRun,
@@ -73,6 +75,11 @@ export const api = {
     fetchJSON<StrategicInitiative>(`/initiatives/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteInitiative: (id: string) =>
     fetchJSON<{ ok: boolean; message: string }>(`/initiatives/${id}`, { method: 'DELETE' }),
+  leadIntakeChat: (messages: Array<{ role: string; content: string }>, currentDraft?: any) =>
+    fetchJSON<IntakeChatResponse>('/initiatives/intake/chat', {
+      method: 'POST',
+      body: JSON.stringify({ messages, current_draft: currentDraft }),
+    }),
 
   // Products
   getProducts: (initiativeId?: string) =>

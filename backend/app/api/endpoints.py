@@ -29,6 +29,7 @@ from backend.app.models.entities import (
 )
 from backend.app.schemas.all_schemas import (
     StrategicInitiativeOut, StrategicInitiativeCreate, StrategicInitiativeUpdate,
+    IntakeChatRequest, IntakeChatResponse,
     ProductOut, ProductCreate, ProductUpdate,
     WorkflowTemplateOut,
     WorkflowRunOut, WorkflowRunCreate, WorkflowRunUpdate,
@@ -87,6 +88,20 @@ async def _schedule_orchestration(
     return await job_queue.enqueue(db, task, *args, run_id=run_id, requested_by=requested_by)
 
 # --- Strategic Initiatives ---
+@api_router.post("/initiatives/intake/chat", response_model=IntakeChatResponse)
+async def lead_intake_chat(data: IntakeChatRequest):
+    """
+    Lead Agent Intake Mode:
+    Interviews the CEO, challenges ungrounded assumptions, identifies demand/competitor signals,
+    and returns a structured proposal draft with authorization recommendations.
+    """
+    from backend.app.services.lead_intake import intake_lead_dialogue
+    result = await intake_lead_dialogue(
+        messages=[{"role": m.role, "content": m.content} for m in data.messages],
+        current_draft=data.current_draft
+    )
+    return IntakeChatResponse(**result)
+
 @api_router.get("/initiatives", response_model=List[StrategicInitiativeOut])
 async def list_initiatives(db: AsyncSession = Depends(get_db)):
     stmt = select(StrategicInitiative).order_by(StrategicInitiative.created_at.desc())
@@ -116,7 +131,8 @@ async def create_initiative(data: StrategicInitiativeCreate, db: AsyncSession = 
         strategic_intent=data.strategic_intent,
         target_market=data.target_market,
         business_model_hypothesis=data.business_model_hypothesis,
-        budget_total=data.budget
+        budget_total=data.budget,
+        initiative_rationale=data.initiative_rationale or {}
     )
     if data.id:
         init.id = data.id
@@ -158,6 +174,13 @@ async def update_initiative(
     if data.status is not None:
         init.status = data.status
     if data.strategic_intent is not None:
+        init.strategic_intent = data.strategic_intent
+    if data.target_market is not None:
+        init.target_market = data.target_market
+    if data.business_model_hypothesis is not None:
+        init.business_model_hypothesis = data.business_model_hypothesis
+    if data.initiative_rationale is not None:
+        init.initiative_rationale = data.initiative_rationale
         init.strategic_intent = data.strategic_intent
     if data.target_market is not None:
         init.target_market = data.target_market

@@ -43,6 +43,7 @@ class StrategicInitiative(Base):
     # 结构化多周期推广与运营快照数据
     marketing_summary = Column(JSON, nullable=False, default=dict)
     operations_summary = Column(JSON, nullable=False, default=dict)
+    initiative_rationale = Column(JSON, nullable=True, default=dict)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -12,6 +12,7 @@ class StrategicInitiativeBase(BaseModel):
     strategic_intent: Optional[str] = None
     target_market: Optional[str] = None
     business_model_hypothesis: Optional[str] = None
+    initiative_rationale: Optional[Dict[str, Any]] = None
 
 class StrategicInitiativeCreate(StrategicInitiativeBase):
     id: Optional[str] = None
@@ -25,6 +26,7 @@ class StrategicInitiativeUpdate(BaseModel):
     strategic_intent: Optional[str] = None
     target_market: Optional[str] = None
     business_model_hypothesis: Optional[str] = None
+    initiative_rationale: Optional[Dict[str, Any]] = None
 
 class StrategicInitiativeOut(StrategicInitiativeBase):
     id: str
@@ -33,6 +35,20 @@ class StrategicInitiativeOut(StrategicInitiativeBase):
     product_count: Optional[int] = 0
 
     model_config = ConfigDict(from_attributes=True)
+
+# --- Lead Intake Dialogue Schemas ---
+class IntakeChatMessage(BaseModel):
+    role: str  # "user" | "assistant" | "system"
+    content: str
+
+class IntakeChatRequest(BaseModel):
+    messages: List[IntakeChatMessage]
+    current_draft: Optional[Dict[str, Any]] = None
+
+class IntakeChatResponse(BaseModel):
+    reply: str
+    proposal: Dict[str, Any]
+    quick_prompts: List[str]
 
 # --- Product ---
 class ProductBase(BaseModel):

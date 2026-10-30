@@ -677,6 +677,12 @@ async def migrate_db_for_roles(db: AsyncSession):
         if setting_cols and "cli_model" not in [col[1] for col in setting_cols]:
             await db.execute(text("ALTER TABLE agent_settings ADD COLUMN cli_model VARCHAR(120) DEFAULT NULL"))
 
+        # StrategicInitiative initiative_rationale column
+        init_cols = (await db.execute(text("PRAGMA table_info(strategic_initiatives)"))).fetchall()
+        existing_init_col_names = [col[1] for col in init_cols]
+        if "initiative_rationale" not in existing_init_col_names:
+            await db.execute(text("ALTER TABLE strategic_initiatives ADD COLUMN initiative_rationale JSON DEFAULT '{}'"))
+
         # 7. Create lead_shadow_decisions table if not exists
         await db.execute(text("""
             CREATE TABLE IF NOT EXISTS lead_shadow_decisions (
