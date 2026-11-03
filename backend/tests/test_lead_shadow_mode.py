@@ -99,7 +99,7 @@ async def test_shadow_mode_active_lead_does_not_approve_gate():
 
         run = await create_workflow_run_from_template(db, prod.id, "fast-iteration", f"Run-{uid}")
         m_res = await db.execute(
-            select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "05")
+            select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "04")
         )
         m05 = m_res.scalar_one()
 
@@ -149,7 +149,7 @@ async def test_lead_uses_structured_evidence_instead_of_risk_wording():
         ensure_test_product_authorization(init.id, prod.code)
         run = await create_workflow_run_from_template(db, prod.id, "fast-iteration", f"Run-{uid}")
         m05 = (await db.execute(select(ModuleInstance).where(
-            ModuleInstance.run_id == run.id, ModuleInstance.module_code == "05"
+            ModuleInstance.run_id == run.id, ModuleInstance.module_code == "04"
         ))).scalar_one()
         gate = await create_or_update_gate_application(
             db=db,
@@ -196,7 +196,7 @@ async def test_shadow_mode_consistency_tracking():
 
         run = await create_workflow_run_from_template(db, prod.id, "fast-iteration", f"Run-{uid}")
         m_res = await db.execute(
-            select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "05")
+            select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "04")
         )
         m05 = m_res.scalar_one()
 
@@ -258,11 +258,11 @@ async def test_shadow_mode_divergence_tracking():
 
         run = await create_workflow_run_from_template(db, prod.id, "fast-iteration", f"Run-{uid}")
         m05_res = await db.execute(
-            select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "05")
+            select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "04")
         )
         m05 = m05_res.scalar_one()
         m06_res = await db.execute(
-            select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "06")
+            select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "05")
         )
         m06 = m06_res.scalar_one()
 

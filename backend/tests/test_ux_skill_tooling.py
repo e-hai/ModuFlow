@@ -71,7 +71,7 @@ def test_check_design_bundle_cli_pass(tmp_path):
         encoding="utf-8"
     )
 
-    # 3. screens/V-01.html with 4 states and safe areas
+    # 3. screens/home.html with 4 states and safe areas
     screen_html = """<!DOCTYPE html>
 <html>
 <head>
@@ -80,7 +80,7 @@ def test_check_design_bundle_cli_pass(tmp_path):
 <body>
   <div id="phone-frame" data-device="ios" data-safe-top="74" data-safe-bottom="34">
     <div class="state-panel is-active" data-state="default">
-      <button data-hit="44x44" data-nav-target="V-01">Action</button>
+      <button data-hit="44x44" data-nav-target="home">Action</button>
     </div>
     <div class="state-panel" data-state="loading"><div>Loading...</div></div>
     <div class="state-panel" data-state="empty"><div>Empty</div></div>
@@ -88,11 +88,11 @@ def test_check_design_bundle_cli_pass(tmp_path):
   </div>
 </body>
 </html>"""
-    (ws / "screens" / "V-01.html").write_text(screen_html, encoding="utf-8")
+    (ws / "screens" / "home.html").write_text(screen_html, encoding="utf-8")
 
     # 4. manifest.json
     (ws / "manifest.json").write_text(json.dumps({
-        "screens": [{"id": "V-01", "name": "Home", "file": "screens/V-01.html"}],
+        "screens": [{"id": "home", "name": "首页", "file": "screens/home.html"}],
         "slices": [{"name": "icon_check", "file": "slices/icon_check.svg"}]
     }), encoding="utf-8")
 
@@ -136,10 +136,10 @@ def test_check_design_bundle_cli_fail_on_missing_states_and_cdn(tmp_path):
   <div data-state="default">Only Default State</div>
 </body>
 </html>"""
-    (ws / "screens" / "V-01.html").write_text(bad_screen, encoding="utf-8")
+    (ws / "screens" / "home.html").write_text(bad_screen, encoding="utf-8")
 
     (ws / "manifest.json").write_text(json.dumps({
-        "screens": [{"id": "V-01", "file": "screens/V-01.html"}]
+        "screens": [{"id": "home", "file": "screens/home.html"}]
     }), encoding="utf-8")
     (ws / "index.html").write_text("<html></html>", encoding="utf-8")
 

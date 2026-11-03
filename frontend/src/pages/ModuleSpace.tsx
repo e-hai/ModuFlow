@@ -101,7 +101,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
   const [moduleGateApp, setModuleGateApp] = useState<GateApplication | null>(null);
   const [prototypeViewport, setPrototypeViewport] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [artifactViewMode, setArtifactViewMode] = useState<'preview' | 'content' | 'codebase'>(
-    module.module_code === '07' ? 'codebase' : 'preview'
+    module.module_code === '06' ? 'codebase' : 'preview'
   );
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadSummary, setUploadSummary] = useState('');
@@ -176,7 +176,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
 
   useEffect(() => {
     setMessageType(module.module_code === '01' ? 'question' : 'instruction');
-    setArtifactViewMode(module.module_code === '07' ? 'codebase' : 'preview');
+    setArtifactViewMode(module.module_code === '06' ? 'codebase' : 'preview');
     loadSessionAndArtifacts();
     api.getAgentSettings().then(s => {
       if (s?.cli_command) setAgentCommand(s.cli_command);
@@ -1028,8 +1028,6 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                     : moduleState.module_code === '03'
                     ? '生成方向与假设清单'
                     : moduleState.module_code === '04'
-                    ? '生成假门网页与方案'
-                    : moduleState.module_code === '05'
                     ? '确认立项并生成需求规范'
                     : '生成/重写右侧成果'}
                 </button>
@@ -1125,7 +1123,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                     type="button"
                     onClick={() => {
                       setMessageType('instruction');
-                      setInputText('按精益一页纸标准生成《产品方向决策与精益验证基线决策书》：明确核心UVP、MoSCoW减法边界，并提炼移交工序04验证的4个生死假设(H1~H4)，严禁提前编写代码级Schema与详细PRD。');
+                      setInputText('按精益一页纸标准生成方向卡：明确核心UVP、MoSCoW减法边界，并写出H1~H4。每条假设注明上线后在工序 10用留存或付费验证。严禁提前编写代码级Schema与详细PRD。');
                     }}
                     className="px-2 py-0.5 rounded bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium transition cursor-pointer"
                   >
@@ -1136,42 +1134,14 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
             )}
 
             {moduleState.module_code === '04' && (
-              <div className="flex flex-wrap items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-700">
-                <span>真原型实测与立项门禁：生成「移动端 H5 假门原型 index.html + 3条实测脚本 + Go/Pivot/Kill 门禁」。</span>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMessageType('question');
-                      setInputText('如果不花钱投广告，怎么在 Reddit / TikTok 用零成本自然流在 3 天内测出真实用户意愿与放行标准？');
-                    }}
-                    className="px-2 py-0.5 rounded bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition cursor-pointer"
-                  >
-                    探讨零成本测法
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMessageType('instruction');
-                      setInputText('围绕工序03移交的H1~H4生死假设，在工作区直接生成可交互的移动端H5假门着陆页原型(index.html)，输出精炼的3条实测脚本与获客红线，并在文末设立客观严密的 Go/Pivot/Kill 立项决策门禁。');
-                    }}
-                    className="px-2 py-0.5 rounded bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium transition cursor-pointer"
-                  >
-                    生成假门原型+立项门禁
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {moduleState.module_code === '05' && (
               <div className="flex flex-wrap items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-50/70 border border-indigo-200 text-[11px] text-indigo-950">
-                <span>产品需求定义：承接工序04立项决议输出工程级施工契约，或承接工序11输出版本迭代 PRD，并响应下游 CR 演进。</span>
+                <span>产品需求定义：承接工序03已签字的方向写需求，或承接工序 10输出版本迭代 PRD，并响应下游 CR 演进。</span>
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
                     onClick={() => {
                       setMessageType('instruction');
-                      setInputText('承接工序 04 市场验证与立项决议，输出全量 7 大章节工程级 PRD 施工契约（包含：①版本定位与MVP范围封版；②全局信息架构与Mermaid状态机；③逐模块M1~M6功能规格与交互边界；④完整数据字典与接口契约；⑤计费与权限状态机；⑥全链路数据埋点字典；⑦非功能性需求与全量Gherkin验收标准），供设计与研发直接施工。');
+                      setInputText('承接工序 03 已签字的方向，输出全量 7 大章节纯业务 PRD（包含：①版本定位与MVP范围封版；②全局信息架构与Mermaid状态机；③逐模块M1~M6功能规格与交互边界；④业务数据字典；⑤计费与权限规则；⑥埋点字典；⑦Gherkin验收标准），供设计与研发直接施工。');
                     }}
                     className="px-2 py-0.5 rounded bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 font-medium transition cursor-pointer"
                   >
@@ -1181,7 +1151,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                     type="button"
                     onClick={() => {
                       setMessageType('instruction');
-                      setInputText('承接工序 11 运营数据复盘建议书与 Backlog 需求池，输出版本演进目标、[新增]/[修改]/[废弃] 变更点对照表及增量 PRD 规格说明。');
+                      setInputText('承接工序 10 运营数据复盘建议书与 Backlog 需求池，输出版本演进目标、[新增]/[修改]/[废弃] 变更点对照表及增量 PRD 规格说明。');
                     }}
                     className="px-2 py-0.5 rounded bg-white hover:bg-purple-50 text-purple-700 border border-purple-200 font-medium transition cursor-pointer"
                   >
@@ -1234,11 +1204,9 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                     ? moduleState.module_code === '01'
                       ? '输入报告生成要求（或点击上方【填入标准报告生成指令】），产出右侧正式报告...'
                       : moduleState.module_code === '03'
-                      ? '输入方向要求（如：明确核心卖点、砍除伪需求，提炼移交04的4个生死假设）...'
+                      ? '输入方向要求（如：明确核心卖点、砍除伪需求，写出上线后用留存或付费验证的假设）...'
                       : moduleState.module_code === '04'
-                      ? '输入验证要求（如：生成可交互 H5 假门落地页 index.html 与 3 条测试脚本）...'
-                      : moduleState.module_code === '05'
-                      ? '请粘贴工序 04 的真实外测数据（如 CTR、转化率、用户反馈），或点击上方【填入实测数据模板】...'
+                      ? '按工序 03 已签字的方向写需求，或点击上方填入规格模板...'
                       : '输入任务指令，让 AI 智能体在右侧生成正式成果...'
                     : '输入对右侧现有报告的具体修改意见（如：补充日本市场的定价策略）...'
                 }
@@ -1407,7 +1375,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
           </div>
 
           {/* 若为 Stage 07 开发实现工序，展示 [💻 代码工程浏览器] 与 [📋 架构规范文档] 切换条 */}
-          {moduleState.module_code === '07' && (
+          {moduleState.module_code === '06' && (
             <div className="px-4 py-2 border-b border-slate-200 bg-slate-100/70 flex items-center justify-between text-xs">
               <div className="flex items-center gap-1 bg-slate-200/80 p-0.5 rounded-lg">
                 <button
@@ -1519,7 +1487,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
 
           {/* 产物内容实时渲染 */}
           <div className="flex-1 overflow-y-auto bg-white flex flex-col">
-            {moduleState.module_code === '07' && artifactViewMode === 'codebase' ? (
+            {moduleState.module_code === '06' && artifactViewMode === 'codebase' ? (
               <CodeExplorer
                 moduleId={moduleState.id}
                 moduleName={moduleState.name}
@@ -1689,10 +1657,10 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
                   </div>
                 </div>
               )
-            ) : moduleState.module_code === '07' ? (
+            ) : moduleState.module_code === '06' ? (
               <div className="text-center py-24 text-slate-400 text-xs flex-1 flex flex-col items-center justify-center">
                 <FileText className="w-10 h-10 text-slate-300 mb-2" />
-                <span className="font-semibold text-slate-700 mb-1">《交付物_07_开发实现.md》生成中</span>
+                <span className="font-semibold text-slate-700 mb-1">《交付物_06_开发实现.md》生成中</span>
                 研发 Agent 将在完成代码架构后输出详细的架构规范与测试报告。<br />您可点击上方【代码工程浏览器】实时查看代码树与源码。
               </div>
             ) : (
@@ -1925,7 +1893,7 @@ export const ModuleSpace: React.FC<ModuleSpaceProps> = ({
 
               <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-slate-700 text-xs">
                 <p>
-                  上游工序负责人已完成新版本交付并经统一审批通过。若业务或产研团队已查阅最新上游成果，请点击下方【确认已完成跟进与对齐】，工序状态将恢复为最新对齐。
+                  上游工序负责人已完成新版本交付并经统一审批通过。若业务或产品团队已查阅最新上游成果，请点击下方【确认已完成跟进与对齐】，工序状态将恢复为最新对齐。
                 </p>
               </div>
             </div>

@@ -100,6 +100,26 @@ async def _artifact_count(db, module_id: str) -> int:
 
 
 @pytest.mark.asyncio
+async def test_stage01_dispatch_looks_up_before_the_agent(monkeypatch):
+    settings.AGENT_ADAPTER_TYPE = "cli"
+    seen = []
+
+    def fake(workspace, question, **_kwargs):
+        seen.append((str(workspace), question))
+        return {"index": []}
+
+    monkeypatch.setattr("backend.app.services.reliable_sources.prepare_stage_sources", fake)
+    _use_adapter(monkeypatch, {"01": _SOM_DOC, "02": _HEALTHY_UE})
+    async with AsyncSessionLocal() as db:
+        _prod, run = await _make_run(db, "lookup", shadow_mode=False)
+        result = await orchestrator.advance_run(db, run.id)
+    assert result["dispatched"][:1] == ["01"]
+    assert seen
+    assert "market_research" in seen[0][0]
+    assert "编排产品" in seen[0][1]
+
+
+@pytest.mark.asyncio
 async def test_green_stage_auto_finalizes_and_dispatches_downstream(monkeypatch):
     adapter = _use_adapter(monkeypatch, {"01": _SOM_DOC, "02": _HEALTHY_UE})
     async with AsyncSessionLocal() as db:
@@ -306,7 +326,7 @@ async def test_simulator_runs_full_launch_with_only_required_human_steps(platfor
             ModuleInstance.run_id == run.id
         ).execution_options(populate_existing=True))).scalars().all()
         assert all(m.phase == "baselined" for m in modules)
-        assert signed == ["02", "03", "04", "09", "10"]
+        assert signed == ["02", "03", "08", "09"]
         assert confirmed == []
 
         gates = {
@@ -314,12 +334,12 @@ async def test_simulator_runs_full_launch_with_only_required_human_steps(platfor
                 GateApplication.run_id == run.id
             ))).scalars().all()
         }
-        assert gates["08"].reviewer_role == "qa"
-        assert gates["05"].reviewer_role == "lead"
-        for code in ("03", "05", "09"):
+        assert gates["07"].reviewer_role == "qa"
+        assert gates["04"].reviewer_role == "lead"
+        for code in ("03", "04", "08"):
             assert any(e.get("checker") == "compliance_engine" and e.get("status") == "passed"
                        for e in gates[code].evidence), code
-        for code in ("04", "05", "06", "07", "09", "10", "11"):
+        for code in ("04", "05", "06", "08", "09", "10"):
             review = next(e for e in gates[code].evidence if e.get("checker") == "collaboration_review")
             assert review["results"] and all(r["verdict"] == "approve" for r in review["results"]), code
 

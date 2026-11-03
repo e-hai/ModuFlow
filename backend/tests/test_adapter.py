@@ -12,6 +12,7 @@ from backend.tests.conftest import (
     TestingSessionLocal as AsyncSessionLocal,
     ensure_test_product_authorization
 )
+from backend.app.core.config import settings
 from backend.app.core.database import Base
 from backend.app.models.entities import (
     StrategicInitiative,
@@ -92,6 +93,99 @@ async def test_context_assembler():
         assert ws_path.exists()
         assert meta["module_code"] == first_mod.module_code
 
+
+@pytest.mark.asyncio
+async def test_fast_iteration_stage04_reads_previous_prd():
+    async with AsyncSessionLocal() as db:
+        first = (await db.execute(
+            select(WorkflowRun).where(WorkflowRun.product_id == "test-prod")
+        )).scalar_one()
+        stage04 = (await db.execute(
+            select(ModuleInstance).where(
+                ModuleInstance.run_id == first.id,
+                ModuleInstance.module_code == "04",
+            )
+        )).scalar_one()
+        prose = (
+            "上一轮只此一句\n"
+            "| 上线版本 | 稿次 | 来源 | 变更 |\n"
+            "| --- | --- | --- | --- |\n"
+            "| 1.0.0 | r4 | 工序 05 变更单 | 改了 home |\n"
+        )
+        art = Artifact(
+            module_id=stage04.id,
+            title="需求",
+            version=4,
+            content=prose,
+            content_hash="prev",
+            is_baseline=True,
+        )
+        db.add(art)
+        await db.flush()
+        stage04.baseline_artifact_id = art.id
+        stage04.phase = "baselined"
+        db.add(stage04)
+        await db.commit()
+
+        nxt = await create_workflow_run_from_template(db, "test-prod", "fast-iteration", "v1.1")
+        mod = (await db.execute(
+            select(ModuleInstance).where(
+                ModuleInstance.run_id == nxt.id,
+                ModuleInstance.module_code == "04",
+            )
+        )).scalar_one()
+        context, _ws, _meta = await assemble_module_context(db, mod.id, "写需求")
+        assert "承接 1.0.0 需求 r4" in context
+        assert "上一轮只此一句" in context
+        assert "从 r1 重新计" in context
+
+
+@pytest.mark.asyncio
+async def test_fast_iteration_stage05_reads_previous_tokens():
+    async with AsyncSessionLocal() as db:
+        first = (await db.execute(
+            select(WorkflowRun).where(WorkflowRun.product_id == "test-prod")
+        )).scalar_one()
+        stage05 = (await db.execute(
+            select(ModuleInstance).where(
+                ModuleInstance.run_id == first.id,
+                ModuleInstance.module_code == "05",
+            )
+        )).scalar_one()
+        rel = "test_prev_tokens/05_design"
+        directory = settings.WORKSPACE_DIR / rel
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "tokens.json").write_text(
+            '{"color":{"primary":"#123456"}}', encoding="utf-8",
+        )
+        art = Artifact(
+            module_id=stage05.id,
+            title="设计",
+            version=1,
+            content="上一轮设计说明",
+            content_hash="prev-design",
+            is_baseline=True,
+            storage_rel_path=rel,
+        )
+        db.add(art)
+        await db.flush()
+        stage05.baseline_artifact_id = art.id
+        stage05.phase = "baselined"
+        db.add(stage05)
+        await db.commit()
+
+        nxt = await create_workflow_run_from_template(db, "test-prod", "fast-iteration", "v1.1-design")
+        mod = (await db.execute(
+            select(ModuleInstance).where(
+                ModuleInstance.run_id == nxt.id,
+                ModuleInstance.module_code == "05",
+            )
+        )).scalar_one()
+        context, _ws, _meta = await assemble_module_context(db, mod.id, "出设计稿")
+        assert "上一轮设计令牌" in context
+        assert "#123456" in context
+        assert "不要另起一套色板" in context
+
 def test_cli_argument_builders(monkeypatch):
     import backend.app.adapters.cli_adapter as cli_module
     monkeypatch.setattr(cli_module, "os_sandbox_available", lambda: True)
@@ -161,8 +255,8 @@ def test_cli_model_listing_parsers():
     assert usable_cli_model("opus") == "opus"
 
     from backend.app.adapters.cli_adapter import deliverable_length_guideline
-    assert "6,000~12,000" in deliverable_length_guideline("05")
-    assert "1,800~3,500" in deliverable_length_guideline("10")
+    assert "6,000~12,000" in deliverable_length_guideline("04")
+    assert "1,800~3,500" in deliverable_length_guideline("09")
     assert "2,000~3,500" in deliverable_length_guideline("01")
 
 @pytest.mark.asyncio
@@ -509,7 +603,7 @@ def test_checkpoint_continuation_guidance_detects_existing_screens(tmp_path):
     from backend.app.adapters.cli_adapter import checkpoint_continuation_guidance
 
     # Empty workspace -> no checkpoint guidance
-    assert checkpoint_continuation_guidance(tmp_path, "06") == ""
+    assert checkpoint_continuation_guidance(tmp_path, "05") == ""
 
     # Workspace with partial assets
     tokens_file = tmp_path / "tokens.json"
@@ -517,18 +611,18 @@ def test_checkpoint_continuation_guidance_detects_existing_screens(tmp_path):
 
     screens_dir = tmp_path / "screens"
     screens_dir.mkdir()
-    (screens_dir / "V-01.html").write_text("<html><body>Zen View 1</body></html>" * 10, encoding="utf-8")
+    (screens_dir / "home.html").write_text("<html><body>Zen View 1</body></html>" * 10, encoding="utf-8")
 
     slices_dir = tmp_path / "slices"
     slices_dir.mkdir()
     (slices_dir / "grid.svg").write_text("<svg></svg>", encoding="utf-8")
 
-    guidance = checkpoint_continuation_guidance(tmp_path, "06")
+    guidance = checkpoint_continuation_guidance(tmp_path, "05")
     assert "现场断点检测与增量续建指示" in guidance
     assert "tokens.json" in guidance
-    assert "screens/V-01.html" in guidance
+    assert "screens/home.html" in guidance
     assert "slices/" in guidance
-    assert "screens/V-02.html" in guidance  # listed in pending
+    assert "screens/editor.html" not in guidance
 
 
 @pytest.mark.asyncio

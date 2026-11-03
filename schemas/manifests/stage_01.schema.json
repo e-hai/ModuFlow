@@ -23,6 +23,9 @@
         "blended_arpu_usd",
         "annual_target_installs",
         "first_year_som_usd",
+        "market",
+        "demand_definition",
+        "citations",
         "source",
         "verdict"
       ],
@@ -32,6 +35,18 @@
         "blended_arpu_usd": { "type": "number", "minimum": 0 },
         "annual_target_installs": { "type": "integer", "minimum": 0 },
         "first_year_som_usd": { "type": "number", "minimum": 0 },
+        "market": { "type": "string", "minLength": 1 },
+        "demand_definition": { "type": "string", "minLength": 1 },
+        "citations": {
+          "type": "object",
+          "required": ["monthly_search_volume", "target_capture_rate", "blended_arpu_usd"],
+          "additionalProperties": false,
+          "properties": {
+            "monthly_search_volume": { "$ref": "#/$defs/citation" },
+            "target_capture_rate": { "$ref": "#/$defs/citation" },
+            "blended_arpu_usd": { "$ref": "#/$defs/citation" }
+          }
+        },
         "source": { "type": "string", "minLength": 1 },
         "verdict": { "type": "string", "minLength": 1 },
         "target_personas": {
@@ -40,6 +55,18 @@
         }
       },
       "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "citation": {
+      "type": "object",
+      "required": ["basis"],
+      "additionalProperties": false,
+      "properties": {
+        "basis": { "type": "string", "enum": ["excerpt", "assumption"] },
+        "url": { "type": "string" },
+        "source_name": { "type": "string" }
+      }
     }
   }
 }

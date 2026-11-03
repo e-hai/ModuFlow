@@ -101,7 +101,7 @@ def checkpoint_continuation_guidance(workspace_dir: Path, mod_code: str) -> str:
     code = stage_code(mod_code)
     lines: List[str] = []
 
-    if code == "06":
+    if code == "05":
         completed = []
         pending = []
         tokens_file = workspace_dir / "tokens.json"
@@ -124,7 +124,10 @@ def checkpoint_continuation_guidance(workspace_dir: Path, mod_code: str) -> str:
         else:
             pending.append("screens/device-shell.css (设备壳外框样式)")
 
-        expected_views = ["V-01", "V-02", "V-03", "V-04", "V-05"]
+        from backend.app.services.design_bundle import VIEW_ID, upstream_prd_views
+        expected_views = upstream_prd_views(workspace_dir)
+        if not expected_views and screens_dir.exists():
+            expected_views = sorted(p.stem for p in screens_dir.glob("*.html") if VIEW_ID.fullmatch(p.stem))
         for v in expected_views:
             v_html = screens_dir / f"{v}.html" if screens_dir.exists() else None
             if v_html and v_html.exists() and v_html.stat().st_size > 100:
@@ -138,11 +141,11 @@ def checkpoint_continuation_guidance(workspace_dir: Path, mod_code: str) -> str:
         else:
             pending.append("index.html (设计工作台)")
 
-        spec_file = workspace_dir / "交付物_06_设计实现.md"
+        spec_file = workspace_dir / "交付物_05_设计实现.md"
         if spec_file.exists() and spec_file.stat().st_size > 200:
-            completed.append("交付物_06_设计实现.md (设计规范文档)")
+            completed.append("交付物_05_设计实现.md (设计规范文档)")
         else:
-            pending.append("交付物_06_设计实现.md (设计规范文档)")
+            pending.append("交付物_05_设计实现.md (设计规范文档)")
 
         if completed:
             lines.append("【现场断点检测与增量续建指示（严禁推倒重做已完成文件）】")
@@ -157,7 +160,7 @@ def checkpoint_continuation_guidance(workspace_dir: Path, mod_code: str) -> str:
                     lines.append(f"  👉 [待补齐] {p}")
             lines.append("3. 维护 delivery.manifest.json，确保将全部交付物纳入清单。\n")
 
-    elif code == "07":
+    elif code == "06":
         completed = []
         pending = []
         if (workspace_dir / "build.gradle.kts").exists():
@@ -173,11 +176,11 @@ def checkpoint_continuation_guidance(workspace_dir: Path, mod_code: str) -> str:
         else:
             pending.append("shared/ 领域核心模型与业务规则")
 
-        spec_file = workspace_dir / "交付物_07_开发实现.md"
+        spec_file = workspace_dir / "交付物_06_开发实现.md"
         if spec_file.exists() and spec_file.stat().st_size > 200:
-            completed.append("交付物_07_开发实现.md (技术架构交付报告)")
+            completed.append("交付物_06_开发实现.md (技术架构交付报告)")
         else:
-            pending.append("交付物_07_开发实现.md (技术架构交付报告)")
+            pending.append("交付物_06_开发实现.md (技术架构交付报告)")
 
         if completed:
             lines.append("【现场断点检测与增量研发指示】")
@@ -284,9 +287,9 @@ def deliverable_write_rule(filename: str, has_draft: bool) -> str:
 
 def deliverable_length_guideline(mod_code: str) -> str:
     """Keep stage 05 a full PRD. Other stages stay inside their own checklist."""
-    if mod_code in {"01", "02", "03", "04"}:
+    if mod_code in {"01", "02", "03"}:
         return "全文控制在 2,000~3,500 字，用高密度表格写完即止。"
-    if mod_code == "05":
+    if mod_code == "04":
         return (
             "这是完整 PRD：覆盖业务流程、逐页交互、五维模块卡、业务数据字典、权益状态机、埋点字典与验收标准，"
             "篇幅 6,000~12,000 字，不要缩成几行简表。"
@@ -607,7 +610,7 @@ class CliSubprocessAdapter(BaseAgentAdapter):
         if mod_code in CONTRACT_STAGES and not manifest_file.exists():
             seed_platform = str((metadata or {}).get("platform") or "cross_platform")
             seed_views = None
-            if mod_code == "06":
+            if mod_code == "05":
                 from backend.app.services.design_bundle import upstream_prd_views
                 seed_views = upstream_prd_views(workspace_dir) or None
             manifest_content = build_stage_manifest(mod_code, output_filename, seed_platform, seed_views)
@@ -626,11 +629,11 @@ class CliSubprocessAdapter(BaseAgentAdapter):
         target_platform = prof["platform"]
         target_zero_inf = prof["client_zero_inference"]
         if is_dual_platform(target_platform):
-            stage05_platform_guard = "iOS HIG（灵动岛顶部安全区 ≥71pt、触控热区 ≥44pt、Apple 4.3）与 Android Material 3（状态栏/挖孔 ≥24dp、触控热区 ≥48dp、Google Play 政策）都要写进验收"
+            stage04_platform_guard = "iOS HIG（灵动岛顶部安全区 ≥71pt、触控热区 ≥44pt、Apple 4.3）与 Android Material 3（状态栏/挖孔 ≥24dp、触控热区 ≥48dp、Google Play 政策）都要写进验收"
         elif target_platform == "android":
-            stage05_platform_guard = "Android Material 3 规范与 Google Play 政策合规业务护栏（触控热区 ≥48dp）"
+            stage04_platform_guard = "Android Material 3 规范与 Google Play 政策合规业务护栏（触控热区 ≥48dp）"
         else:
-            stage05_platform_guard = "iOS HIG 灵动岛安全区 ≥71pt 与 Apple 4.3 审核合规业务护栏"
+            stage04_platform_guard = "iOS HIG 灵动岛安全区 ≥71pt 与 Apple 4.3 审核合规业务护栏"
 
         # Ensure exclusive role Skills and MCP config are mounted into workspace_dir
         from backend.app.services.skill_mcp_mounter import mount_role_skills_and_mcp
@@ -645,6 +648,9 @@ class CliSubprocessAdapter(BaseAgentAdapter):
             platform=target_platform,
             client_zero_inference=target_zero_inf
         )
+        if mod_code == "01":
+            from backend.app.services.reliable_sources import mount_lookup_tool
+            mount_lookup_tool(workspace_dir)
 
         yield AgentStreamEvent(
             event_type=AgentEventType.LOG,
@@ -848,37 +854,30 @@ class CliSubprocessAdapter(BaseAgentAdapter):
             extra_methodology = (
                 f"\n【工序 03（产品方向决策）专项作业红线 —— 严禁未验先定】\n"
                 f"- 本工序定位为「一页纸精益方向决策与假设提炼」，绝不是工程级详细 PRD！\n"
-                f"- 必须聚焦输出：①产品核心价值主张 (UVP) 与一句话定位；②目标画像痛点与价值映射；③MoSCoW 功能减法矩阵（明确 P0 必做与坚决砍除的伪需求 Non-Goals）；④10秒 Aha Moment 激活路径；⑤向工序 04（低成本市场验证）正式移交的 3~4 个可被真实流量证伪的生死假设清单（H1~H4，含通过阈值与熔断线）。\n"
-                f"- 【硬性禁令】：严禁在本工序提前编写代码级数据结构 (Schema)、TypeScript/JSON 接口字段、伪代码或长篇 Gherkin (Given/When/Then) 验收用例（这些工程细节必须留到工序 05 经过市场验证后再写）！\n"
-                f"- 【工序编号对齐】：向下游穿透指令必须严格指向真实的「工序 04：低成本市场验证 (Smoke Test)」，严禁错标为 UI 或架构设计。\n"
+                f"- 必须聚焦输出：①产品核心价值主张 (UVP) 与一句话定位；②目标画像痛点与价值映射；③MoSCoW 功能减法矩阵（明确 P0 必做与坚决砍除的伪需求 Non-Goals）；④10秒 Aha Moment 激活路径；⑤交给工序 04 的 3~4 个生死假设（H1~H4，写明上线后在工序 10 用留存或付费验证）。\n"
+                f"- 【硬性禁令】：严禁在本工序提前编写代码级数据结构 (Schema)、TypeScript/JSON 接口字段、伪代码或长篇 Gherkin (Given/When/Then) 验收用例（这些工程细节留到工序 04 再写）！\n"
+                f"- 【工序编号对齐】：方向经人签字后，下一道工序是「工序 04：产品需求定义」。\n"
             )
+
         elif mod_code == "04":
             extra_methodology = (
-                f"\n【工序 04（低成本市场验证）专项作业红线 —— 拒绝纸上谈兵，必须产出可交互 H5 假门网页与立项决策门禁】\n"
-                f"- 1. 交付物文档（`{output_filename}`）必须精炼务实，拒绝动辄三万字的学院派空谈！聚焦输出：①承接工序 03 的四大假设验证映射；②2~3 条可直接开拍的 10 秒短视频分镜脚本或 Reddit/社区零成本截流帖文案；③小额测试预算分配（如 $100~$350 / 3~7天）与绿灯/红灯止损阈值。\n"
-                f"- 2. 【强制真交付要求】：你必须在当前工作区目录下同步创建并写入一个单文件、零外部依赖、高颜值的移动端可交互 H5 假门测试着陆页 `index.html`！该网页必须包含：首屏核心功能交互模拟器、痛点对比、伪购买/下载抽屉，以及点击后的「早鸟内测坦白与留邮箱锁客弹窗 (Graceful Reveal)」，供业务负责人直接在右侧预览器交互体验或一键部署外测。\n"
-                f"- 3. 【立项决策门禁 (Go/Pivot/Kill)】：在文档末尾明确设立立项评估门禁与放行标准。若尚未进行外部真实投放，一律输出待回填立项门禁框架（标明 `[待回填实测值 | 绿灯立项阈值: xxx]`），严禁虚构实测数据；只有当各项假设满足绿灯标准或业务负责人拍板确认后，方可向下游工序 05 移交立项成果。\n"
-                f"- 【硬性禁区】：严禁伪造实测数据；假门页面必须是纯前端零依赖单页，严禁编写生产后端与数据库；严禁擅改业务规格。\n"
-            )
-        elif mod_code == "05":
-            extra_methodology = (
-                f"\n【工序 05（产品需求定义）专项作业红线 —— 黄金 7+1 章节结构化 + 纯正产品经理业务规格 (PRD) + 严禁工程师技术越界】\n"
-                f"- 【工序核心定位】：工序 05 纯粹聚焦「产品需求规格定义与基线演进」，立项决策已在前序工序 04 闭环封版。严禁在工序 05 出现任何工序 04 的“假门测试待回填实测审计表”或“Go/Pivot/Kill 门禁”！\n"
-                f"- 【严守 PM 业务本位，严禁工程师技术越界】：工序 05 必须且只能扮演「产品经理」角色，严禁出现任何技术实现代码、SQL 建表 DDL (`CREATE TABLE`)、数据库索引优化、代码级 JSON Schema / TypeScript interface、或底层 SDK/API 实现细节（如 StoreKit 2 监听器、Keychain 加密 API、SQLite 事务与 WAL 锁）！所有数据库表设计、技术选型与代码架构必须严格留给【工序 07 开发实现】。\n"
+                f"\n【工序 04（产品需求定义）专项作业红线 —— 黄金 7+1 章节结构化 + 纯正产品经理业务规格 (PRD) + 严禁工程师技术越界】\n"
+                f"- 【工序核心定位】：工序 04 纯粹聚焦「产品需求规格定义与基线演进」，方向已在工序 03 由人签字。严禁在工序 04 另设 Go/Pivot/Kill 门禁。\n"
+                f"- 【严守 PM 业务本位，严禁工程师技术越界】：工序 04 必须且只能扮演「产品经理」角色，严禁出现任何技术实现代码、SQL 建表 DDL (`CREATE TABLE`)、数据库索引优化、代码级 JSON Schema / TypeScript interface、或底层 SDK/API 实现细节（如 StoreKit 2 监听器、Keychain 加密 API、SQLite 事务与 WAL 锁）！所有数据库表设计、技术选型与代码架构必须严格留给【工序 06 开发实现】。\n"
                 f"- 【可读性第一法则（拒绝文字墙，拒绝机械填表）】：\n"
                 f"  - 采用多视角渐进式阅读分层：业务负责人 30 秒看透拍板卡与范围矩阵；UI 设计师通过全站视图总表秒懂画板拓扑；开发工程师通过五维业务规格表与数据字典直接理解产品意图；QA 通过结构化 Gherkin 矩阵直接提测；\n"
                 f"  - 保持图·文·表有机呼吸感：背景与心智意图采用精炼人话叙述（3~5行内）；页面路由与状态机采用清晰 Mermaid 图；组件清单、交互分支、异常降级与验收用例必须采用紧凑规整的标准表格，杜绝密集流水账！\n"
                 f"- 【黄金 7+1 章节完整结构规范（必须严格按此章节编号与标题输出，严禁缩水）】：\n"
-                f"  - 第 0 章：文档元信息与版本演进履历（版本号、更新时间、变更类型、变更项对照表、受影响模块）；\n"
+                f"  - 第 0 章：版本表四列「上线版本、稿次、来源、变更」。上线版本如 `1.0.0`；稿次只写 `r1`、`r2`，禁止把改稿写成 `1.0.1`。首版来源写工序 03，其后写变更单或「承接 1.0.0 需求 r4」。\n"
                 f"  - 第一章：版本定位与范围封版（业务背景、北极星指标、精简 User Stories、In-Scope P0/P1 vs Out-of-Scope Won't 范围封版矩阵表）；\n"
-                f"  - 第二章：全局信息架构与全站视图索引（Mermaid 页面路由拓扑图、全站视图索引总表 View Index Table `V-01~V-05` 标明视图形态与安全区、主流程泳道图）；\n"
+                f"  - 第二章：全局信息架构与全站视图索引。每页一行：id 是小写英文短名（如 home），用来命名 screens/{{id}}.html；name 只解释这一页。验收仍用 AC-xx，埋点仍用 E-xx；\n"
                 f"  - 第三章：功能模块详细规格说明（M1~M6 核心功能全量展开，逐模块必须统一采用五维结构化规格卡：①模块定位与核心意图导言、②界面布局与组件清单表、③交互流转与计算规则表、④边界条件与异常降级表、⑤模块验收点索引）；\n"
                 f"  - 第四章：商业化计费与权限业务规则（Mermaid StateDiagram 权益状态机、SKU 定价阶梯映射表、免费 vs 付费特权矩阵、付费门槛触发时机、网络超时或未支付时的用户端友好降级体验规则、防刷与风控业务规则）；\n"
                 f"  - 第五章：核心业务数据字典与本地存储业务策略（纯业务视角，严禁代码/SQL/JSON Schema：①核心业务实体清单与业务关系说明、②逐实体业务数据字典表【字段名、业务含义、业务类型、是否必填、取值范围/枚举值、默认值、校验失败提示文案】、③用户数据存储与隐私分级业务策略【离线持久化诉求、敏感隐私保护诉求、缓存自动清理业务诉求与生命周期】）；\n"
                 f"  - 第六章：全链路数据埋点规范（`E-01~E-12` 核心事件埋点总表、转化漏斗与留存计算公式）；\n"
-                f"  - 第七章：端到端验收用例与体验质量需求（结构化 `AC-01~AC-08` Gherkin 验收矩阵表包含用例ID/场景/Given/When/Then、用户感知级性能要求【如冷启首屏、导出等待感知】、{stage05_platform_guard}）。\n"
+                f"  - 第七章：端到端验收用例与体验质量需求（结构化 `AC-01~AC-08` Gherkin 验收矩阵表包含用例ID/场景/Given/When/Then、用户感知级性能要求【如冷启首屏、导出等待感知】、{stage04_platform_guard}）。清单 `acceptance_criteria` 每项写 id、view_id、given、when、then，view_id 必须是视图索引里的 id。\n"
             )
-        elif mod_code == "06":
+        elif mod_code == "05":
             if is_dual_platform(target_platform):
                 platform_rules = (
                     "- 双端项目：每张画板同时画 iOS 与 Android 两个设备外框，缺一端不能放行。\n"
@@ -894,67 +893,72 @@ class CliSubprocessAdapter(BaseAgentAdapter):
                     "- iOS 项目：每张画板只画 iOS 设备外框 `data-device=\"ios\"`，`data-safe-top` ≥ 71、`data-safe-bottom` ≥ 34，可点击元素 `data-hit` ≥ 44x44（pt）。\n"
                 )
             extra_methodology = (
-                f"\n【工序 06（设计实现）专项作业红线 —— 交付的是可以直接点开体验的设计稿文件夹，不是文字规范】\n"
+                f"\n【工序 05（设计实现）专项作业红线 —— 交付的是可以直接点开体验的设计稿文件夹，不是文字规范】\n"
                 f"- 1. 工作区必须落盘这套设计交付包（文件名固定）：\n"
-                f"  - `index.html`：设计工作台（入口）。左侧列出全部画板，顶部切换平台与 Default/Loading/Empty/Error 状态，可开关标注层（高亮安全区与热区），点选画板里的任意元素在右侧查看尺寸、字号、圆角、颜色，并展示色板、字阶与图标库。必须内联收录每张画板的路径 `screens/V-xx.html`。\n"
+                f"  - `index.html`：设计工作台（入口）。左侧列出全部画板，顶部切换平台与 Default/Loading/Empty/Error 状态，可开关标注层（高亮安全区与热区），点选画板里的任意元素在右侧查看尺寸、字号、圆角、颜色，并展示色板、字阶与图标库。必须内联收录每张画板的路径 `screens/{{id}}.html`。\n"
                 f"  - `tokens.json` 与 `manifest.json`：`tokens.json` 为设计令牌唯一真理源（color/typography/spacing/radius）；`manifest.json` 对齐 MeaXure 画板与切图元数据。\n"
-                f"  - `screens/V-xx.html`：工序 05 视图索引里每个视图一张完整高保真视觉稿（真实文案、真实布局、品牌配色，不是线框、不是占位），页面之间可点击跳转（`data-nav-target=\"V-xx\"`），按钮有按下与状态反馈。\n"
+                f"  - `screens/{{id}}.html`：工序 04 每个视图 id 一张完整高保真视觉稿（真实文案、真实布局、品牌配色，不是线框、不是占位）。view_id、文件名和 `data-nav-target` 都用同一个 id。\n"
                 f"  - `slices/*.svg`：统一切图与矢量图标资源库（合法 SVG）。\n"
                 f"  - `{output_filename}`：设计说明，写拍板摘要卡、Design Tokens 摘要、逐视图四态说明。不要在里面自报安全区数值，校验器直接读画板标注。\n"
-                f"- 2. 画板标注约定（校验器逐项读取）：\n"
-                f"  - 设备外框元素带 `data-device`、`data-safe-top`、`data-safe-bottom`。\n"
-                f"  - 每个可点击元素（button、a[href]、role=button、带 onclick 或 data-nav-target）都带 `data-hit=\"宽x高\"`，声明的是 CSS（min-width/min-height）保证的最小热区。\n"
-                f"  - 四态各一个面板：`data-state=\"default|loading|empty|error\"`。\n"
+                f"- 2. 画板标注约定（校验器读标注，并核对样式是否真的留出了这些尺寸）：\n"
+                f"  - 设备外框元素带 `data-device`、`data-safe-top`、`data-safe-bottom`。`.safe-top` / `.safe-bottom` 的 height 或 min-height 不得低于标注。\n"
+                f"  - 每个可点击元素（button、a[href]、role=button、带 onclick 或 data-nav-target）都带 `data-hit=\"宽x高\"`。CSS 的 min-width 和 min-height 不得小于这个尺寸，可以用 `[data-hit=\"44x44\"]` 或 `var(--hit)`。样式里写更小的尺寸不能过。\n"
+                f"  - 四态各一个面板：`data-state=\"default|loading|empty|error\"`。空态和错态面板里面必须有可点击的操作。\n"
                 f"  - 页面里出现的所有颜色必须来自 `tokens.json`，建议在 `:root` 定义 CSS 变量后统一引用。\n"
                 f"  - 零外部依赖：不得引用 http(s) 脚本、样式、字体或图片，所有资源本地相对路径。\n"
                 f"{platform_rules}"
                 f"- 3. 【强制本地自检闭环】：生成画板与 tokens 后，必须调用 MCP 工具 `verify_design_bundle` 进行静态自测，根据报错列表就地修正所有色值漂移、热区过小与安全区违规，自检 100% 通过方可提报。\n"
                 f"- 4. `delivery.manifest.json` 的 `design` 块照实填写：platform、entry（index.html）、tokens_path、screens（view_id、path、platforms）、icons（指向 slices/*.svg）。清单和文件一起改。\n"
-                f"- 5. 【需求合理性反馈】：发现工序 05 PRD 体验割裂、路径过深或与平台规范冲突，严禁私自绕过，向工序 05 提需求变更单 (CR)。\n"
-                f"- 【硬性禁区】：严禁私自增删改业务流程；严禁写生产业务逻辑、网络请求与持久化代码（归属于 eng）；颜色、字阶不得写进工序 05 的 PRD。\n"
+                f"- 5. 【需求合理性反馈】：发现工序 04 PRD 体验割裂、路径过深或与平台规范冲突，严禁私自绕过，向工序 04 提需求变更单 (CR)。\n"
+                f"- 【硬性禁区】：严禁私自增删改业务流程；严禁写生产业务逻辑、网络请求与持久化代码（归属于 eng）；颜色、字阶不得写进工序 04 的 PRD。\n"
             )
-        elif mod_code == "07":
+        elif mod_code == "06":
             inference_redline = (
                 "死守“客户端零推理成本”红线（AI 离线或云端预处理）"
                 if target_zero_inf
                 else "当前项目 Profile 允许端侧本地模型推理 (client_zero_inference=False)，请权衡端侧计算与能耗优化"
             )
             extra_methodology = (
-                f"\n【工序 07（开发实现）专项作业红线 —— 轻量架构选型 + 代码交付与自测】\n"
-                f"- 1. 承接工序 05（产品需求定义）与工序 06（设计实现），在开发启动前先用精简章节明确技术栈选型、核心模块划分与接口/存储方案（无需单独拆分长篇架构八股文），随后聚焦代码实现、核心逻辑交付与自测覆盖率报告。\n"
+                f"\n【工序 06（开发实现）专项作业红线 —— 轻量架构选型 + 代码交付与自测】\n"
+                f"- 1. 承接工序 04（产品需求定义）与工序 05（设计实现），在开发启动前先用精简章节明确技术栈选型、核心模块划分与接口/存储方案（无需单独拆分长篇架构八股文），随后聚焦代码实现、核心逻辑交付与自测覆盖率报告。\n"
+                f"- 1.1 `engineering.screens` 为工序 04 的每个视图 id 写一项：`view_id` 与 `path`，path 是本工序目录里真实存在的实现文件。\n"
+                f"- 1.2 `engineering.tests` 为每条验收写一项：`ac` 是 AC-xx，`path` 是真实测试文件，文件里写明该编号和工序 04 的 Then。`command` 只能是 `[\"python\", path]`、gradlew、swift 或 xcodebuild。正文里出现编号不算覆盖。\n"
+                f"- 1.3 `engineering.app` 指向应用入口，文件里定义 `run(ac)`，返回该条验收跑完后的页面 id。页面 id 必须出现在工序 04 这条验收的 Then 里。\n"
+                f"- 1.4 先交测试安装包 `dist/app-test.zip`，里面是这份应用入口。正式安装包等工序 07 测完测试包后再交。\n"
+                f"- 1.5 代码和说明里的颜色、字号、间距只能来自工序 05 的 `tokens.json`。写上文件名不算用过这套令牌。\n"
                 f"- 2. 物理数据模型与持久化：输出具体表结构建表 DDL、索引规范、ORM 映射与安全存储加密封装；\n"
-                f"- 3. 【技术可行性反馈】：如在开发中发现工序 05 PRD 定义的数据 Schema、三方 SDK 限制或性能瓶颈无法落地，严禁粗暴魔改，应通过向工序 05 提需求变更单 (CR) 驱动上游基线修订。\n"
+                f"- 3. 【技术可行性反馈】：如在开发中发现工序 04 PRD 定义的数据 Schema、三方 SDK 限制或性能瓶颈无法落地，严禁粗暴魔改，应通过向工序 04 提需求变更单 (CR) 驱动上游基线修订。\n"
                 f"- 【硬性禁区】：严禁私自阉割功能；{inference_redline}；研发自测不等于测试通过，准入严格归属 qa。\n"
             )
-        elif mod_code == "08":
+        elif mod_code == "07":
             extra_methodology = (
-                f"\n【工序 08（测试与 QA）专项作业红线 —— 端到端质量验证与阻断性缺陷门禁】\n"
-                f"- 1. 承接工序 05 业务验收矩阵 (AC-01~AC-08 Gherkin) 与工序 07 交付代码，输出端到端用例执行报告；\n"
+                f"\n【工序 07（测试与 QA）专项作业红线 —— 端到端质量验证与阻断性缺陷门禁】\n"
+                f"- 1. 承接工序 04 业务验收矩阵 (AC-01~AC-08 Gherkin) 与工序 06 交付代码，输出端到端用例执行报告。工序放行时系统先用测试安装包跑验收，通过后工序 06 再交正式安装包，系统对正式包做一次启动验收。测试文件没有写上对应 Then、退出码不是 0，或跑完停在的页面不在 Then 里，都不能把 open_p0 写成 0。\n"
                 f"- 2. 缺陷分级与阻断门禁：严格分级缺陷 (Critical/Major/Minor)，存在未解决的 P0/P1 缺陷系统强制阻断基线定稿；\n"
                 f"- 3. 专项质量报告：输出弱网延迟、低端机掉帧、内存泄漏与合规边界测试结论；\n"
                 f"- 【硬性禁区】：严禁带病放行（阻断门禁不可绕过）；严禁 QA 越界修改生产业务代码修复 Bug（必须建 Issue 分派 eng 修复）。\n"
             )
-        elif mod_code == "09":
+        elif mod_code == "08":
             extra_methodology = (
-                f"\n【工序 09（发布与上线）专项作业红线 —— 商店提审合规与降级开关门禁】\n"
-                f"- 1. 承接工序 08 测试绿灯决议，输出应用商店提审合规审查表（Apple 4.3 查重度、隐私合规声明、敏感权限合规）；\n"
+                f"\n【工序 08（发布与上线）专项作业红线 —— 商店提审合规与降级开关门禁】\n"
+                f"- 1. 承接工序 07 测试绿灯决议，输出应用商店提审合规审查表（Apple 4.3 查重度、隐私合规声明、敏感权限合规）；\n"
                 f"- 2. 提审降级保护预案：确保 Remote Config 降级兜底开关 100% 具备，制定审核期与上线后的灰度放量与回滚方案；\n"
                 f"- 【硬性禁区】：未配置 Remote Config 降级开关与隐私协议，严禁提审放行；严禁裸奔发布。\n"
             )
-        elif mod_code == "10":
+        elif mod_code == "09":
             extra_methodology = (
-                f"\n【工序 10（市场推广与获客）专项作业红线 —— 全球 ASO 与买量素材投放】\n"
-                f"- 1. 承接工序 09 上线版本、工序 02 定价与工序 05 卖点，输出多语种 ASO 优化词表（英语/西语/日语/德语等）；\n"
+                f"\n【工序 09（市场推广与获客）专项作业红线 —— 全球 ASO 与买量素材投放】\n"
+                f"- 1. 承接工序 08 上线版本、工序 02 定价与工序 04 卖点，输出多语种 ASO 优化词表（英语/西语/日语/德语等）；\n"
                 f"- 2. 获客素材与冷启动排期：输出买量短视频脚本分镜、社媒冷启动方案、KOL 推广合作矩阵；\n"
                 f"- 3. 渠道获客成本熔断监控：设定各渠道 eCAC 预警线与熔断线，严格按预算投放，ROI 不达标立即熔断。\n"
             )
-        elif mod_code == "11":
+        elif mod_code == "10":
             extra_methodology = (
-                f"\n【工序 11（运营分析与持续迭代）专项作业红线 —— 全生命周期复盘与 V1.1 Backlog】\n"
-                f"- 1. 承接工序 05 埋点字典与线上真实运行数据，输出用户留存衰减漏斗（D1/D7/D30 留存曲线）；\n"
+                f"\n【工序 10（运营分析与持续迭代）专项作业红线 —— 全生命周期复盘与 V1.1 Backlog】\n"
+                f"- 1. 承接工序 04 埋点字典与线上真实运行数据，输出用户留存衰减漏斗（D1/D7/D30 留存曲线）；\n"
                 f"- 2. 变现归因与用户反馈聚类：分析各 SKU 转化率与买量素材 ROI，深挖用户差评与吐槽聚类痛点；\n"
-                f"- 3. 下一版本 (V1.1) 需求 Backlog 建议书：输出数据驱动的迭代立项书，正式移交给【工序 05 产品经理】发起增量 PRD 评审；\n"
-                f"- 【硬性禁区】：严禁越界修改线上代码或基线；严禁把个别用户极端吐槽当作 P0 伪需求；严禁跳过工序 05 直接开工。\n"
+                f"- 3. 下一版本 (V1.1) 需求 Backlog 建议书：输出数据驱动的迭代立项书，正式移交给【工序 04 产品经理】发起增量 PRD 评审；\n"
+                f"- 【硬性禁区】：严禁越界修改线上代码或基线；严禁把个别用户极端吐槽当作 P0 伪需求；严禁跳过工序 04 直接开工。\n"
             )
 
         length_guideline = deliverable_length_guideline(mod_code)
@@ -1012,7 +1016,7 @@ class CliSubprocessAdapter(BaseAgentAdapter):
             _live_processes[proc.pid] = proc
 
             idle_timeout = float(self.timeout)
-            max_lifetime = 7200.0 if mod_code in ("06", "07", "08") else max(float(self.timeout) * 3, 1800.0)
+            max_lifetime = 7200.0 if mod_code in ("05", "06", "07") else max(float(self.timeout) * 3, 1800.0)
 
             try:
                 await drain_and_watch(

@@ -45,16 +45,15 @@ def test_gate_matrix_definitions():
     """Verify all 11 stages and hotfix have correct gate level, approver, and conditions."""
     expected_gates = {
         "01": ("green", "lead", "门禁自检"),
-        "02": ("yellow", "human", "LTV/CAC 商业关口"),
+        "02": ("yellow", "human", "LTV/CAC 商业放行"),
         "03": ("yellow", "human", "G1 立项方向"),
-        "04": ("yellow", "human", "G2 外测决议"),
-        "05": ("green", "lead", "prd_linter 规格门禁"),
-        "06": ("green", "lead", "HIG/Material 检测"),
-        "07": ("green", "lead", "覆盖率与零推理门禁"),
-        "08": ("green", "qa", "G3 质量门"),
-        "09": ("red", "human", "G4 提审门禁"),
-        "10": ("yellow", "human", "买量预算门禁"),
-        "11": ("green", "lead", "Backlog 评审"),
+        "04": ("green", "lead", "prd_linter 规格门禁"),
+        "05": ("green", "lead", "HIG/Material 检测"),
+        "06": ("green", "lead", "覆盖率与零推理门禁"),
+        "07": ("green", "qa", "G3 质量门"),
+        "08": ("red", "human", "G4 提审门禁"),
+        "09": ("yellow", "human", "买量预算门禁"),
+        "10": ("green", "lead", "Backlog 评审"),
     }
 
     for code, (lvl, apprv, name) in expected_gates.items():
@@ -65,7 +64,7 @@ def test_gate_matrix_definitions():
         assert len(cfg["conditions"]) >= 1
 
     # Hotfix gate
-    hotfix_cfg = get_stage_gate_config("07", template_id="hotfix")
+    hotfix_cfg = get_stage_gate_config("06", template_id="hotfix")
     assert hotfix_cfg["level"] == "red"
     assert hotfix_cfg["approver"] == "human"
 
@@ -73,18 +72,18 @@ def test_gate_matrix_definitions():
 def test_auto_escalation_rules():
     """Verify deterministic auto-escalation rules (Zero LLM)."""
     # 1. Non-sensitive content on green gate (05) stays green
-    res_normal = evaluate_gate_level("05", {"feature_name": "夜间模式切换"})
+    res_normal = evaluate_gate_level("04", {"feature_name": "夜间模式切换"})
     assert res_normal["effective_level"] == "green"
     assert not res_normal["is_escalated"]
 
     # 2. Payment trigger -> 🔴 RED only when the structured flag is set
-    res_pay = evaluate_gate_level("05", {"is_payment_related": True})
+    res_pay = evaluate_gate_level("04", {"is_payment_related": True})
     assert res_pay["effective_level"] == "red"
     assert res_pay["effective_approver"] == "human"
     assert res_pay["is_escalated"]
     assert any("payment" in r or "收款" in r or "支付" in r for r in res_pay["escalation_reasons"])
 
-    res_pay_text = evaluate_gate_level("05", {"content": "新增 24h 通行证与 Stripe IAP 支付通道"})
+    res_pay_text = evaluate_gate_level("04", {"content": "新增 24h 通行证与 Stripe IAP 支付通道"})
     assert res_pay_text["effective_level"] == "green"
     assert not res_pay_text["is_escalated"]
     assert res_pay_text["keyword_hints"]
@@ -100,22 +99,22 @@ def test_auto_escalation_rules():
     assert res_priv["is_escalated"]
 
     # 4. Encryption trigger -> 🔴 RED
-    res_enc = evaluate_gate_level("07", {"is_encryption_related": True})
+    res_enc = evaluate_gate_level("06", {"is_encryption_related": True})
     assert res_enc["effective_level"] == "red"
     assert res_enc["is_escalated"]
 
     # 5. Budget exceeded trigger -> 🔴 RED
-    res_bgt = evaluate_gate_level("10", {"is_budget_exceeded": True})
+    res_bgt = evaluate_gate_level("09", {"is_budget_exceeded": True})
     assert res_bgt["effective_level"] == "red"
     assert res_bgt["is_escalated"]
 
     # 6. Stage 05 data dictionary / schema change -> 🔴 RED
-    res_schema = evaluate_gate_level("05", {"data_dictionary_schema_change": True})
+    res_schema = evaluate_gate_level("04", {"data_dictionary_schema_change": True})
     assert res_schema["effective_level"] == "red"
     assert res_schema["is_escalated"]
 
     # 7. Stage 11 major version -> 🟡 YELLOW
-    res_v11 = evaluate_gate_level("11", {"is_major_version": True})
+    res_v11 = evaluate_gate_level("10", {"is_major_version": True})
     assert res_v11["effective_level"] == "yellow"
     assert res_v11["is_escalated"]
 
@@ -131,7 +130,7 @@ async def test_one_page_gate_application_creation_and_red_notification():
         ensure_test_product_authorization("gate-init-1", "G-PROD")
 
         run = await create_workflow_run_from_template(db, prod.id, "fast-iteration", "Sprint-1")
-        m_res = await db.execute(select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "05"))
+        m_res = await db.execute(select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "04"))
         m05 = m_res.scalar_one()
 
         # Submit application for 05 with payment keyword -> auto escalated to 🔴 RED
@@ -140,7 +139,7 @@ async def test_one_page_gate_application_creation_and_red_notification():
             module_id=m05.id,
             recommendation="建议批准 PRD 封版，涵盖订阅特权体系",
             evidence=["PRD Linter 100/100", "8 项 Gherkin 验收用例通过"],
-            risk_assessment="涉及苹果 IAP 扣款回调，需在工序 07 研发实现双向对账",
+            risk_assessment="涉及苹果 IAP 扣款回调，需在工序 06 研发实现双向对账",
             submitted_by="agent:lead",
             context={"is_payment_related": True}
         )
@@ -160,7 +159,7 @@ async def test_one_page_gate_application_creation_and_red_notification():
         # Check physical file in decisions/
         dec_file = Path(settings.WORKSPACE_DIR) / "gate-init-1" / "products" / "G-PROD" / "decisions"
         assert dec_file.exists()
-        app_files = list(dec_file.glob("*_gate_05_application.json"))
+        app_files = list(dec_file.glob("*_gate_04_application.json"))
         assert len(app_files) >= 1
         content = json.loads(app_files[0].read_text(encoding="utf-8"))
         assert content["effective_level"] == "red"
@@ -202,7 +201,7 @@ async def test_negative_agent_cannot_approve_yellow_or_red_gate():
                 actor="agent:lead",
                 actor_role="lead"
             )
-        assert "严禁 Agent (包括 lead) 审批黄级/红级关口" in str(exc_info.value)
+        assert "严禁 Agent (包括 lead) 审批黄级/红级放行" in str(exc_info.value)
 
         # 2. PM agent attempts to approve -> REJECTED
         with pytest.raises(PermissionError) as exc_info2:
@@ -260,7 +259,7 @@ async def test_human_can_approve_yellow_and_red_gate():
 
 
 @pytest.mark.asyncio
-async def test_negative_stage_09_blocked_without_human_approval():
+async def test_negative_stage_08_blocked_without_human_approval():
     """Verify that Stage 09 (Release/G4) CANNOT baseline without recorded human approval."""
     async with AsyncSessionLocal() as db:
         init = StrategicInitiative(id="gate-init-4", name="提审关口测试")
@@ -270,13 +269,13 @@ async def test_negative_stage_09_blocked_without_human_approval():
         ensure_test_product_authorization("gate-init-4", "G-PROD4")
 
         run = await create_workflow_run_from_template(db, prod.id, "fast-iteration", "Sprint-Release")
-        m_res = await db.execute(select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "09"))
+        m_res = await db.execute(select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "08"))
         m09 = m_res.scalar_one()
 
         # 1. No gate application exists -> strictly blocked
         can_b, reason = await can_baseline_module(db, m09.id)
         assert not can_b
-        assert "工序 09 (发布上线) 缺少人类确认记录" in reason
+        assert "工序 08 (发布上线) 缺少人类确认记录" in reason
 
         # 2. Gate application exists but pending -> strictly blocked
         gate = await create_or_update_gate_application(
@@ -332,7 +331,7 @@ async def test_api_gate_application_and_review_lifecycle():
             "name": "Iteration-1"
         })
         run_data = run_res.json()
-        m05 = next(m for m in run_data["modules"] if m["module_code"] == "05")
+        m05 = next(m for m in run_data["modules"] if m["module_code"] == "04")
 
         # 1. Get gate config
         cfg_res = await client.get(f"/api/v1/modules/{m05['id']}/gate-config")
@@ -374,7 +373,7 @@ async def test_api_gate_application_and_review_lifecycle():
             }
         )
         assert bad_rev.status_code == 403
-        assert "严禁 Agent (包括 lead) 审批黄级/红级关口" in bad_rev.json()["detail"]
+        assert "严禁 Agent (包括 lead) 审批黄级/红级放行" in bad_rev.json()["detail"]
 
         # 5. Human reviews red gate -> 200 OK
         good_rev = await client.post(
@@ -408,7 +407,7 @@ async def test_gate_rejection_and_adjustment_flow():
         ensure_test_product_authorization("gate-init-5", "G-PROD5")
 
         run = await create_workflow_run_from_template(db, prod.id, "fast-iteration", "Sprint-Reject")
-        m_res = await db.execute(select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "05"))
+        m_res = await db.execute(select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "04"))
         m05 = m_res.scalar_one()
 
         gate = await create_or_update_gate_application(
@@ -467,9 +466,16 @@ _PASSING_PRD = """
 干。
 
 第 0 章：元信息
+| 上线版本 | 稿次 | 来源 | 变更 |
+| --- | --- | --- | --- |
+| 1.0.0 | r1 | 工序 03 | 首版 |
 第 1 章：范围封版
 第 2 章：信息架构
-V-01 V-02 V-03
+| id | 名称 |
+| --- | --- |
+| home | 首页 |
+| editor | 生成页 |
+| result | 结果页 |
 第 3 章：详细规格
 M1 M2 M3
 第 4 章：商业规则
@@ -505,6 +511,7 @@ flowchart LR
 """
 
 _HEALTHY_UE = """
+变现阶梯：免费体验版、24小时应急通行证、月度高质会员、终身买断卡。
 ```json
 {"organic_share": 0.2, "paid_cpi_usd": 1.0, "ad_arpu_usd": 2.0, "iap_conversion_rate": 0.1, "iap_net_arppu_usd": 20}
 ```
@@ -528,7 +535,7 @@ async def test_baseline_runs_deliverable_checker_and_blocks_yellow_without_gate(
         ensure_test_product_authorization("gate-init-audit", "G-AUDIT")
 
         run = await create_workflow_run_from_template(db, prod.id, "full-product-launch", "Sprint-Audit")
-        m05 = (await db.execute(select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "05"))).scalar_one()
+        m05 = (await db.execute(select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "04"))).scalar_one()
         m02 = (await db.execute(select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "02"))).scalar_one()
 
         db.add(Artifact(
@@ -555,7 +562,7 @@ async def test_baseline_runs_deliverable_checker_and_blocks_yellow_without_gate(
         await db.commit()
         yellow_blocked, yellow_reason = await can_baseline_module(db, m02.id)
         assert not yellow_blocked
-        assert "须先提交关口申请" in yellow_reason
+        assert "须先提交放行申请" in yellow_reason
 
         gate = await create_or_update_gate_application(
             db=db, module_id=m02.id, recommendation="单位经济待审",

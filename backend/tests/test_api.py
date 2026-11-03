@@ -218,9 +218,10 @@ async def test_initiatives_and_runs():
         assert res_prod.status_code == 200
         products = res_prod.json()
         assert len(products) >= 2
+        quickpay = next(p for p in products if p["id"] == "quickpay")
 
         # Check runs
-        res_runs = await ac.get(f"/api/v1/runs?product_id={products[0]['id']}")
+        res_runs = await ac.get(f"/api/v1/runs?product_id={quickpay['id']}")
         assert res_runs.status_code == 200
         runs = res_runs.json()
         assert len(runs) >= 1
@@ -599,7 +600,7 @@ async def test_agent_roles_api():
         assert res_run_detail.status_code == 200
         modules = res_run_detail.json()["modules"]
         # Check module 05 (方向确认与 MVP PRD)
-        m05 = next(m for m in modules if m["module_code"] == "05")
+        m05 = next(m for m in modules if m["module_code"] == "04")
         res_m05 = await ac.get(f"/api/v1/modules/{m05['id']}")
         assert res_m05.status_code == 200
         m05_data = res_m05.json()

@@ -312,7 +312,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </h3>
                 <p className="text-xs text-slate-500 leading-relaxed">
                   即将删除 <strong className="text-slate-800 font-semibold">【{deletingInit.name}】</strong>。
-                  工程下包含的所有矩阵产品、产研模块及交付物数据将一并清理，此操作不可撤销。
+                  工程下包含的所有矩阵产品、产品模块及交付物数据将一并清理，此操作不可撤销。
                 </p>
               </div>
             </div>

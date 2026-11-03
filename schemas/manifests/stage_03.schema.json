@@ -17,18 +17,18 @@
     "risk_flags": { "type": "object" },
     "direction": {
       "type": "object",
-      "required": ["uvp", "moscow", "hypotheses"],
+      "required": ["uvp", "target_audience", "moscow", "hypotheses"],
       "properties": {
         "uvp": { "type": "string", "minLength": 5 },
-        "target_audience": { "type": "string" },
+        "target_audience": { "type": "string", "minLength": 1 },
         "moscow": {
           "type": "object",
-          "required": ["must"],
+          "required": ["must", "wont"],
           "properties": {
             "must": { "type": "array", "minItems": 1, "items": { "type": "string" } },
             "should": { "type": "array", "items": { "type": "string" } },
             "could": { "type": "array", "items": { "type": "string" } },
-            "wont": { "type": "array", "items": { "type": "string" } }
+            "wont": { "type": "array", "minItems": 1, "items": { "type": "string" } }
           },
           "additionalProperties": false
         },
@@ -37,7 +37,7 @@
           "minItems": 1,
           "items": {
             "type": "object",
-            "required": ["id", "hypothesis"],
+            "required": ["id", "hypothesis", "validation_stage"],
             "properties": {
               "id": { "type": "string" },
               "hypothesis": { "type": "string" },

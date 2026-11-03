@@ -180,32 +180,118 @@ def lint_markdown(content: str, file_name: str = "PRD.md") -> Dict[str, Any]:
     return result
 
 
+def stage02_snapshot(ue: Dict[str, Any]) -> Dict[str, Any]:
+    """确认单用的工序 02 数字。获客成本和客户价值用五个输入乘出来。"""
+    try:
+        organic = float(ue["organic_share"])
+        cpi = float(ue["paid_cpi_usd"])
+        ad_arpu = float(ue["ad_arpu_usd"])
+        conversion = float(ue["iap_conversion_rate"])
+        arppu = float(ue["iap_net_arppu_usd"])
+    except (KeyError, TypeError, ValueError):
+        return {}
+    cac = round((1.0 - organic) * cpi, 3)
+    ltv = round(ad_arpu + conversion * arppu, 3)
+    ratio = round(ltv / cac, 2) if cac > 0 else 99.9
+    tiers = []
+    for item in ue.get("pricing_tiers") or []:
+        if isinstance(item, dict) and item.get("name") not in (None, "") and isinstance(item.get("price_usd"), (int, float)):
+            tiers.append({"name": str(item["name"]), "price_usd": float(item["price_usd"])})
+    return {
+        "organic_share": organic,
+        "paid_cpi_usd": cpi,
+        "ad_arpu_usd": ad_arpu,
+        "iap_conversion_rate": conversion,
+        "iap_net_arppu_usd": arppu,
+        "blended_cac_usd": cac,
+        "ltv_180d_usd": ltv,
+        "ltv_cac_ratio": ratio,
+        "healthy": ratio >= 3.0,
+        "pricing_tiers": tiers,
+    }
+
+
+def stage03_snapshot(direction: Dict[str, Any]) -> Dict[str, Any]:
+    """确认单用的工序 03 方向。只在价值主张、使用人群、必做、明确不做和验证方式都齐时返回。"""
+    if not isinstance(direction, dict):
+        return {}
+    uvp = str(direction.get("uvp") or "").strip()
+    audience = str(direction.get("target_audience") or "").strip()
+    moscow = direction.get("moscow") if isinstance(direction.get("moscow"), dict) else {}
+    must = [str(item).strip() for item in (moscow.get("must") or []) if str(item).strip()]
+    wont = [str(item).strip() for item in (moscow.get("wont") or []) if str(item).strip()]
+    hypotheses = []
+    for item in direction.get("hypotheses") or []:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("hypothesis") or "").strip()
+        how = str(item.get("validation_stage") or "").strip()
+        if not text or not how:
+            return {}
+        hypotheses.append({
+            "id": str(item.get("id") or "").strip(),
+            "hypothesis": text,
+            "validation": how,
+        })
+    if not uvp or not audience or not must or not wont or not hypotheses:
+        return {}
+    return {
+        "uvp": uvp,
+        "target_audience": audience,
+        "must": must,
+        "wont": wont,
+        "hypotheses": hypotheses,
+        "direction_structured": True,
+    }
+
+
+def _unit_economics_record(texts: List[str]) -> Dict[str, Any]:
+    from backend.app.services.delivery_contract import manifest_from_texts
+
+    fields = dict(merged_fields(texts))
+    for text in texts:
+        for obj in iter_json_objects(text):
+            ue = obj.get("unit_economics") if isinstance(obj.get("unit_economics"), dict) else obj
+            if isinstance(ue, dict) and isinstance(ue.get("pricing_tiers"), list):
+                fields["pricing_tiers"] = ue["pricing_tiers"]
+    manifest = manifest_from_texts(texts)
+    if manifest:
+        ue = manifest.get("unit_economics")
+        if isinstance(ue, dict):
+            fields.update(ue)
+    return fields
+
+
+def _stage02_mismatch(fields: Dict[str, Any], snap: Dict[str, Any]) -> List[str]:
+    reasons = []
+    checks = (
+        ("blended_cac_usd", 0.001, "获客成本", "按（1 − 自然来的占比）× 单个安装成本算出的是"),
+        ("ltv_180d_usd", 0.001, "180 天客户价值", "按广告收入 + 付钱占比 × 净付金额算出的是"),
+        ("ltv_cac_ratio", 0.01, "回收倍数", "按客户价值 / 获客成本算出的是"),
+    )
+    for key, tol, label, how in checks:
+        stated = fields.get(key)
+        if not isinstance(stated, (int, float)) or isinstance(stated, bool):
+            continue
+        computed = snap.get(key)
+        if computed is None or abs(float(stated) - float(computed)) <= tol:
+            continue
+        reasons.append(f"{label}写的是 {stated}，{how} {computed}。")
+    return reasons
+
+
 def audit_unit_economics(texts: List[str]) -> Dict[str, Any]:
-    fields = merged_fields(texts)
+    fields = _unit_economics_record(texts)
     missing = _require(fields, [
         "organic_share", "paid_cpi_usd", "ad_arpu_usd", "iap_conversion_rate", "iap_net_arppu_usd"
     ])
     if missing:
         return _result(False, [f"单位经济交付物缺少字段: {', '.join(missing)}"], evidence_found=False, fields_found=list(fields))
-    organic = float(fields["organic_share"])
-    cpi = float(fields["paid_cpi_usd"])
-    ad_arpu = float(fields["ad_arpu_usd"])
-    conversion = float(fields["iap_conversion_rate"])
-    arppu = float(fields["iap_net_arppu_usd"])
-    blended_cac = round((1.0 - organic) * cpi, 3)
-    ltv = round(ad_arpu + conversion * arppu, 3)
-    ratio = round(ltv / blended_cac, 2) if blended_cac > 0 else 99.9
-    healthy = ratio >= 3.0
-    reasons = [] if healthy else [f"LTV/CAC 为 {ratio}，低于 3.0"]
-    return _result(
-        healthy,
-        reasons,
-        evidence_found=True,
-        blended_cac_usd=blended_cac,
-        ltv_180d_usd=ltv,
-        ltv_cac_ratio=ratio,
-        healthy=healthy,
-    )
+    snap = stage02_snapshot(fields)
+    ratio = snap["ltv_cac_ratio"]
+    reasons = [] if snap["healthy"] else [f"LTV/CAC 为 {ratio}，低于 3.0"]
+    reasons.extend(_stage02_mismatch(fields, snap))
+    return _result(not reasons, reasons, evidence_found=True, **snap)
 
 
 _SOM_MENTION = re.compile(r"(?<![A-Za-z])SOM(?![A-Za-z])|现实盘子|营收盘子|首年盘子")
@@ -247,8 +333,17 @@ def _som_disagrees(stated: float, computed: float) -> bool:
     return abs(stated - computed) / computed > 0.02
 
 
-def audit_som(texts: List[str]) -> Dict[str, Any]:
+def audit_som(texts: List[str], workspace: Optional[Path] = None) -> Dict[str, Any]:
+    from backend.app.services.delivery_contract import manifest_from_texts, stage01_excerpt_reasons, stage01_snapshot
+
     fields = merged_fields(texts)
+    manifest = manifest_from_texts(texts)
+    nested = None
+    if manifest:
+        candidate = manifest.get("market_research") or manifest.get("som")
+        if isinstance(candidate, dict):
+            nested = candidate
+            fields = {**fields, **candidate}
     missing = _require(fields, ["monthly_search_volume", "target_capture_rate", "blended_arpu_usd", "source"])
     if missing:
         return _result(False, [f"SOM 交付物缺少字段: {', '.join(missing)}"], evidence_found=False)
@@ -257,6 +352,7 @@ def audit_som(texts: List[str]) -> Dict[str, Any]:
     arpu = float(fields["blended_arpu_usd"])
     annual = int(volume * 12 * rate)
     som = round(annual * arpu, 2)
+    record = nested if nested is not None else fields
     mismatched: List[float] = []
     for text in texts:
         local = merged_fields([text])
@@ -273,6 +369,19 @@ def audit_som(texts: List[str]) -> Dict[str, Any]:
         reasons.append(
             f"正文里的首年盘子写的是 {shown} 美元，按月搜索量、取得比例和客单价算出的是 {som:,.2f} 美元。请把正文改成算出的数。"
         )
+    if "annual_target_installs" in record and _is_number_like(record.get("annual_target_installs")):
+        stated_annual = int(float(record["annual_target_installs"]))
+        if stated_annual != annual:
+            reasons.append(
+                f"年安装量写的是 {stated_annual}，按月搜索量 × 12 × 取得比例算出的是 {annual}。"
+            )
+    if "first_year_som_usd" in record and _is_number_like(record.get("first_year_som_usd")):
+        if _som_disagrees(float(record["first_year_som_usd"]), som):
+            reasons.append(
+                f"首年盘子字段写的是 {float(record['first_year_som_usd']):,.2f} 美元，按三个输入算出的是 {som:,.2f} 美元。"
+            )
+    reasons.extend(stage01_excerpt_reasons(record, workspace, texts))
+    snap = stage01_snapshot(record)
     return _result(
         not reasons,
         reasons,
@@ -280,8 +389,28 @@ def audit_som(texts: List[str]) -> Dict[str, Any]:
         annual_target_installs=annual,
         first_year_som_usd=som,
         source=str(fields["source"]),
-        verdict="GO (具备高利润截胡价值)" if som >= 100000 else "CAUTION (盘子偏小，需控研发成本)",
+        verdict=snap.get("verdict") or ("GO (具备高利润截胡价值)" if som >= 100000 else "CAUTION (盘子偏小，需控研发成本)"),
+        monthly_search_volume=volume,
+        target_capture_rate=rate,
+        blended_arpu_usd=arpu,
+        market=snap.get("market") or "",
+        demand_definition=snap.get("demand_definition") or "",
+        input_basis=snap.get("input_basis") or {},
+        citation_labels=snap.get("citation_labels") or {},
+        capture_rate_basis=snap.get("capture_rate_basis") or "",
     )
+
+
+def _is_number_like(value: Any) -> bool:
+    if isinstance(value, bool) or value in (None, ""):
+        return False
+    if isinstance(value, (int, float)):
+        return True
+    try:
+        float(value)
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 def handoff_som_text(text: str) -> str:
@@ -608,25 +737,25 @@ def _audit_stage_text(
     texts: List[str],
     platform: str = "ios",
     client_zero_inference: bool = True,
+    workspace: Optional[Path] = None,
 ) -> Dict[str, Any]:
     if code == "01":
-        return audit_som(texts)
+        return audit_som(texts, workspace=workspace)
     if code == "02":
         return audit_unit_economics(texts)
     if code == "03":
         return audit_direction(texts)
+
     if code == "04":
-        return audit_fakedoor(texts)
-    if code == "05":
         return audit_prd(texts)
-    if code == "06":
+    if code == "05":
         return _result(
             False,
-            ["工序 06 必须交付设计交付包：delivery.manifest.json 的 design 清单、index.html 设计工作台、tokens.json、screens/V-xx.html 和 assets/icons。只写文字规范不能放行"],
+            ["工序 05 必须交付设计交付包：delivery.manifest.json 的 design 清单、index.html 设计工作台、tokens.json、screens/{id}.html 和 assets/icons。只写文字规范不能放行"],
             evidence_found=False,
             platform=platform,
         )
-    if code == "07":
+    if code == "06":
         inference = audit_inference(texts, enforce_zero=client_zero_inference)
         coverage = audit_coverage(texts)
         reasons = list(inference.get("reasons") or []) + list(coverage.get("reasons") or [])
@@ -637,13 +766,13 @@ def _audit_stage_text(
             inference=inference,
             coverage=coverage,
         )
-    if code == "08":
+    if code == "07":
         return audit_quality(texts, require_remote_config=False)
-    if code == "09":
+    if code == "08":
         return audit_quality(texts, require_remote_config=True)
-    if code == "10":
+    if code == "09":
         return audit_acquisition(texts)
-    if code == "11":
+    if code == "10":
         return audit_retention(texts)
     return _result(False, [f"工序 {code} 没有确定性检查器"], evidence_found=False)
 
@@ -697,45 +826,23 @@ def audit_stage(
         red_flags = extract_red_flags(risk_fields_from_manifest(manifest))
         extra: Dict[str, Any] = {"contract": "delivery.manifest.json"}
         if code == "01":
+            from backend.app.services.delivery_contract import _source_rows, stage01_snapshot
+
             mr = manifest.get("market_research") or manifest.get("som") or {}
-            extra.update({
-                "annual_target_installs": mr.get("annual_target_installs"),
-                "first_year_som_usd": mr.get("first_year_som_usd"),
-                "source": str(mr.get("source") or ""),
-                "verdict": mr.get("verdict"),
-            })
+            extra.update(stage01_snapshot(mr if isinstance(mr, dict) else {}, _source_rows(manifest_root)))
         elif code == "02":
             ue = manifest.get("unit_economics") or {}
-            extra.update({
-                "blended_cac_usd": ue.get("blended_cac_usd"),
-                "ltv_180d_usd": ue.get("ltv_180d_usd"),
-                "ltv_cac_ratio": ue.get("ltv_cac_ratio"),
-                "healthy": (ue.get("ltv_cac_ratio") or 0) >= 3.0,
-            })
+            extra.update(stage02_snapshot(ue if isinstance(ue, dict) else {}))
         elif code == "03":
-            dir_data = manifest.get("direction") or {}
-            raw_hyps = dir_data.get("hypotheses") or []
-            hyps = [
-                h.get("hypothesis") if isinstance(h, dict) else str(h)
-                for h in raw_hyps
-            ]
-            extra.update({
-                "uvp": dir_data.get("uvp"),
-                "hypotheses": hyps,
-            })
+            extra.update(stage03_snapshot(manifest.get("direction") or {}))
+
         elif code == "04":
-            fd = manifest.get("fakedoor") or {}
-            extra.update({
-                "exists": True,
-                "test_budget_usd": fd.get("test_budget_usd", 200.0),
-            })
-        elif code == "05":
             prd = audit_prd(_prose_texts(texts))
             extra["score"] = prd.get("score")
             extra["linter"] = prd.get("linter")
             if not prd.get("passed"):
                 reasons.extend(prd.get("reasons") or [])
-        elif code == "06":
+        elif code == "05":
             from backend.app.services.design_bundle import inspect_design_bundle, upstream_prd_views
 
             des = manifest.get("design") or {}
@@ -749,7 +856,7 @@ def audit_stage(
                 "status_bar_cutout_safe_dp": measured.get("android_top"),
                 "min_touch_target_dp": measured.get("android_touch"),
             })
-        elif code == "07":
+        elif code == "06":
             eng = manifest.get("engineering") or {}
             cov = eng.get("coverage_percent", 0.0)
             zero = eng.get("zero_client_inference", True)
@@ -758,26 +865,29 @@ def audit_stage(
                 "coverage": {"coverage_percent": cov},
                 "inference": {"zero_client_ai_compliant": zero},
             })
-        elif code == "08":
+        elif code == "07":
             qa = manifest.get("quality") or {}
+            runs = qa.pop("runs", None) if isinstance(qa, dict) else None
             extra.update({
-                "open_p0": qa.get("open_p0", 0),
-                "open_p1": qa.get("open_p1", 0),
+                "open_p0": qa.get("open_p0", 0) if isinstance(qa, dict) else 0,
+                "open_p1": qa.get("open_p1", 0) if isinstance(qa, dict) else 0,
             })
-        elif code == "09":
+            if runs is not None:
+                extra["test_runs"] = runs
+        elif code == "08":
             rel = manifest.get("release") or {}
             extra.update({
                 "open_p0": 0,
                 "open_p1": 0,
                 "has_remote_config_fallback": rel.get("has_remote_killswitch", True),
             })
-        elif code == "10":
+        elif code == "09":
             acq = manifest.get("acquisition") or {}
             extra.update({
                 "ecac_usd": acq.get("ecac_usd"),
                 "ecac_limit_usd": acq.get("ecac_limit_usd"),
             })
-        elif code == "11":
+        elif code == "10":
             ret = manifest.get("retention") or {}
             extra.update({
                 "d1_retention": ret.get("d1_retention"),
@@ -791,6 +901,7 @@ def audit_stage(
         red_flags = extract_red_flags(fields)
         result = _audit_stage_text(
             code, texts, platform=platform, client_zero_inference=client_zero_inference,
+            workspace=manifest_root,
         )
     if price_baseline is not None:
         pricing = audit_pricing_authority(code, texts, price_baseline)

@@ -26,6 +26,7 @@ from backend.app.services import agent_runner, collaboration, orchestrator
 from backend.app.services.agent_roles import seed_agent_roles_if_empty
 from backend.app.services.deliverable_audit import audit_unit_economics
 from backend.app.services.lead_service import generate_project_daily_digest, get_decision_inbox
+from backend.app.services.design_bundle_sim import build_design_bundle
 from backend.app.services.simulator_deliverables import build_simulated_deliverable
 from backend.app.services.workflow_engine import create_workflow_run_from_template, seed_templates_if_empty
 from backend.tests.conftest import TestingSessionLocal as AsyncSessionLocal
@@ -139,45 +140,96 @@ def _spec(code: str, check: str) -> Dict[str, Any]:
     return next(s for s in collaboration.REVIEW_MATRIX[code] if s.get("check") == check)
 
 
-def test_fakedoor_budget_check():
-    spec = _spec("04", "fakedoor_budget")
-    auth = {"financial_budget": {"per_stage_limits": {"04": 400}}}
-    assert collaboration.run_check(spec, [_sim("04")], {}, auth)["verdict"] == "approve"
-    over = collaboration.run_check(spec, ['```json\n{"test_budget_usd": 900}\n```'], {}, auth)
-    assert over["verdict"] == "request_changes" and "超过" in over["findings"][0]
-    missing = collaboration.run_check(spec, ["预算 $200"], {}, auth)
-    assert missing["verdict"] == "request_changes"
-
-
 def test_view_and_acceptance_coverage_checks():
-    upstream = {"05": _sim("05")}
-    assert collaboration.extract_ids("V", "V-01~V-04") == ["V-01", "V-02", "V-03", "V-04"]
+    upstream = {"04": _sim("04")}
+    assert collaboration.extract_ids("AC", "AC-01~AC-04") == ["AC-01", "AC-02", "AC-03", "AC-04"]
 
-    views = _spec("06", "view_coverage")
-    assert collaboration.run_check(views, [_sim("06")], upstream, {})["verdict"] == "approve"
-    partial = collaboration.run_check(views, ["只覆盖 V-01 与 V-02"], upstream, {})
-    assert partial["verdict"] == "request_changes" and "V-03" in partial["findings"][0]
+    views = _spec("05", "view_coverage")
+    assert collaboration.run_check(views, [_with_manifest("05")], upstream, {})["verdict"] == "approve"
+    partial = collaboration.run_check(views, ["只覆盖 home 与 editor"], upstream, {})
+    assert partial["verdict"] == "request_changes" and "result" in partial["findings"][0]
+    mentioned = _sim("05") + "\n结果页 result 在正文里出现了，清单没有这张画板。"
+    prose_only = collaboration.run_check(views, [mentioned], upstream, {})
+    assert prose_only["verdict"] == "request_changes" and "result" in prose_only["findings"][0]
 
-    acs = _spec("07", "acceptance_coverage")
-    assert collaboration.run_check(acs, [_sim("07")], upstream, {})["verdict"] == "approve"
-    assert collaboration.run_check(acs, ["单测覆盖 AC-01"], upstream, {})["verdict"] == "request_changes"
+    acs = _spec("06", "acceptance_coverage")
+    assert collaboration.run_check(acs, [_with_manifest("06")], upstream, {})["verdict"] == "approve"
+    prose_only = collaboration.run_check(acs, ["单测覆盖 AC-01 和 AC-02"], upstream, {})
+    assert prose_only["verdict"] == "request_changes"
+    assert "测试文件" in prose_only["findings"][0]
     assert collaboration.run_check(acs, ["无 AC"], {}, {})["verdict"] == "approve"
 
 
 def test_ecac_vs_ltv_check():
-    spec = _spec("10", "ecac_vs_ltv")
+    spec = _spec("09", "ecac_vs_ltv")
     upstream = {"02": _sim("02")}
     ltv = audit_unit_economics([upstream["02"]])["ltv_180d_usd"]
-    assert collaboration.run_check(spec, [_sim("10")], upstream, {})["verdict"] == "approve"
+    assert collaboration.run_check(spec, [_sim("09")], upstream, {})["verdict"] == "approve"
     too_high = f'```json\n{{"ecac_limit_usd": {round(ltv / 3 + 0.5, 2)}}}\n```'
     assert collaboration.run_check(spec, [too_high], upstream, {})["verdict"] == "request_changes"
 
 
 def test_backlog_evidence_check():
-    spec = _spec("11", "backlog_evidence")
-    assert collaboration.run_check(spec, [_sim("11")], {}, {})["verdict"] == "approve"
+    spec = _spec("10", "backlog_evidence")
+    assert collaboration.run_check(spec, [_sim("10")], {}, {})["verdict"] == "approve"
     weak = "| P1 | 加个暗黑模式 | 有用户提了 |"
     assert collaboration.run_check(spec, [weak], {}, {})["verdict"] == "request_changes"
+
+
+def _with_manifest(code: str) -> str:
+    prose, extra = build_simulated_deliverable(code, {"product_name": "协作产品", "platform": "ios"})
+    return prose + "\n```json\n" + extra["delivery.manifest.json"] + "\n```"
+
+
+def test_direction_card_carries_som_and_price_tiers():
+    spec = _spec("03", "direction_inherits")
+    upstream = {"01": _with_manifest("01"), "02": _with_manifest("02")}
+    assert collaboration.run_check(spec, [_sim("03")], upstream, {})["verdict"] == "approve"
+    missing = collaboration.run_check(spec, ["只有一句方向，没有盘子和价格档。"], upstream, {})
+    assert missing["verdict"] == "request_changes"
+    assert any("首年盘子" in item for item in missing["findings"])
+    assert any("价格档" in item for item in missing["findings"])
+
+
+def test_prd_carries_the_direction_card():
+    spec = _spec("04", "direction_carried")
+    upstream = {"03": _with_manifest("03")}
+    assert collaboration.run_check(spec, [_sim("04")], upstream, {})["verdict"] == "approve"
+    missing = collaboration.run_check(spec, ["本版只有页面说明，没有承接方向。"], upstream, {})
+    assert missing["verdict"] == "request_changes"
+    assert any("价值主张" in item for item in missing["findings"])
+
+
+def test_engineering_colors_must_come_from_design_tokens(tmp_path):
+    spec = _spec("06", "tokens_consumed")
+    upstream = {"05": _with_manifest("05")}
+    assert collaboration.run_check(spec, ["只写了覆盖率，没有设计令牌。"], upstream, {})["verdict"] == "approve"
+
+    design = tmp_path / "05_design"
+    code = tmp_path / "06_development"
+    for rel, content in build_design_bundle("色值产品", "ios").items():
+        dest = design / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(content, encoding="utf-8")
+    code.mkdir()
+    theme = code / "Theme.kt"
+    theme.write_text('val primary = "#0E8A5A"\n', encoding="utf-8")
+    roots = {"05": design, "06": code}
+    assert collaboration.run_check(spec, ["颜色见 tokens.json"], upstream, {}, roots)["verdict"] == "approve"
+
+    theme.write_text('val stray = "#00FFAB"\n', encoding="utf-8")
+    rejected = collaboration.run_check(spec, ["颜色见 tokens.json"], upstream, {}, roots)
+    assert rejected["verdict"] == "request_changes"
+    assert "#00ffab" in rejected["findings"][0]
+
+
+def test_retention_cites_prd_event_ids():
+    spec = _spec("10", "event_coverage")
+    upstream = {"04": _with_manifest("04")}
+    assert collaboration.run_check(spec, [_sim("10")], upstream, {})["verdict"] == "approve"
+    missing = collaboration.run_check(spec, ["| P1 | 加提醒 | D1 流失 |"], upstream, {})
+    assert missing["verdict"] == "request_changes"
+    assert "E-01" in missing["findings"][0]
 
 
 def test_unparseable_verdict_counts_as_request_changes():
@@ -185,14 +237,29 @@ def test_unparseable_verdict_counts_as_request_changes():
     assert parsed["verdict"] == "request_changes" and parsed["parse_error"]
     bad = collaboration.parse_verdict('```json\n{"verdict": "approve_gate"}\n```')
     assert bad["verdict"] == "request_changes"
-    ok = collaboration.parse_verdict(_verdict("raise_cr", cr_target_stage="05", cr_flags={"is_payment_related": True}))
+    ok = collaboration.parse_verdict(_verdict("raise_cr", cr_target_stage="04", cr_flags={"is_payment_related": True}))
     assert ok["verdict"] == "raise_cr" and ok["cr_flags"] == {"is_payment_related": True}
 
 
-def test_handoff_requirements_skip_stages_outside_run():
-    missing = collaboration.check_handoff("07", {"05": "没有验收编号", "06": "Design Tokens"}, ["05", "06"])
-    assert [m["upstream"] for m in missing] == ["05"]
-    assert collaboration.check_handoff("07", {}, ["07", "08", "09"]) == []
+def test_handoff_requirements_skip_stages_outside_run(tmp_path):
+    missing = collaboration.check_handoff("06", {"04": "没有验收编号", "05": "Design Tokens"}, ["04", "05"])
+    assert [m["upstream"] for m in missing] == ["04"]
+    assert collaboration.check_handoff("06", {}, ["06", "07", "08"]) == []
+
+    design = tmp_path / "05_design"
+    design.mkdir()
+    (design / "tokens.json").write_text("{}", encoding="utf-8")
+    (design / "delivery.manifest.json").write_text(
+        '{"stage":"05","design":{"tokens_path":"tokens.json","screens":[{"view_id":"home","path":"screens/home.html"}]}}',
+        encoding="utf-8",
+    )
+    gaps = collaboration.check_handoff(
+        "06",
+        {"04": "验收 AC-01", "05": "tokens.json"},
+        ["04", "05"],
+        {"05": design},
+    )
+    assert any("画板" in item["anchor"] for item in gaps)
 
 
 # ---------------------------------------------------------------------------
@@ -206,10 +273,10 @@ async def test_request_changes_review_revises_then_passes(monkeypatch):
         else _verdict("approve")
     ))
     async with AsyncSessionLocal() as db:
-        _prod, run = await _run_at(db, "revise", "05")
+        _prod, run = await _run_at(db, "revise", "04")
         await orchestrator.advance_run(db, run.id)
 
-        m05 = await _module(db, run.id, "05")
+        m05 = await _module(db, run.id, "04")
         assert m05.phase == "baselined"
         assert adapter.review_calls[:4] == ["eng", "ux", "eng", "ux"]
 
@@ -221,7 +288,7 @@ async def test_request_changes_review_revises_then_passes(monkeypatch):
         gate = await _gate(db, m05.id)
         assert gate.reviewer_role == "lead"
         ev = _review_evidence(gate)
-        assert {r["reviewer"] for r in ev["results"]} == {"eng", "ux"}
+        assert {r["reviewer"] for r in ev["results"]} == {"pm", "eng", "ux"}
         assert all(r["verdict"] == "approve" for r in ev["results"])
         assert "同事复核" in gate.risk_assessment
 
@@ -230,9 +297,9 @@ async def test_request_changes_review_revises_then_passes(monkeypatch):
 async def test_reviews_never_approve_gates(monkeypatch):
     _use(monkeypatch, ReviewScriptAdapter(lambda reviewer, n: _verdict("approve")))
     async with AsyncSessionLocal() as db:
-        _prod, run = await _run_at(db, "noapprove", "05", shadow_mode=True)
+        _prod, run = await _run_at(db, "noapprove", "04", shadow_mode=True)
         await orchestrator.advance_run(db, run.id)
-        m05 = await _module(db, run.id, "05")
+        m05 = await _module(db, run.id, "04")
         gate = await _gate(db, m05.id)
         assert gate.status == "pending" and m05.phase != "baselined"
         assert gate.reviewed_by is None
@@ -245,13 +312,13 @@ async def test_unresolved_review_becomes_dispute_and_human_overrides(monkeypatch
         else _verdict("approve")
     ))
     async with AsyncSessionLocal() as db:
-        prod, run = await _run_at(db, "dispute", "05")
+        prod, run = await _run_at(db, "dispute", "04")
         await orchestrator.advance_run(db, run.id)
-        m05 = await _module(db, run.id, "05")
+        m05 = await _module(db, run.id, "04")
         assert m05.phase != "baselined" and await _gate(db, m05.id) is None
 
         risk = (await db.execute(select(ExecutiveRisk).where(
-            ExecutiveRisk.product_code == prod.code, ExecutiveRisk.rule_code == "ORCH_DISPUTE_05"
+            ExecutiveRisk.product_code == prod.code, ExecutiveRisk.rule_code == "ORCH_DISPUTE_04"
         ))).scalar_one()
         assert not risk.is_resolved and "不可行" in risk.description
         inbox = await get_decision_inbox(db, prod.initiative_id)
@@ -261,7 +328,7 @@ async def test_unresolved_review_becomes_dispute_and_human_overrides(monkeypatch
 
         digest = await generate_project_daily_digest(db, prod.id)
         assert digest["collaboration"]["disputes_pending"] == 1
-        assert digest["collaboration"]["dispute_stages"] == ["05"]
+        assert digest["collaboration"]["dispute_stages"] == ["04"]
         assert any(i["item_type"] == "评审分歧" for i in digest["pending_items"])
 
         again = await orchestrator.advance_run(db, run.id)
@@ -281,7 +348,7 @@ async def test_unresolved_review_becomes_dispute_and_human_overrides(monkeypatch
         assert none_left.status_code == 409
 
     async with AsyncSessionLocal() as db:
-        m05 = await _module(db, run.id, "05")
+        m05 = await _module(db, run.id, "04")
         assert m05.phase == "baselined"
         ev = _review_evidence(await _gate(db, m05.id))
         assert ev["overridden_by"] == "human:sponsor" and ev["results"] == []
@@ -294,9 +361,9 @@ async def test_accepting_review_sends_findings_back_to_primary(monkeypatch):
         else _verdict("approve")
     ))
     async with AsyncSessionLocal() as db:
-        prod, run = await _run_at(db, "accept", "05")
+        prod, run = await _run_at(db, "accept", "04")
         await orchestrator.advance_run(db, run.id)
-        m05 = await _module(db, run.id, "05")
+        m05 = await _module(db, run.id, "04")
         status = await orchestrator.resolve_dispute(db, m05.id, "accept_review", "human:sponsor")
         assert status == "baselined"
         assert adapter.review_calls.count("ux") == 4
@@ -305,7 +372,7 @@ async def test_accepting_review_sends_findings_back_to_primary(monkeypatch):
         ruling = next(i for i, m in enumerate(msgs) if (m.metadata_json or {}).get("orchestrator") == "dispute_resolution")
         assert any((m.metadata_json or {}).get("orchestrator") == "revision" for m in msgs[ruling:])
         risk = (await db.execute(select(ExecutiveRisk).where(
-            ExecutiveRisk.product_code == prod.code, ExecutiveRisk.rule_code == "ORCH_DISPUTE_05"
+            ExecutiveRisk.product_code == prod.code, ExecutiveRisk.rule_code == "ORCH_DISPUTE_04"
         ))).scalar_one()
         assert risk.is_resolved
 
@@ -313,14 +380,14 @@ async def test_accepting_review_sends_findings_back_to_primary(monkeypatch):
 @pytest.mark.asyncio
 async def test_high_risk_cr_from_review_escalates_gate_to_red(monkeypatch):
     _use(monkeypatch, ReviewScriptAdapter(
-        lambda reviewer, n: _verdict("raise_cr", ["订阅恢复购买需要改支付流程"], cr_target_stage="05",
+        lambda reviewer, n: _verdict("raise_cr", ["订阅恢复购买需要改支付流程"], cr_target_stage="04",
                                      cr_flags={"is_payment_related": True}) if reviewer == "eng"
         else _verdict("approve")
     ))
     async with AsyncSessionLocal() as db:
-        _prod, run = await _run_at(db, "redcr", "05")
+        _prod, run = await _run_at(db, "redcr", "04")
         await orchestrator.advance_run(db, run.id)
-        m05 = await _module(db, run.id, "05")
+        m05 = await _module(db, run.id, "04")
         gate = await _gate(db, m05.id)
         assert gate.effective_level == "red" and gate.status == "pending"
         assert m05.phase != "baselined"
@@ -334,13 +401,13 @@ async def test_high_risk_cr_from_review_escalates_gate_to_red(monkeypatch):
 @pytest.mark.asyncio
 async def test_low_risk_cr_is_carried_over_without_blocking(monkeypatch):
     _use(monkeypatch, ReviewScriptAdapter(
-        lambda reviewer, n: _verdict("raise_cr", ["按钮文案建议更口语"], cr_target_stage="05") if reviewer == "ux"
+        lambda reviewer, n: _verdict("raise_cr", ["按钮文案建议更口语"], cr_target_stage="04") if reviewer == "ux"
         else _verdict("approve")
     ))
     async with AsyncSessionLocal() as db:
-        prod, run = await _run_at(db, "lowcr", "05")
+        prod, run = await _run_at(db, "lowcr", "04")
         await orchestrator.advance_run(db, run.id)
-        m05 = await _module(db, run.id, "05")
+        m05 = await _module(db, run.id, "04")
         assert m05.phase == "baselined"
         gate = await _gate(db, m05.id)
         assert gate.effective_level == "green"
@@ -354,16 +421,16 @@ async def test_low_risk_cr_is_carried_over_without_blocking(monkeypatch):
 @pytest.mark.asyncio
 async def test_failed_cross_check_skips_llm_review(monkeypatch):
     adapter = _use(monkeypatch, ReviewScriptAdapter(lambda reviewer, n: _verdict("approve"),
-                                                    primary={"07": _sim("07").replace("AC-02", "AC-01")}))
+                                                    primary={"06": _sim("06").replace("AC-02", "AC-01")}))
     async with AsyncSessionLocal() as db:
-        prod, run = await _run_at(db, "skipllm", "07")
+        prod, run = await _run_at(db, "skipllm", "06")
         result = await orchestrator.advance_run(db, run.id)
-        m07 = await _module(db, run.id, "07")
+        m07 = await _module(db, run.id, "06")
         assert m07.phase != "baselined"
-        assert "07" in result["processed"]
+        assert "06" in result["processed"]
         assert adapter.review_calls == []
         risk = (await db.execute(select(ExecutiveRisk).where(
-            ExecutiveRisk.product_code == prod.code, ExecutiveRisk.rule_code == "ORCH_DISPUTE_07"
+            ExecutiveRisk.product_code == prod.code, ExecutiveRisk.rule_code == "ORCH_DISPUTE_06"
         ))).scalar_one()
         assert "AC-02" in risk.description
 
@@ -386,16 +453,16 @@ async def _revision_count(db) -> int:
 @pytest.mark.asyncio
 async def test_missing_handoff_anchor_is_repaired_and_signature_kept(monkeypatch):
     _use(monkeypatch, ReviewScriptAdapter(lambda reviewer, n: _verdict("approve")))
-    prd_without_ac = _sim("05").replace("AC-01 ", "").replace("AC-02 ", "")
+    prd_without_ac = _sim("04").replace("AC-01 ", "").replace("AC-02 ", "")
     async with AsyncSessionLocal() as db:
-        prod, run = await _run_at(db, "handoff", "07", overrides={"05": prd_without_ac})
-        m05 = await _module(db, run.id, "05")
+        prod, run = await _run_at(db, "handoff", "06", overrides={"04": prd_without_ac})
+        m05 = await _module(db, run.id, "04")
         db.add(_approved_gate(m05, run.id, prod.code))
         await db.commit()
 
         result = await orchestrator.advance_run(db, run.id)
-        assert "07" in result["dispatched"]
-        m05 = await _module(db, run.id, "05")
+        assert "06" in result["dispatched"]
+        m05 = await _module(db, run.id, "04")
         assert m05.phase == "baselined"
         baseline = (await db.execute(select(Artifact).where(Artifact.id == m05.baseline_artifact_id))).scalar_one()
         assert "AC-01" in baseline.content and "AC-02" in baseline.content
@@ -409,14 +476,14 @@ async def test_missing_handoff_anchor_is_repaired_and_signature_kept(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_missing_tracking_dictionary_sends_stage05_back(monkeypatch):
+async def test_missing_tracking_dictionary_sends_stage04_back(monkeypatch):
     _use(monkeypatch, ReviewScriptAdapter(lambda reviewer, n: _verdict("approve")))
-    prd_without_events = _sim("05").replace("埋点", "事件")
+    prd_without_events = _sim("04").replace("埋点", "事件")
     async with AsyncSessionLocal() as db:
-        _prod, run = await _run_at(db, "tracking", "11", overrides={"05": prd_without_events})
+        _prod, run = await _run_at(db, "tracking", "10", overrides={"04": prd_without_events})
         result = await orchestrator.advance_run(db, run.id)
-        assert "11" in result["dispatched"]
-        m05 = await _module(db, run.id, "05")
+        assert "10" in result["dispatched"]
+        m05 = await _module(db, run.id, "04")
         assert m05.phase == "baselined"
         baseline = (await db.execute(select(Artifact).where(Artifact.id == m05.baseline_artifact_id))).scalar_one()
         assert "埋点" in baseline.content
@@ -428,14 +495,14 @@ async def test_missing_tracking_dictionary_sends_stage05_back(monkeypatch):
 async def test_handoff_repair_stops_after_two_failures(monkeypatch):
     _use(monkeypatch, ReviewScriptAdapter(
         lambda reviewer, n: _verdict("approve"),
-        primary={"05": "补写后仍然没有验收编号，也没有章节。"},
+        primary={"04": "补写后仍然没有验收编号，也没有章节。"},
     ))
-    prd_without_ac = _sim("05").replace("AC-01 ", "").replace("AC-02 ", "")
+    prd_without_ac = _sim("04").replace("AC-01 ", "").replace("AC-02 ", "")
     async with AsyncSessionLocal() as db:
-        prod, run = await _run_at(db, "handoffstuck", "07", overrides={"05": prd_without_ac})
+        prod, run = await _run_at(db, "handoffstuck", "06", overrides={"04": prd_without_ac})
         result = await orchestrator.advance_run(db, run.id)
-        m07 = await _module(db, run.id, "07")
-        m05 = await _module(db, run.id, "05")
+        m07 = await _module(db, run.id, "06")
+        m05 = await _module(db, run.id, "04")
         assert result["dispatched"] == []
         assert not (await db.execute(select(Artifact).where(Artifact.module_id == m07.id))).scalars().all()
         assert m05.phase == "baselined"
@@ -444,7 +511,7 @@ async def test_handoff_repair_stops_after_two_failures(monkeypatch):
         assert await _revision_count(db) == 2
 
         risk = (await db.execute(select(ExecutiveRisk).where(
-            ExecutiveRisk.product_code == prod.code, ExecutiveRisk.rule_code == "ORCH_STUCK_05"
+            ExecutiveRisk.product_code == prod.code, ExecutiveRisk.rule_code == "ORCH_STUCK_04"
         ))).scalar_one()
         assert "验收编号" in risk.description
         gaps = (await db.execute(select(Issue).where(Issue.category == "handoff_gap"))).scalars().all()
@@ -463,18 +530,18 @@ async def test_handoff_repair_stops_after_two_failures(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_handoff_repair_new_red_flag_keeps_old_signature_pending(monkeypatch):
-    patched = _sim("05") + '\n```json\n{"is_payment_related": true}\n```\n'
-    _use(monkeypatch, ReviewScriptAdapter(lambda reviewer, n: _verdict("approve"), primary={"05": patched}))
-    prd_without_ac = _sim("05").replace("AC-01 ", "").replace("AC-02 ", "")
+    patched = _sim("04") + '\n```json\n{"is_payment_related": true}\n```\n'
+    _use(monkeypatch, ReviewScriptAdapter(lambda reviewer, n: _verdict("approve"), primary={"04": patched}))
+    prd_without_ac = _sim("04").replace("AC-01 ", "").replace("AC-02 ", "")
     async with AsyncSessionLocal() as db:
-        prod, run = await _run_at(db, "handoffred", "07", overrides={"05": prd_without_ac})
-        m05 = await _module(db, run.id, "05")
+        prod, run = await _run_at(db, "handoffred", "06", overrides={"04": prd_without_ac})
+        m05 = await _module(db, run.id, "04")
         db.add(_approved_gate(m05, run.id, prod.code))
         await db.commit()
 
         result = await orchestrator.advance_run(db, run.id)
-        assert "07" not in result["dispatched"]
-        m05 = await _module(db, run.id, "05")
+        assert "06" not in result["dispatched"]
+        m05 = await _module(db, run.id, "04")
         assert m05.phase != "baselined"
         baseline = (await db.execute(select(Artifact).where(Artifact.id == m05.baseline_artifact_id))).scalar_one()
         assert "AC-01" not in baseline.content
@@ -492,8 +559,8 @@ async def test_downstream_context_carries_handoff_anchors(monkeypatch):
     from backend.app.services.context_assembler import assemble_module_context
 
     async with AsyncSessionLocal() as db:
-        _prod, run = await _run_at(db, "anchors", "07")
-        m07 = await _module(db, run.id, "07")
+        _prod, run = await _run_at(db, "anchors", "06")
+        m07 = await _module(db, run.id, "06")
         ctx, _path, meta = await assemble_module_context(db, m07.id, "开工")
         assert "## 上游交接锚点" in ctx and "AC-01" in ctx
 

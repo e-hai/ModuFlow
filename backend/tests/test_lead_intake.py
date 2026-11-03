@@ -44,19 +44,17 @@ async def test_lead_intake_chat_focus_track():
         reply = data["reply"]
         proposal = data["proposal"]
 
-        # Check Lead's sharp reply
-        assert "战略定位定性" in reply
-        assert "真实市场与竞品信号" in reply
-        assert "红队挑战" in reply
+        assert "已记下" in reply
+        assert "15,000" in reply or "15000" in reply.replace(",", "")
+        assert "Forest" not in reply
+        assert "Sensor Tower" not in reply
 
-        # Check proposal parameters
         assert proposal["budget"] == 15000.0
         assert proposal["currency"] == "USD"
-        assert "专注" in proposal["name"] or "Focus" in proposal["name"]
-        assert len(proposal["signals"]) >= 2
-        assert len(proposal["unverified_assumptions"]) >= 1
-        assert len(proposal["kill_criteria"]) >= 1
-        assert "01_market_research" in proposal["stage_allocations"]
+        assert "专注" in proposal["name"]
+        assert "北美离线极简专注" not in proposal["name"]
+        assert proposal.get("signals") in (None, [])
+        assert proposal.get("stage_allocations") in (None, {})
 
 
 @pytest.mark.asyncio
@@ -96,5 +94,29 @@ async def test_create_initiative_with_lead_rationale():
         created = create_resp.json()
         assert created["name"] == proposal["name"]
         assert created["initiative_rationale"] is not None
-        assert len(created["initiative_rationale"]["signals"]) >= 1
+        assert created["initiative_rationale"].get("signals") in (None, [])
+        assert "图像" in created["name"]
+        assert created["budget"] == 18000.0
         assert created["initiative_rationale"]["lead_recommendation"] == "approved_by_lead_intake"
+
+
+@pytest.mark.asyncio
+async def test_intake_message_is_queued_when_orchestration_is_on(monkeypatch):
+    from backend.app.core.config import settings
+
+    monkeypatch.setattr(settings, "ORCHESTRATOR_ENABLED", True)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        resp = await ac.post("/api/v1/initiatives/intake/chat", json={
+            "messages": [
+                {"role": "user", "content": "做一款自媒体旅游视频工具，预算 9,000 美元"}
+            ]
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["reply"] == "正在查阅可靠来源"
+        assert data["job_id"]
+        assert data["draft_id"]
+        job = await ac.get(f"/api/v1/initiatives/intake/jobs/{data['job_id']}")
+        assert job.status_code == 200
+        assert job.json()["status"] == "queued"

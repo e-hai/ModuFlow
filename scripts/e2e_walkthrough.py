@@ -171,13 +171,12 @@ async def run_e2e_walkthrough():
                 "01": 500.0,
                 "02": 500.0,
                 "03": 500.0,
-                "04": 500.0,
-                "05": 1000.0,
-                "06": 2000.0,
-                "07": 3500.0,
-                "08": 1500.0,
-                "09": 500.0,
-                "10": 1500.0
+                "04": 1000.0,
+                "05": 2000.0,
+                "06": 3500.0,
+                "07": 1500.0,
+                "08": 500.0,
+                "09": 1500.0
             }
         },
         "kill_criteria": [
@@ -284,7 +283,7 @@ async def run_e2e_walkthrough():
     print(f"✅ [校验器] 授权包符合 JSON Schema 2020-12 规范，预算精确平衡 ($12,000)，硬止损线 ($15,000) 校验通过！")
 
     # 3. Create Workflow Run
-    print_step("第 2 阶段：创建全套 11 道标准产研工序流水线 (Workflow Pipeline)", "⚡")
+    print_step("第 2 阶段：创建全套 11 道标准产品工序流水线 (Workflow Pipeline)", "⚡")
     async with AsyncSessionLocal() as db:
         # Check existing run
         r_stmt = select(WorkflowRun).where(and_(WorkflowRun.product_id == product_id, WorkflowRun.name == run_name))
@@ -512,7 +511,7 @@ async def run_e2e_walkthrough():
   - **核心 CTR 转化率: 4.73%** (远超门禁线 ≥1.5%，生死假设 H3 验证通过！)
   - 获客意向成本 (eCAC): **\$4.03 USD** (低于止损线 \$8.00)
 - 可交互 H5 假门着陆页已交付：`{h5_artifact_path.name}`
-- 决策建议：**【Go 坚决立项】**，各项指标未命中任何退出线，准予进入工序 05 研发实施。
+- 决策建议：**【Go 坚决立项】**，各项指标未命中任何退出线，准予进入工序 04 研发实施。
 
 <!-- EXECUTIVE_GATE_END -->
 ## 完整执行细节 (Execution Reference)
@@ -528,7 +527,7 @@ async def run_e2e_walkthrough():
         g2_app = await create_or_update_gate_application(
             db=db,
             module_id=mod04.id,
-            recommendation="假门外测 CTR 达到 4.73%，CAC $4.03，未命中任何止损线，强烈建议批准 G2 外测决议正式推进产研！",
+            recommendation="假门外测 CTR 达到 4.73%，CAC $4.03，未命中任何止损线，强烈建议批准 G2 外测决议正式推进产品！",
             evidence=["真实外测 CTR: 4.73% (门禁 >= 1.5%)", "真实外测 CAC: $4.03 (止损 < $8.00)", "生成可交互 H5 页面"],
             risk_assessment="外测流量为小额测试流量，正式研发需严格遵循客户端零推理与轻量架构保证体验。",
             decision_options=["approve", "reject", "adjust"],
@@ -542,15 +541,15 @@ async def run_e2e_walkthrough():
             db=db,
             gate_id=g2_app.id,
             action="approve",
-            comment="真实外测数据表现优秀，确认 G2 外测决议，正式启动重度产研工程！",
+            comment="真实外测数据表现优秀，确认 G2 外测决议，正式启动重度产品工程！",
             actor="human:sponsor",
             actor_role="human"
         )
         print(f"👤 [人类战略层审批] 成功签署 G2 外测决议关口 (Yellow Gate): {approved_g2.status}")
 
     # 8. Stage 05: 产品需求定义 (pm) - Testing Auto-Escalation to RED
-    print_step("工序 05：产品需求定义 (pm) · 纯业务 PRD 契约与自动升红测试", "📝")
-    stage05_content = """## 负责人 30 秒拍板摘要卡 (Executive Gate)
+    print_step("工序 04：产品需求定义 (pm) · 纯业务 PRD 契约与自动升红测试", "📝")
+    stage04_content = """## 负责人 30 秒拍板摘要卡 (Executive Gate)
 - 版本说明：FocusZen v1.0.0 纯业务需求规格说明书 (PRD)。
 - 业务范围封版：5 大核心视图 (`V-01~V-05`)，6 大功能模块 (`M1~M6`)。
 - 商业特权：免费用户可畅听 4 款基础声效，购买会员或 24h 通行证 (payment subscription) 解锁 18 款 3D 空间音频。
@@ -581,8 +580,8 @@ Scenario: 购买 24h 通行证后立即可用会员音效
   Then 系统立即激活会员特权标记，有效期顺延 24 小时
 ```
 """
-    await deliver_and_baseline("05", "FocusZen 黄金 7+1 纯业务 PRD 规格契约", stage05_content)
-    mod05 = await get_mod("05")
+    await deliver_and_baseline("04", "FocusZen 黄金 7+1 纯业务 PRD 规格契约", stage04_content)
+    mod05 = await get_mod("04")
 
     # Gate Application for Stage 05: Check automatic escalation to 🔴 RED
     async with AsyncSessionLocal() as db:
@@ -594,9 +593,9 @@ Scenario: 购买 24h 通行证后立即可用会员音效
             risk_assessment="涉及货币支付与内购特权结算，必须由人类亲自审核确认定价与权限划分。",
             decision_options=["approve", "reject", "adjust"],
             submitted_by="agent:lead",
-            context={"content": stage05_content, "has_payment": True}
+            context={"content": stage04_content, "has_payment": True}
         )
-        print(f"🚨 [关口自动升级校验] 工序 05 基础级别: {g5_app.base_level} -> 有效级别: {g5_app.effective_level} (is_escalated: {g5_app.is_escalated})")
+        print(f"🚨 [关口自动升级校验] 工序 04 基础级别: {g5_app.base_level} -> 有效级别: {g5_app.effective_level} (is_escalated: {g5_app.is_escalated})")
         assert g5_app.effective_level == "red", "涉及 payment 必须自动升为 🔴 红级关口！"
         assert g5_app.is_escalated is True
 
@@ -626,7 +625,7 @@ Scenario: 购买 24h 通行证后立即可用会员音效
         print(f"👤 [人类战略层审批] 成功签署 🔴 红级关口确认单: {approved_g5.status}")
 
     # 9. Stage 06: 设计实现 (ux) - Testing HIG Compliance
-    print_step("工序 06：设计实现 (ux) · Apple HIG 规范校验与资产交付", "🎨")
+    print_step("工序 05：设计实现 (ux) · Apple HIG 规范校验与资产交付", "🎨")
     design_tokens = {
         "color": {
             "background": "#0F172A",
@@ -642,7 +641,7 @@ Scenario: 购买 24h 通行证后立即可用会员音效
             "min_pt": 44   # Apple HIG touch target
         }
     }
-    stage06_content = f"""## 负责人 30 秒拍板摘要卡 (Executive Gate)
+    stage05_content = f"""## 负责人 30 秒拍板摘要卡 (Executive Gate)
 - 遵循平台规范：**Apple iOS Human Interface Guidelines (HIG)**
 - 灵动岛顶部安全区留白：**71 pt** (严格 ≥71pt，杜绝遮挡)
 - 最小触控热区：**44 × 44 pt** (严格 ≥44pt，杜绝误触)
@@ -654,21 +653,21 @@ Scenario: 购买 24h 通行证后立即可用会员音效
 {json.dumps(design_tokens, indent=2)}
 ```
 """
-    await deliver_and_baseline("06", "FocusZen HIG 设计系统规范与资产包", stage06_content)
-    mod06 = await get_mod("06")
+    await deliver_and_baseline("05", "FocusZen HIG 设计系统规范与资产包", stage05_content)
+    mod06 = await get_mod("05")
 
     # Run platform design audit
     design_audit = audit_platform_design_system(
         platform="ios",
         top_safe_value=71,
         min_touch_value=44,
-        content=stage06_content
+        content=stage05_content
     )
     print(f"🍏 [iOS HIG 规范审计] 灵动岛安全区: {design_audit['dynamic_island_safe_pt']}pt, 触控热区: {design_audit['min_touch_pt']}pt, 审计结论: {design_audit['advice']}")
     assert design_audit["passed"] is True, "HIG 设计规范审计应通过"
 
     # 10. Stage 07: 开发实现 (eng) - Testing Zero Inference
-    print_step("工序 07：开发实现 (eng) · 物理数据模型与零推理审计", "💻")
+    print_step("工序 06：开发实现 (eng) · 物理数据模型与零推理审计", "💻")
     sqlite_ddl = """-- FocusZen Production SQLite DDL (Eng Core)
 CREATE TABLE user_settings (
     id TEXT PRIMARY KEY,
@@ -686,7 +685,7 @@ CREATE TABLE focus_sessions (
 );
 CREATE INDEX idx_focus_sessions_created ON focus_sessions(created_at);
 """
-    stage07_content = f"""## 负责人 30 秒拍板摘要卡 (Executive Gate)
+    stage06_content = f"""## 负责人 30 秒拍板摘要卡 (Executive Gate)
 - 技术栈选型：Swift 5.9, SwiftUI, AVFoundation 空间音频引擎, SQLite (WAL 模式)。
 - 物理数据存储模型已落地：建表 DDL 完整支持索引与事务。
 - 单测覆盖率：**86.4%** (核心音频调度与番茄钟状态机 ≥80%)。
@@ -698,8 +697,8 @@ CREATE INDEX idx_focus_sessions_created ON focus_sessions(created_at);
 {sqlite_ddl}
 ```
 """
-    await deliver_and_baseline("07", "FocusZen 轻量架构与物理存储代码交付", stage07_content)
-    mod07 = await get_mod("07")
+    await deliver_and_baseline("06", "FocusZen 轻量架构与物理存储代码交付", stage06_content)
+    mod07 = await get_mod("06")
 
     # Run zero inference audit
     zero_inf_audit = audit_client_zero_inference(
@@ -711,8 +710,8 @@ CREATE INDEX idx_focus_sessions_created ON focus_sessions(created_at);
     assert zero_inf_audit["passed"] is True
 
     # 11. Stage 08: 测试与 QA (qa)
-    print_step("工序 08：测试与 QA (qa) · 质量门与缺陷清障", "🛡️")
-    stage08_content = """## 负责人 30 秒拍板摘要卡 (Executive Gate)
+    print_step("工序 07：测试与 QA (qa) · 质量门与缺陷清障", "🛡️")
+    stage07_content = """## 负责人 30 秒拍板摘要卡 (Executive Gate)
 - 测试执行结果：
   - 端到端用例执行总数：**42 项**
   - 通过率：**100%** (42 / 42 全部 Passed)
@@ -726,12 +725,12 @@ CREATE INDEX idx_focus_sessions_created ON focus_sessions(created_at);
 - 自动化冒烟测试报告：通过
 - 空间音频淡出淡入过渡抗撕裂测试：通过
 """
-    await deliver_and_baseline("08", "FocusZen 端到端测试与质量封版报告", stage08_content)
+    await deliver_and_baseline("07", "FocusZen 端到端测试与质量封版报告", stage07_content)
     print("✅ [G3 质量门] 0 个 P0/P1 缺陷，冒烟测试全绿，通过 G3 质量准出！")
 
     # 12. Stage 09: 发布与上线 (qa + cmp) - Testing G4 Human Blocker
-    print_step("工序 09：发布与上线 (qa + cmp) · G4 提审发布硬红线把关", "🚀")
-    stage09_content = """## 负责人 30 秒拍板摘要卡 (Executive Gate)
+    print_step("工序 08：发布与上线 (qa + cmp) · G4 提审发布硬红线把关", "🚀")
+    stage08_content = """## 负责人 30 秒拍板摘要卡 (Executive Gate)
 - 商店元数据合规审查：
   - Apple 4.3 查重度：**8.2%** (原创空间音频算法，极低重复度)
   - 隐私营养标签：仅收集匿名崩溃日志，无追踪器
@@ -743,8 +742,8 @@ CREATE INDEX idx_focus_sessions_created ON focus_sessions(created_at);
 - 隐私政策公开链接：`https://focuszen.app/privacy`
 - 用户服务协议公开链接：`https://focuszen.app/terms`
 """
-    art09 = await deliver_and_baseline("09", "FocusZen App Store 上架提审合规审查案", stage09_content)
-    mod09 = await get_mod("09")
+    art09 = await deliver_and_baseline("08", "FocusZen App Store 上架提审合规审查案", stage08_content)
+    mod09 = await get_mod("08")
 
     # Verify G4 Human Approval requirement
     async with AsyncSessionLocal() as db:
@@ -757,7 +756,7 @@ CREATE INDEX idx_focus_sessions_created ON focus_sessions(created_at);
             decision_options=["approve", "reject", "adjust"],
             submitted_by="agent:lead"
         )
-        assert g4_app.effective_level == "red", "工序 09 G4 提审门禁必须为 🔴 红级关口"
+        assert g4_app.effective_level == "red", "工序 08 G4 提审门禁必须为 🔴 红级关口"
 
         # Lead shadow recommendation (Lead cannot approve Red Gate)
         evaluated_g4, _ = await evaluate_gate_by_lead(db, g4_app.id, lead_actor="agent:lead")

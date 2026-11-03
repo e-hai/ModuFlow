@@ -76,6 +76,7 @@ def compose_lead_rationale(
     escalated: bool,
     escalation_reasons: Optional[List[str]],
     blocking_findings: List[str],
+    note: str = "",
 ) -> tuple:
     """项目总控对负责人的口头汇报。结论只复述已经写明的事实，不另编一套空话。"""
     if escalated:
@@ -84,7 +85,10 @@ def compose_lead_rationale(
     if blocking_findings:
         stuck = "；".join(item.rstrip("。") for item in blocking_findings[:3])
         return "rejected", f"我看完了，建议先别过。卡在：{stuck}。改完再请您看。"
-    return "approved", "我看完了，建议放行。上面要确认的事，材料和依据是齐的。"
+    approved = "我看完了，建议放行。上面要确认的事，材料和依据是齐的。"
+    if note:
+        approved = f"我看完了，建议放行。{note}上面要确认的事，材料和依据是齐的。"
+    return "approved", approved
 
 
 def _gate_blocking_findings(evidence: Any) -> List[str]:
@@ -146,12 +150,18 @@ async def evaluate_gate_by_lead(
     shadow_mode_enabled = product.shadow_mode if product else True
     effective_level = gate.effective_level
     blocking_findings = _gate_blocking_findings(gate.evidence)
+    note = ""
+    for item in gate.evidence or []:
+        if isinstance(item, dict) and item.get("capture_rate_basis") == "assumption":
+            note = "取得比例是假设。"
+            break
 
     # 1. Lead assesses recommendation from structured fields/evidence only.
     lead_recommendation, lead_rationale = compose_lead_rationale(
         escalated=bool(gate.is_escalated),
         escalation_reasons=list(gate.escalation_reasons or []),
         blocking_findings=blocking_findings,
+        note=note,
     )
 
     # 2. Apply shadow mode rules
@@ -301,7 +311,7 @@ def shadow_readiness(resolved_decisions: List[LeadShadowDecision]) -> Tuple[bool
         return False, f"最近 {SHADOW_READY_RECENT_WINDOW} 次裁决中有分歧"
     return True, (
         f"人类已裁决 {total} 次，一致率 {rate * 100:.1f}%，最近 {SHADOW_READY_RECENT_WINDOW} 次全部一致，"
-        "可以考虑关闭影子模式，让 lead 自行放行绿级关口"
+        "可以考虑关闭影子模式，让 lead 自行通过绿级放行"
     )
 
 
@@ -448,7 +458,7 @@ async def arbitrate_cr_by_lead(
             "lead_recommendation": "escalate_to_human",
             "is_escalated": True,
             "escalation_reason": "CR 涉及支付定价、隐私合规或核心安全，超出 Lead 仲裁权限，强制升级人类决策",
-            "suggested_action": "提交工序 05 产品经理与人类负责人进行需求基线合规评审",
+            "suggested_action": "提交工序 04 产品经理与人类负责人进行需求基线合规评审",
             "arbitrated_by": lead_actor,
             "timestamp": now.isoformat()
         }
@@ -458,7 +468,7 @@ async def arbitrate_cr_by_lead(
             "lead_recommendation": "accept_cr_revision",
             "is_escalated": False,
             "escalation_reason": None,
-            "suggested_action": "低风险体验/实现优化，建议上游工序 05 采纳并在新基线中修订业务说明",
+            "suggested_action": "低风险体验/实现优化，建议上游工序 04 采纳并在新基线中修订业务说明",
             "arbitrated_by": lead_actor,
             "timestamp": now.isoformat()
         }
@@ -545,7 +555,7 @@ async def generate_project_daily_digest(
         "active_run_auto_advance": bool(active_run.auto_advance) if active_run else None,
         "collaboration": collaboration,
         "lead_dispatch_recommendation": (
-            "存在待审批关口，建议负责人先行处置" if pending_gates
+            "存在待审批的放行，建议负责人先行处置" if pending_gates
             else "存在协作评审分歧，需负责人裁决" if collaboration["disputes_pending"]
             else f"当前项目处于【{product.stage}】阶段，各工序运转正常，按计划推进。"
         )
@@ -559,7 +569,7 @@ async def generate_project_daily_digest(
     baselined = sum(1 for m in run_modules if m.phase == "baselined")
     pending_items = [
         {
-            "item_type": "关口审批",
+            "item_type": "放行审批",
             "title": f"工序 {g.module_code} {g.gate_name}（{g.effective_level}）",
             "urgency": "high" if g.effective_level == "red" else "medium",
         }

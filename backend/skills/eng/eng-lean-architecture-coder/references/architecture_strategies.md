@@ -31,7 +31,7 @@ Alings with JetBrains official latest KMP Default Structure (AGP 9.0+ compliant)
     - `viewmodel/`: `StateFlow<UiState<T>>` managing 4 states (Ready, Loading, Empty, Error).
     - `theme/`: `Tokens.kt` single source of truth for color, typography, spacing.
     - `components/`: Base UI components enforcing touch target constraints (`48.dp` / `44.dp`).
-    - `screens/`: Screen views corresponding to PRD `V-01~V-xx`.
+    - `screens/`: Screen views corresponding to stage 04 view ids (`home`, `editor`, …).
     - `App.kt`: Root composable and navigation host.
   - `src/commonTest/kotlin/com/moduflow/`:
     - Gherkin AC tests covering models and business logic (≥ 80% coverage).
@@ -76,7 +76,7 @@ Used for deep OS-specific capabilities (e.g. Live Activities, Interactive Widget
 - Encapsulate skeleton shimmer animation for `Loading` state.
 
 ### Layer 4: Screen Views & Navigation Assembly
-- For each PRD view code (`V-01`, `V-02`, etc.):
+- For each stage 04 view id (`home`, `editor`, etc.):
   - Render all 4 states using `when (state)` (Compose) or `switch state` (SwiftUI).
   - Connect screen transitions according to PRD navigation flows.
 

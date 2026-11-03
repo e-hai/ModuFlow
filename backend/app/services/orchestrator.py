@@ -2,7 +2,7 @@
 自动编排器：交接锚点检查（缺了就发回上游补，最多 2 次）→ 派活 → 交付物确定性检查
 → 关口申请 → lead 评估 → 定稿 → 解锁下游。
 
-只减少"推一下"的人工动作，不改关口规则：黄/红级关口、工序 09、影子模式下的绿级关口
+只减少"推一下"的人工动作，不改关口规则：黄/红级关口、工序 08、影子模式下的绿级关口
 仍停在 pending 等人类签字；熔断与授权检查仍由 can_baseline_module 确定性执行。
 已签字的上游补锚点时，原签字继续有效；补写带上新的红级标记才重新请人批。
 """
@@ -320,8 +320,19 @@ async def _collaboration_reviews(
         return []
     upstream = await _upstream_baselines(db, mod.run_id)
     auth_data = _authorization_data(product)
+    from backend.app.services.delivery_contract import read_manifest_text, stage_directory
+
+    body = latest.content or ""
+    manifest_text = read_manifest_text(getattr(latest, "storage_rel_path", None))
+    review_texts = [body]
+    if manifest_text.strip() and manifest_text.strip() not in body:
+        review_texts.append(manifest_text)
+    roots = await _upstream_stage_dirs(db, mod.run_id)
+    current_root = stage_directory([latest])
+    if current_root is not None:
+        roots[mod.module_code] = current_root
     results = [
-        run_check(spec, [latest.content or ""], upstream, auth_data)
+        run_check(spec, review_texts, upstream, auth_data, roots)
         for spec in specs if spec["kind"] == "check"
     ]
     if mode != "full" or any(r["verdict"] == "request_changes" for r in results):
@@ -336,11 +347,27 @@ async def _collaboration_reviews(
     return results
 
 
+async def _upstream_stage_dirs(db: AsyncSession, run_id: str) -> Dict[str, Path]:
+    from backend.app.services.delivery_contract import stage_directory
+
+    modules = (await db.execute(select(ModuleInstance).where(ModuleInstance.run_id == run_id))).scalars().all()
+    roots: Dict[str, Path] = {}
+    for module in modules:
+        if not module.baseline_artifact_id:
+            continue
+        art = (await db.execute(select(Artifact).where(Artifact.id == module.baseline_artifact_id))).scalar_one_or_none()
+        root = stage_directory([art] if art is not None else [])
+        if root is not None:
+            roots[module.module_code] = root
+    return roots
+
+
 async def _handoff_gaps(db: AsyncSession, mod: ModuleInstance) -> List[Dict[str, str]]:
     from backend.app.services.collaboration import check_handoff
 
     upstream = await _upstream_baselines(db, mod.run_id)
-    return check_handoff(mod.module_code, upstream, list(upstream.keys()))
+    roots = await _upstream_stage_dirs(db, mod.run_id)
+    return check_handoff(mod.module_code, upstream, list(upstream.keys()), roots)
 
 
 async def _flag_handoff_gaps(
@@ -411,7 +438,7 @@ async def _file_review_crs(
     for r in results:
         if r.get("verdict") != "raise_cr":
             continue
-        target = by_code.get(str(r.get("cr_target_stage") or "05")) or mod
+        target = by_code.get(str(r.get("cr_target_stage") or "04")) or mod
         summary = "；".join(r.get("findings") or ["协作评审提出需求变更"])
         flags = {k: True for k, v in (r.get("cr_flags") or {}).items() if v and k in RED_FLAG_FIELDS}
         issue = (await db.execute(select(Issue).where(and_(
@@ -535,6 +562,50 @@ async def _revisions_since_boundary(db: AsyncSession, session_id: str) -> int:
     return count
 
 
+def _stage01_lookup_question(mod: ModuleInstance, product: Optional[Product], initiative: Any) -> str:
+    parts: List[str] = []
+    if initiative is not None:
+        parts.extend([
+            getattr(initiative, "target_market", None),
+            getattr(initiative, "strategic_intent", None),
+            getattr(initiative, "name", None),
+        ])
+    if product is not None:
+        parts.append(product.name)
+    parts.append(mod.name)
+    return " ".join(str(part).strip() for part in parts if part and str(part).strip())
+
+
+async def _prepare_stage01_sources(
+    db: AsyncSession,
+    mod: ModuleInstance,
+    run: WorkflowRun,
+    product: Optional[Product],
+) -> None:
+    """工序 01 派活前查阅一次，摘录落在工序目录。"""
+    from backend.app.models.entities import StrategicInitiative
+    from backend.app.services.reliable_sources import prepare_stage_sources
+    from backend.app.services.workspace_sync import module_workspace_dir
+
+    initiative = None
+    if product is not None and product.initiative_id:
+        initiative = (await db.execute(
+            select(StrategicInitiative).where(StrategicInitiative.id == product.initiative_id)
+        )).scalar_one_or_none()
+    workspace = module_workspace_dir(
+        product.initiative_id if product and product.initiative_id else "standalone",
+        product.code if product else "product",
+        run.name,
+        run.id,
+        mod.order_index,
+        mod.module_code,
+        mod.name,
+    )
+    workspace.mkdir(parents=True, exist_ok=True)
+    question = _stage01_lookup_question(mod, product, initiative)
+    await asyncio.to_thread(prepare_stage_sources, workspace, question)
+
+
 def _dispatch_brief(mod: ModuleInstance, product: Optional[Product]) -> str:
     from backend.app.services.agent_roles import STAGE_ROLE_CONFIGS, get_stage_gate_conditions
 
@@ -549,6 +620,12 @@ def _dispatch_brief(mod: ModuleInstance, product: Optional[Product]) -> str:
     ]
     lines += [f"- {c}" for c in conditions] or ["- 按本工序契约产出完整交付物"]
     lines.append("涉及支付、隐私、密钥、数据字典变更时，请在交付物里写结构化标记（如 is_payment_related: true）。")
+    if mod.module_code == "01":
+        lines.append(
+            "本目录 sources/ 里是派活前打开的摘录。月搜索量和客单价必须出现在对应摘录原句里，"
+            "citations 分别指向这些 URL。取得比例没有原句就标 basis 为 assumption，不能写成已观测。"
+            "market 写市场，demand_definition 写口径。年安装量和首年盘子必须等于这三个数的乘积。"
+        )
     return "\n".join(lines)
 
 
@@ -747,6 +824,14 @@ async def _process_artifact(
             if compliance_blocks_lead:
                 reasons += compliance_failed_items(compliance)
             reasons = reasons or ["交付物检查未通过"]
+            from backend.app.services.delivery_contract import RELEASE_PENDING_REASON
+
+            if mod.module_code == "07" and reasons == [RELEASE_PENDING_REASON] and not compliance_blocks_lead:
+                produced = await _produce_release_package(db, product, mod)
+                if produced:
+                    continue
+                await _raise_stuck(db, product, mod, session, ["工序 06 没有产出正式安装包"], exhausted=True)
+                return "stuck"
             if origin == "human_confirmed":
                 await _raise_stuck(db, product, mod, session, reasons, headline="重新检查仍未通过")
                 return "stuck"
@@ -799,6 +884,7 @@ async def _process_artifact(
             "score": audit.get("score"),
             "artifact_version": artifacts[-1].version,
             "summary": brief["evidence"],
+            "capture_rate_basis": audit.get("capture_rate_basis") or "",
         }]
         risk_parts = [brief["risk"]]
         if audit.get("red_flags"):
@@ -865,12 +951,58 @@ async def _process_artifact(
         return "baselined" if ok else "finalize_blocked"
 
 
+async def _produce_release_package(
+    db: AsyncSession,
+    product: Optional[Product],
+    qa_mod: ModuleInstance,
+) -> bool:
+    """工序 07 已用测试包装完验收后，请工序 06 在原工程上补正式安装包，并恢复工序 06 的定稿。"""
+    from backend.app.services.delivery_contract import release_package_file, stage_directory
+
+    modules = (await db.execute(
+        select(ModuleInstance).where(ModuleInstance.run_id == qa_mod.run_id)
+    )).scalars().all()
+    upstream = next((item for item in modules if item.module_code == "06"), None)
+    if upstream is None or not upstream.baseline_artifact_id:
+        return False
+    previous_id = upstream.baseline_artifact_id
+    session = await _get_or_create_session(db, upstream.id)
+    reply = await _post_and_run(
+        db,
+        session,
+        "【产出正式安装包】工序 07 已用测试安装包完成应用测试。请在现有工程上补这个包，不要替换测试安装包。",
+        "feedback",
+        "revision",
+        {"release_package": True},
+    )
+    await db.refresh(upstream)
+    artifacts = await _module_artifacts(db, upstream.id)
+    root = stage_directory(artifacts)
+    if not reply or not reply.artifact_ref_id or release_package_file(root) is None:
+        await _restore_baseline(db, upstream, previous_id)
+        return False
+    new_id = upstream.baseline_artifact_id or reply.artifact_ref_id
+    for art in artifacts:
+        art.is_baseline = art.id == new_id
+        db.add(art)
+    upstream.baseline_artifact_id = new_id
+    upstream.phase = "baselined"
+    db.add(upstream)
+    await db.commit()
+    _write_audit(product, "RELEASE_PACKAGE_BUILT", {
+        "module_code": "06",
+        "module_id": upstream.id,
+        "artifact_id": new_id,
+    })
+    return True
+
+
 def _handoff_repair_brief(upstream: ModuleInstance, downstream: ModuleInstance, anchors: List[str]) -> str:
     return "\n".join([
         f"【交接补缺】工序 {downstream.module_code} {downstream.name} 开工前，"
         f"工序 {upstream.module_code} 已定稿基线缺少：{'、'.join(anchors)}。",
         "请在现有基线上升成新版本，补上这些锚点，并让本工序确定性检查能够通过。",
-        "工序 04、05 的锚点写在 delivery.manifest.json 的对应字段里，并与正文一起改。",
+        "工序 04 的锚点写在 delivery.manifest.json 的对应字段里，并与正文一起改。",
         "不要改已经由负责人签过字的支付、隐私、密钥或数据字典结论。",
         "只有补写本身新出现这类事项时，才在交付物里写对应的结构化标记。",
     ])
@@ -1159,6 +1291,8 @@ async def _advance(db: AsyncSession, run_id: str) -> Dict[str, Any]:
 
         if action == "dispatch":
             dispatched.append(target.module_code)
+            if target.module_code == "01" and settings.AGENT_ADAPTER_TYPE != "simulator":
+                await _prepare_stage01_sources(db, target, run, product)
             _write_audit(product, "STAGE_DISPATCHED", {"module_code": target.module_code, "module_id": target.id})
             reply = await _post_and_run(db, session, _dispatch_brief(target, product), "instruction", "dispatch")
             if not reply or not reply.artifact_ref_id:
@@ -1303,7 +1437,7 @@ async def on_gate_reviewed(db: AsyncSession, gate_id: str) -> str:
     async with get_run_lock(mod.run_id):
         session = await _get_or_create_session(db, mod.id)
         verdict = "打回" if gate.status == "rejected" else "要求调整"
-        feedback = f"【负责人{verdict}关口「{gate.gate_name}」】\n{gate.review_comment or '请根据关口意见修订交付物。'}"
+        feedback = f"【负责人{verdict}放行「{gate.gate_name}」】\n{gate.review_comment or '请根据放行意见修订交付物。'}"
         reply = await _post_and_run(db, session, feedback, "feedback", "gate_feedback", {"gate_id": gate.id})
         if not reply or not reply.artifact_ref_id:
             return "no_revision"
@@ -1411,11 +1545,11 @@ async def get_run_orchestration_status(db: AsyncSession, run_id: str) -> Dict[st
             state = "handoff_incomplete"
             detail = "上游基线缺少交接锚点：" + "、".join(f"工序 {g['upstream']} {g['anchor']}" for g in gaps)
         elif gate is not None and gate.status == "pending":
-            who = "人类负责人" if gate.effective_level in ("yellow", "red") or m.module_code == "09" else "人类（影子模式下确认绿级）"
+            who = "人类负责人" if gate.effective_level in ("yellow", "red") or m.module_code == "08" else "人类（影子模式下确认绿级）"
             state = "awaiting_human_gate"
             detail = f"{gate.gate_name}（{gate.effective_level}）待{who}审批"
         elif gate is not None and gate.status in ("rejected", "needs_adjustment"):
-            state, detail = "gate_returned", gate.review_comment or "关口被打回，等待修订"
+            state, detail = "gate_returned", gate.review_comment or "放行被打回，等待修订"
         elif artifacts and m.execution_mode == "human_driven" and gate is None:
             state, detail = "awaiting_human_confirm", "真人主导工序：请上传或确认交付物后提交检查"
         elif not artifacts and session and await _dispatch_hold(db, session.id):

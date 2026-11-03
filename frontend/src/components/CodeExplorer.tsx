@@ -30,7 +30,7 @@ interface CodeExplorerProps {
 export const CodeExplorer: React.FC<CodeExplorerProps> = ({
   moduleId,
   moduleName = '开发实现',
-  moduleCode = '07',
+  moduleCode = '06',
 }) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [data, setData] = useState<CodebaseSummaryAndTree | null>(null);

@@ -23,14 +23,13 @@ STAGE_SLUGS: Dict[str, str] = {
     "01": "market_research",
     "02": "business_model",
     "03": "product_direction",
-    "04": "fake_door",
-    "05": "product_requirement",
-    "06": "design_implementation",
-    "07": "development",
-    "08": "testing_qa",
-    "09": "release_deployment",
-    "10": "growth_marketing",
-    "11": "operations_iteration",
+    "04": "product_requirement",
+    "05": "design_implementation",
+    "06": "development",
+    "07": "testing_qa",
+    "08": "release_deployment",
+    "09": "growth_marketing",
+    "10": "operations_iteration",
 }
 
 def slugify_ascii(text: str, fallback: str = "item") -> str:
@@ -45,10 +44,34 @@ def slugify_ascii(text: str, fallback: str = "item") -> str:
     s = re.sub(r'_+', '_', s).strip('._-')
     return s.lower() if s else fallback
 
+def module_workspace_dir(
+    initiative_id: str,
+    product_code: str,
+    run_name: str,
+    run_id: str,
+    order_index: int,
+    module_code: str,
+    module_name: str = "",
+) -> Path:
+    """工序目录。已有旧路径时沿用旧目录。"""
+    init_dir_name = sanitize_dirname(initiative_id or "standalone")
+    prod_code_name = sanitize_dirname(product_code)
+    run_dir = get_run_dir_name(run_name, run_id)
+    mod_dir = get_stage_dir_name(order_index, module_code, module_name)
+    workspace_path = settings.WORKSPACE_DIR / init_dir_name / "products" / prod_code_name / run_dir / mod_dir
+    if not workspace_path.exists():
+        legacy_run_name = sanitize_dirname(run_name)
+        legacy_mod_dir = f"{order_index:02d}_{module_code}_{sanitize_dirname(module_name)}"
+        legacy_path = settings.WORKSPACE_DIR / init_dir_name / "products" / prod_code_name / legacy_run_name / legacy_mod_dir
+        if legacy_path.exists():
+            return legacy_path
+    return workspace_path
+
+
 def get_stage_dir_name(order_index: int, module_code: str, name: str = "") -> str:
     """
     Generate clean ASCII directory name for a stage module:
-    e.g. 01_market_research, 07_development
+    e.g. 01_market_research, 06_development
     Never repeats index and code (avoids '01_01_' or '07_07_').
     """
     slug = STAGE_SLUGS.get(module_code)
@@ -59,7 +82,7 @@ def get_stage_dir_name(order_index: int, module_code: str, name: str = "") -> st
 def get_run_dir_name(run_name: str, run_id: str = "") -> str:
     """
     Generate clean ASCII directory name for a workflow run:
-    e.g. 'FocusZen V1.0 首发全流程产研迭代' -> 'run_focuszen_v1.0'
+    e.g. 'FocusZen V1.0 首发全流程产品迭代' -> 'run_focuszen_v1.0'
     """
     fallback = f"run_{run_id[:8]}" if run_id else "run_iteration"
     slug = slugify_ascii(run_name, fallback=fallback)
@@ -263,6 +286,9 @@ async def sync_strategic_initiative_workspace(db: AsyncSession, initiative_id: s
                     platform=getattr(prod, "platform", "ios") or "ios",
                     client_zero_inference=getattr(prod, "client_zero_inference", True)
                 )
+                if m.module_code == "01":
+                    from backend.app.services.reliable_sources import mount_lookup_tool
+                    mount_lookup_tool(mod_dir)
 
                 mod_readme = f"""# 工序 {m.module_code}：{m.name}
 
@@ -275,7 +301,7 @@ async def sync_strategic_initiative_workspace(db: AsyncSession, initiative_id: s
 ## 交付物归档
 """
                 if not m.artifacts:
-                    mod_readme += "*(当前工序尚未生成交付物，将在产研协作中自动产出)*\n"
+                    mod_readme += "*(当前工序尚未生成交付物，将在产品协作中自动产出)*\n"
                 else:
                     for art in m.artifacts:
                         baseline_tag = "【封版基线】" if art.is_baseline else ""

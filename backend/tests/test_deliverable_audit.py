@@ -77,6 +77,22 @@ def test_mcp_hig_defaults_do_not_pass(tmp_path):
     assert result["passed"] is False
 
 
+def test_prd_revision_log_keeps_store_version_apart_from_draft_number():
+    from backend.app.services.simulator_deliverables import build_simulated_deliverable
+
+    prose, _extra = build_simulated_deliverable("04", {"product_name": "演示"})
+    assert lint_markdown(prose)["passed"] is True
+
+    store_patch = prose.replace("| 1.0.0 | r1 | 工序 03 |", "| 1.0.0 | 1.0.1 | 工序 03 |", 1)
+    failed = lint_markdown(store_patch)
+    assert failed["passed"] is False
+    assert any("r1" in item for item in failed["warnings"])
+
+    missing = lint_markdown(prose.replace("| 上线版本 | 稿次 | 来源 | 变更 |", "| 版本 | 日期 | 说明 |", 1))
+    assert missing["passed"] is False
+    assert any("四列" in item for item in missing["warnings"])
+
+
 def test_prd_below_100_does_not_pass():
     result = lint_markdown("## 负责人 30 秒拍板摘要卡\n只有摘要")
     assert result["score"] < 100

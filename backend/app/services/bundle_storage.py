@@ -90,6 +90,19 @@ async def process_and_save_bundle_artifact(
         with zipfile.ZipFile(io.BytesIO(file_bytes), 'r') as zf:
             zf.extractall(version_dir)
 
+        if mod.module_code == "05":
+            from backend.app.services.design_adapter import adapt_to_canonical_bundle
+            from backend.app.services.design_bundle import upstream_prd_views
+
+            upstream = upstream_prd_views(version_dir.parents[1])
+            adapt_to_canonical_bundle(
+                version_dir,
+                version_dir,
+                product_name=prod.name,
+                platform=getattr(prod, "platform", None) or "cross_platform",
+                views=upstream or None,
+            )
+
         # Look for entry index.html
         if (version_dir / "index.html").exists():
             entry_file = "index.html"

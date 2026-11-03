@@ -58,9 +58,9 @@ async def test_bundle_upload_and_preview_flow():
         run_id = run_data["id"]
 
         # Find 05 (PRD) and 06 (Design) and 07 (Dev) modules
-        m05 = next(m for m in run_data["modules"] if m["module_code"] == "05")
-        m06 = next(m for m in run_data["modules"] if m["module_code"] == "06")
-        m07 = next(m for m in run_data["modules"] if m["module_code"] == "07")
+        m05 = next(m for m in run_data["modules"] if m["module_code"] == "04")
+        m06 = next(m for m in run_data["modules"] if m["module_code"] == "05")
+        m07 = next(m for m in run_data["modules"] if m["module_code"] == "06")
 
         # 3. Create a zip archive simulating a design prototype bundle
         from backend.app.services.delivery_contract import build_stage_manifest
@@ -69,9 +69,11 @@ async def test_bundle_upload_and_preview_flow():
         zip_buf = io.BytesIO()
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for rel, content in build_design_bundle("原型包测试", "cross_platform").items():
+                if rel == "screens/home.html":
+                    content = "<!-- source-artboard:home -->\n" + content
                 zf.writestr(rel, content)
-            zf.writestr("交付物_06.md", "# 设计实现说明\nDesign Tokens 见 tokens.json，覆盖 V-01 V-02 V-03 V-04。")
-            zf.writestr("delivery.manifest.json", build_stage_manifest("06", "交付物_06.md", "cross_platform"))
+            zf.writestr("交付物_05.md", "# 设计实现说明\nDesign Tokens 见 tokens.json，覆盖 home editor result history。")
+            zf.writestr("delivery.manifest.json", build_stage_manifest("05", "交付物_05.md", "cross_platform"))
         zip_bytes = zip_buf.getvalue()
 
         # 4. Upload bundle to module 06 (Design)
@@ -96,9 +98,10 @@ async def test_bundle_upload_and_preview_flow():
         assert preview_res.status_code == 200
         assert "设计工作台" in preview_res.text
 
-        screen_res = await client.get(f"/api/v1/artifacts/{artifact_id}/preview/screens/V-01.html")
+        screen_res = await client.get(f"/api/v1/artifacts/{artifact_id}/preview/screens/home.html")
         assert screen_res.status_code == 200
         assert 'data-device="ios"' in screen_res.text and 'data-device="android"' in screen_res.text
+        assert "<!-- source-artboard:home -->" in screen_res.text
 
         # 6. Test change reviews query
         reviews_res = await client.get(f"/api/v1/change-reviews?module_id={m06['id']}&status=pending_approval")
@@ -138,8 +141,8 @@ async def test_upstream_stale_detection_and_ack_flow():
             "name": "Sprint-Stale"
         })
         run_data = run_res.json()
-        m05 = next(m for m in run_data["modules"] if m["module_code"] == "05") # PRD
-        m07 = next(m for m in run_data["modules"] if m["module_code"] == "07") # Dev
+        m05 = next(m for m in run_data["modules"] if m["module_code"] == "04") # PRD
+        m07 = next(m for m in run_data["modules"] if m["module_code"] == "06") # Dev
 
         # 1. Upload PRD v1 to module 05
         prd_v1 = _PASSING_PRD + "\n- Feature A: User login with phone OTP\n- Feature B: Basic dashboard"
@@ -159,7 +162,7 @@ async def test_upstream_stale_detection_and_ack_flow():
             m07_db = (await db.execute(select(ModuleInstance).where(ModuleInstance.id == m07["id"]))).scalar_one()
             m07_db.is_unlocked = True
             # Downstream is tracking v1
-            m07_db.synced_upstream_versions = {"05": 1}
+            m07_db.synced_upstream_versions = {"04": 1}
             await db.commit()
 
         # Check m07 stale status -> should be FALSE (synced with v1)
@@ -186,19 +189,19 @@ async def test_upstream_stale_detection_and_ack_flow():
         assert m07_data["is_upstream_stale"] is True
         assert len(m07_data["stale_details"]) > 0
         detail = m07_data["stale_details"][0]
-        assert detail["upstream_code"] == "05"
+        assert detail["upstream_code"] == "04"
         assert detail["current_synced_version"] == 1
         assert detail["latest_upstream_version"] == 2
 
         # Also verify in get_run batch endpoint
         run_batch_res = await client.get(f"/api/v1/runs/{run_data['id']}")
-        run_batch_m07 = next(m for m in run_batch_res.json()["modules"] if m["module_code"] == "07")
+        run_batch_m07 = next(m for m in run_batch_res.json()["modules"] if m["module_code"] == "06")
         assert run_batch_m07["is_upstream_stale"] is True
 
         # 4. Dev acknowledges the upstream update
-        ack_res = await client.post(f"/api/v1/modules/{m07['id']}/ack-upstream", json={"upstream_code": "05"})
+        ack_res = await client.post(f"/api/v1/modules/{m07['id']}/ack-upstream", json={"upstream_code": "04"})
         assert ack_res.status_code == 200
-        assert ack_res.json()["synced_upstream_versions"]["05"] == 2
+        assert ack_res.json()["synced_upstream_versions"]["04"] == 2
         assert ack_res.json()["is_upstream_stale"] is False
 
 @pytest.mark.asyncio
@@ -257,8 +260,8 @@ async def test_requirement_cr_feedback_loop_and_prd_revision():
             "name": "Sprint-CR-Loop"
         })
         run_data = run_res.json()
-        m05 = next(m for m in run_data["modules"] if m["module_code"] == "05")
-        m06 = next(m for m in run_data["modules"] if m["module_code"] == "06")
+        m05 = next(m for m in run_data["modules"] if m["module_code"] == "04")
+        m06 = next(m for m in run_data["modules"] if m["module_code"] == "05")
 
         # 2. Stage 05 uploads & baselines PRD v1
         prd_v1 = (
@@ -285,7 +288,7 @@ async def test_requirement_cr_feedback_loop_and_prd_revision():
         # 3. Stage 06 syncs with PRD v1
         async with AsyncSessionLocal() as db:
             m06_db = (await db.execute(select(ModuleInstance).where(ModuleInstance.id == m06["id"]))).scalar_one()
-            m06_db.synced_upstream_versions = {"05": 1}
+            m06_db.synced_upstream_versions = {"04": 1}
             await db.commit()
 
         # 4. Stage 06 finds pagination conflicting with mobile layout, raises a requirement_cr issue targeting 05
@@ -303,7 +306,7 @@ async def test_requirement_cr_feedback_loop_and_prd_revision():
                 "unreasonable_point": "双列排版导致翻页按钮在灵动岛机型上触控热区不足 44pt",
                 "constraint": "iOS HIG 规范与单手拇指热区",
                 "suggested_change": "采用下拉无限滚动与触底预加载",
-                "affected_modules": ["05", "06", "07"]
+                "affected_modules": ["04", "05", "06"]
             }
         })
         assert issue_res.status_code == 200
@@ -327,7 +330,7 @@ async def test_requirement_cr_feedback_loop_and_prd_revision():
                 "sender": "CPO",
                 "sender_role": "human",
                 "message_type": "feedback",
-                "content": f"采纳来自工序 06 的需求变更单 [{issue_id}]，将双列分页调整为无限瀑布流。",
+                "content": f"采纳来自工序 05 的需求变更单 [{issue_id}]，将双列分页调整为无限瀑布流。",
                 "issue_ref_id": issue_id
             }
         )
@@ -356,7 +359,7 @@ async def test_requirement_cr_feedback_loop_and_prd_revision():
         assert m06_stale["is_upstream_stale"] is True
         assert len(m06_stale["stale_details"]) > 0
         detail = m06_stale["stale_details"][0]
-        assert detail["upstream_code"] == "05"
+        assert detail["upstream_code"] == "04"
         assert detail["current_synced_version"] == 1
         assert detail["latest_upstream_version"] == 2
         assert f"[{issue_id}]" in detail["upstream_change_summary"]

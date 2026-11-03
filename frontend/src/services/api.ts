@@ -2,6 +2,7 @@ import {
   StrategicInitiative,
   IntakeProposal,
   IntakeChatResponse,
+  IntakeJobResponse,
   Product,
   WorkflowTemplate,
   WorkflowRun,
@@ -75,11 +76,13 @@ export const api = {
     fetchJSON<StrategicInitiative>(`/initiatives/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteInitiative: (id: string) =>
     fetchJSON<{ ok: boolean; message: string }>(`/initiatives/${id}`, { method: 'DELETE' }),
-  leadIntakeChat: (messages: Array<{ role: string; content: string }>, currentDraft?: any) =>
+  leadIntakeChat: (messages: Array<{ role: string; content: string }>, currentDraft?: any, draftId?: string) =>
     fetchJSON<IntakeChatResponse>('/initiatives/intake/chat', {
       method: 'POST',
-      body: JSON.stringify({ messages, current_draft: currentDraft }),
+      body: JSON.stringify({ messages, current_draft: currentDraft, draft_id: draftId }),
     }),
+  intakeJob: (jobId: string) =>
+    fetchJSON<IntakeJobResponse>(`/initiatives/intake/jobs/${jobId}`),
 
   // Products
   getProducts: (initiativeId?: string) =>
@@ -152,7 +155,7 @@ export const api = {
   getModuleArtifacts: (moduleId: string) => fetchJSON<Artifact[]>(`/modules/${moduleId}/artifacts`),
   getArtifact: (artifactId: string) => fetchJSON<Artifact>(`/artifacts/${artifactId}`),
   getArtifactPreviewUrl: (artifactId: string, path = '') =>
-    // 末尾保留斜杠：多页设计包里的相对链接（screens/V-01.html）才能解析到同一个产物目录下
+    // 末尾保留斜杠：多页设计包里的相对链接（screens/home.html）才能解析到同一个产物目录下
     `${API_BASE}/artifacts/${artifactId}/preview/${path}`,
   uploadModuleArtifact: async (moduleId: string, file: File, changeSummary?: string) => {
     const formData = new FormData();

@@ -64,7 +64,7 @@ Harness MUST execute implementation in 4 distinct layers:
 #### Layer 2: Reactive State Machine & Business Logic
 - Implement `UiState<T>` managing 4 states: `Ready(data)`, `Loading`, `Empty`, `Error(message)`.
 - Implement ViewModel handling state flows and business calculation rules.
-- Translate Stage 05 PRD Gherkin scenarios (`AC-01~AC-08`) into automated unit tests.
+- Translate each Stage 04 acceptance item into a test file that contains the AC id and that item's Then text. Map every view id to an implementation file. Ship `app.py` with `run(ac)` returning the view id the flow lands on, and pack it as `dist/app-test.zip`. The release zip `dist/app-release.zip` is added only after Stage 07 passes the test package. Colors, font sizes, and spacing in code come from Stage 05 `tokens.json`.
 - **Rule**: Unit test line coverage on models and business logic must reach **≥ 80%**.
 
 #### Layer 3: Tokens & Base Components
@@ -75,7 +75,7 @@ Harness MUST execute implementation in 4 distinct layers:
 - Implement skeleton pulse shimmer component for `Loading` state.
 
 #### Layer 4: Screen Views & Routing Assembly
-- For each PRD view (`V-01~V-xx`), implement the corresponding Compose Screen / SwiftUI View.
+- For each stage 04 view id (`home`, `editor`, …), implement the corresponding Compose Screen / SwiftUI View. The id is the screen name; `name` is only the human label.
 - Implement full 4-state rendering using `when (uiState)` or `switch uiState`.
 - Wire navigation transitions corresponding to `data-nav-target` in Stage 06 design artboards.
 

@@ -116,7 +116,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             </button>
 
-            {/* 2. 产研工作台 / 产品节点 (在 workflow 或 module 视图时展示) */}
+            {/* 2. 产品工作台 / 产品节点 (在 workflow 或 module 视图时展示) */}
             {(currentView === 'workflow' || currentView === 'module') && currentProduct && (
               <>
                 <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -150,7 +150,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         ? 'text-emerald-800 bg-emerald-50 border border-emerald-200'
                         : 'text-slate-600 hover:text-emerald-700 hover:bg-slate-100'
                     }`}
-                    title="产研工作台"
+                    title="产品工作台"
                   >
                     <Package className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                     <span className="truncate max-w-[120px] sm:max-w-[160px]">{currentProduct.name}</span>
@@ -159,7 +159,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                 {currentView === 'workflow' && (
                   <span className="hidden sm:inline-block text-[11px] text-slate-400 font-medium ml-0.5">
-                    / 产研工作台
+                    / 产品工作台
                   </span>
                 )}
               </>
@@ -247,7 +247,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </>
           )}
 
-          {/* B. 产研工作台专属：轻量战略参考 + 协同问题快捷入口 + 返回驾驶舱 */}
+          {/* B. 产品工作台专属：轻量战略参考 + 协同问题快捷入口 + 返回驾驶舱 */}
           {currentView === 'workflow' && (
             <>
               {currentInitiative && (
@@ -288,7 +288,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={onNavigateToWorkflow}
               className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition text-xs font-semibold cursor-pointer shadow-xs"
-              title="返回当前产品的产研工作台"
+              title="返回产品工作台"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">返回工作台</span>

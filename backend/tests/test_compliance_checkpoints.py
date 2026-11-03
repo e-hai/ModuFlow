@@ -67,15 +67,15 @@ def test_cmp_role_initialization_and_redlines():
 
     persona = cmp_role["system_persona"]
     assert "工序 03" in persona
-    assert "工序 05" in persona
-    assert "工序 09" in persona
+    assert "工序 04" in persona
+    assert "工序 08" in persona
     assert "严禁替代专业律师出具法律保证" in persona
     assert "G5 关口" in persona
 
     # Check that stages 03, 05, and 09 include cmp in collaborators
     assert "cmp" in STAGE_ROLE_CONFIGS["03"]["collaborators"]
-    assert "cmp" in STAGE_ROLE_CONFIGS["05"]["collaborators"]
-    assert "cmp" in STAGE_ROLE_CONFIGS["09"]["collaborators"]
+    assert "cmp" in STAGE_ROLE_CONFIGS["04"]["collaborators"]
+    assert "cmp" in STAGE_ROLE_CONFIGS["08"]["collaborators"]
 
 
 def test_stage_03_compliance_audit():
@@ -102,18 +102,18 @@ def test_stage_03_compliance_audit():
     assert "G5" in res_gamble["summary"]
 
 
-def test_stage_05_prd_compliance_audit():
+def test_stage_04_prd_compliance_audit():
     """Stage 05: PRD sensitive data security, dark patterns, and ATT rules."""
     # 1. Plaintext password in PRD data dictionary -> High risk G5!
     content_plaintext = "5.3 数据存储：本地 SQLite 表 user_account，包含字段 password VARCHAR 明文保存。"
-    res_plain = audit_stage_compliance("05", content_plaintext)
+    res_plain = audit_stage_compliance("04", content_plaintext)
     assert res_plain["status"] == "legal_review"
     assert res_plain["risk_level"] == "high"
     assert res_plain["is_g5_escalated"] is True
 
     # 2. Subscription PRD missing cancellation/refund guidance -> needs_fix
     content_dark = "设计 VIP 自动续费订阅，每周扣费 $9.99，点击继续即刻扣费。"
-    res_dark = audit_stage_compliance("05", content_dark)
+    res_dark = audit_stage_compliance("04", content_dark)
     assert res_dark["status"] == "needs_fix"
     assert any("暗黑模式" in f["item"] for f in res_dark["findings"])
 
@@ -122,29 +122,29 @@ def test_stage_05_prd_compliance_audit():
         "5.3 数据存储：用户凭证使用 iOS Keychain 加密存储。\n"
         "商业化说明：用户可随时在设置中取消自动续费，提供明确退款通道。"
     )
-    res_clean = audit_stage_compliance("05", content_clean)
+    res_clean = audit_stage_compliance("04", content_clean)
     assert res_clean["status"] == "passed"
     assert res_clean["risk_level"] == "low"
     assert res_clean["is_g5_escalated"] is False
 
 
-def test_stage_05_tracking_requirements_pass_when_the_prd_is_complete():
+def test_stage_04_tracking_requirements_pass_when_the_prd_is_complete():
     content = """
     iOS 使用 IDFA 做广告追踪。NSUserTrackingUsageDescription 的 ATT 授权弹窗文案已定义；
     用户选择 Ask App not to Track / denied 后，归因降级为 SKAdNetwork，核心功能保持可用。
     Android 声明 com.google.android.gms.permission.AD_ID 权限；目标受众年龄为 13 岁及以上，
     遵守家庭政策。用户停用个性化广告（OPTED_OUT）后降级为非个性化归因。
     """
-    result = audit_stage_compliance("05", content, platform="cross_platform")
+    result = audit_stage_compliance("04", content, platform="cross_platform")
     assert result["status"] == "passed"
     assert all(f["passed"] for f in result["findings"])
 
 
-def test_stage_09_submission_compliance_audit():
+def test_stage_08_submission_compliance_audit():
     """Stage 09: Apple 4.3 spam, Privacy policy URL, Remote Config & Rollback plan."""
     # 1. Missing privacy policy URL -> High risk G5!
     content_no_privacy = "提审清单：包含应用截图与 ASO 关键词，包含提审降级开关 Remote Config，回滚预案具备。"
-    res_no_priv = audit_stage_compliance("09", content_no_privacy)
+    res_no_priv = audit_stage_compliance("08", content_no_privacy)
     assert res_no_priv["status"] == "legal_review"
     assert res_no_priv["risk_level"] == "high"
     assert res_no_priv["is_g5_escalated"] is True
@@ -152,7 +152,7 @@ def test_stage_09_submission_compliance_audit():
 
     # 2. Missing Remote Config degradation switch -> needs_fix
     content_no_rc = "提审清单：包含隐私政策链接 https://example.com/privacy，未配置 Remote Config 降级开关。"
-    res_no_rc = audit_stage_compliance("09", content_no_rc)
+    res_no_rc = audit_stage_compliance("08", content_no_rc)
     assert res_no_rc["status"] == "needs_fix"
     assert any("提审降级保护开关" in f["item"] for f in res_no_rc["findings"])
 
@@ -164,7 +164,7 @@ def test_stage_09_submission_compliance_audit():
         "- 快速回滚预案与应急联系人已就绪\n"
         "- Apple 4.3 查重度排查通过，具备独特价值主张"
     )
-    res_comp = audit_stage_compliance("09", content_compliant)
+    res_comp = audit_stage_compliance("08", content_compliant)
     assert res_comp["status"] == "passed"
     assert res_comp["risk_level"] == "low"
     assert res_comp["is_g5_escalated"] is False
@@ -197,7 +197,7 @@ async def test_api_compliance_audit_and_g5_escalation():
 
         run = await create_workflow_run_from_template(db, prod.id, "fast-iteration", f"Run-{uid}")
         m_res = await db.execute(
-            select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "05")
+            select(ModuleInstance).where(ModuleInstance.run_id == run.id, ModuleInstance.module_code == "04")
         )
         m05 = m_res.scalar_one()
 
@@ -217,7 +217,7 @@ async def test_api_compliance_audit_and_g5_escalation():
         # Create high-risk PRD artifact with plaintext password
         art = Artifact(
             module_id=m05.id,
-            title="交付物_05_高危PRD.md",
+            title="交付物_04_高危PRD.md",
             version=1,
             artifact_type="markdown",
             content="# PRD\n5.3 数据库字段：password VARCHAR 明文存储。",
@@ -249,7 +249,7 @@ async def test_api_compliance_audit_and_g5_escalation():
         # Verify ExecutiveRisk emitted
         risk_stmt = select(ExecutiveRisk).where(
             ExecutiveRisk.initiative_id == init_id,
-            ExecutiveRisk.rule_code == "COMPLIANCE_G5_05"
+            ExecutiveRisk.rule_code == "COMPLIANCE_G5_04"
         )
         risk_res = await db.execute(risk_stmt)
         risks = risk_res.scalars().all()
@@ -259,7 +259,7 @@ async def test_api_compliance_audit_and_g5_escalation():
         # Verify audit file in decisions/
         decisions_dir = Path(settings.WORKSPACE_DIR) / init_id / "products" / prod_code / "decisions"
         assert decisions_dir.exists()
-        audit_files = list(decisions_dir.glob("*_compliance_audit_stage_05.json"))
+        audit_files = list(decisions_dir.glob("*_compliance_audit_stage_04.json"))
         assert len(audit_files) >= 1
 
 

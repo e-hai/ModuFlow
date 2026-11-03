@@ -1,29 +1,32 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://moduflow.ai/schemas/manifests/stage_08.schema.json",
-  "title": "Stage 08 Quality Assurance Manifest",
+  "title": "Stage 09 Release & Gate G4 Manifest",
   "type": "object",
   "required": [
     "contract_version",
     "stage",
     "artifacts",
     "risk_flags",
-    "quality"
+    "release"
   ],
   "properties": {
     "contract_version": { "type": "string", "enum": ["1"] },
     "stage": { "type": "string", "enum": ["08"] },
     "artifacts": { "type": "array", "minItems": 1 },
     "risk_flags": { "type": "object" },
-    "quality": {
+    "release": {
       "type": "object",
-      "required": ["open_p0", "open_p1", "test_cases_total", "test_cases_passed"],
+      "required": ["store_targets", "compliance_checked", "has_remote_killswitch", "rollback_plan"],
       "properties": {
-        "open_p0": { "type": "integer", "minimum": 0 },
-        "open_p1": { "type": "integer", "minimum": 0 },
-        "test_cases_total": { "type": "integer", "minimum": 1 },
-        "test_cases_passed": { "type": "integer", "minimum": 0 },
-        "e2e_pass_rate": { "type": "number", "minimum": 0, "maximum": 1 }
+        "store_targets": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "compliance_checked": { "type": "boolean", "const": true },
+        "has_remote_killswitch": { "type": "boolean", "const": true },
+        "rollback_plan": { "type": "string", "minLength": 10 }
       },
       "additionalProperties": false
     }

@@ -93,7 +93,7 @@ async def _add_artifact(db, mod: ModuleInstance, content: str, version: int = 1)
 async def test_lead_cannot_release_g3_and_qa_can():
     async with AsyncSessionLocal() as db:
         _prod, run = await _make_run(db, "g3")
-        m08 = await _module(db, run.id, "08")
+        m08 = await _module(db, run.id, "07")
         gate = await create_or_update_gate_application(
             db=db, module_id=m08.id, recommendation="质量门申请", evidence=[],
             risk_assessment="确定性检查全部通过", submitted_by="agent:qa",
@@ -131,7 +131,7 @@ async def test_qa_cannot_release_lead_owned_green_gate():
 async def test_cmp_needs_fix_blocks_lead_baseline_but_not_human():
     async with AsyncSessionLocal() as db:
         _prod, run = await _make_run(db, "cmp05")
-        m05 = await _module(db, run.id, "05")
+        m05 = await _module(db, run.id, "04")
         await _add_artifact(db, m05, _PASSING_PRD + "\n会员订阅按月自动续费。\n")
         gate = await create_or_update_gate_application(
             db=db, module_id=m05.id, recommendation="PRD 放行", evidence=[],
@@ -151,8 +151,8 @@ async def test_cmp_needs_fix_blocks_lead_baseline_but_not_human():
 async def test_cmp_legal_review_escalates_release_gate_to_red_g5():
     async with AsyncSessionLocal() as db:
         prod, run = await _make_run(db, "cmp09")
-        m09 = await _module(db, run.id, "09")
-        content, _ = build_simulated_deliverable("09", {"product_name": "边界产品", "platform": "ios"})
+        m09 = await _module(db, run.id, "08")
+        content, _ = build_simulated_deliverable("08", {"product_name": "边界产品", "platform": "ios"})
         no_privacy = "\n".join(line for line in content.splitlines() if "隐私" not in line)
         await _add_artifact(db, m09, no_privacy)
 
@@ -166,7 +166,7 @@ async def test_cmp_legal_review_escalates_release_gate_to_red_g5():
         assert any(e.get("checker") == "compliance_engine" and e.get("status") == "legal_review" for e in gate.evidence)
 
         risks = (await db.execute(select(ExecutiveRisk).where(
-            ExecutiveRisk.product_code == prod.code, ExecutiveRisk.rule_code == "COMPLIANCE_G5_09"
+            ExecutiveRisk.product_code == prod.code, ExecutiveRisk.rule_code == "COMPLIANCE_G5_08"
         ))).scalars().all()
         assert len(risks) == 1
 
@@ -193,14 +193,14 @@ async def test_downstream_stage_cannot_change_stage_02_prices():
         m02.phase = "baselined"
         await db.commit()
 
-        m10 = await _module(db, run.id, "10")
+        m10 = await _module(db, run.id, "09")
         baseline = await load_price_baseline(db, m10)
         assert set(baseline) == {2.99, 29.99}
 
-        doc, _ = build_simulated_deliverable("10", {"product_name": "边界产品"})
-        assert audit_stage("10", [doc], price_baseline=baseline)["passed"]
+        doc, _ = build_simulated_deliverable("09", {"product_name": "边界产品"})
+        assert audit_stage("09", [doc], price_baseline=baseline)["passed"]
 
-        repriced = audit_stage("10", [doc + "\n- 首发限时：年订阅 $19.99/年\n"], price_baseline=baseline)
+        repriced = audit_stage("09", [doc + "\n- 首发限时：年订阅 $19.99/年\n"], price_baseline=baseline)
         assert not repriced["passed"]
         assert any("价格唯一来源是 ba" in r for r in repriced["reasons"])
 
@@ -236,7 +236,7 @@ def test_rendered_persona_matches_profile():
 async def test_context_for_android_design_stage_uses_material_rules():
     async with AsyncSessionLocal() as db:
         _prod, run = await _make_run(db, "ctx", platform="android")
-        m06 = await _module(db, run.id, "06")
+        m06 = await _module(db, run.id, "05")
         context, _path, _meta = await assemble_module_context(db=db, module_id=m06.id, user_instruction="出设计规范")
         assert "Material Design 3" in context
         assert "灵动岛顶部安全区 ≥71pt" not in context
@@ -245,6 +245,13 @@ async def test_context_for_android_design_stage_uses_material_rules():
 # ---------------------------------------------------------------------------
 # Real tool names and MCP scoping
 # ---------------------------------------------------------------------------
+
+def test_lead_is_the_only_router():
+    kinds = {role["role_code"]: role["kind"] for role in DEFAULT_AGENT_ROLES}
+    assert kinds["lead"] == "router"
+    workers = [code for code, kind in kinds.items() if kind == "worker"]
+    assert sorted(workers) == ["ba", "cmp", "eng", "mkt", "mr", "ops", "pm", "qa", "ux"]
+
 
 def test_allowed_tools_are_real_mcp_tools():
     for role in DEFAULT_AGENT_ROLES:
@@ -295,7 +302,7 @@ def test_integrity_check_restores_protected_files(tmp_path):
     (product_dir / "decisions" / "new_backend_log.json").write_text("{}", encoding="utf-8")
     (workspace / ".agents" / "skills" / "ux" / "check_hig.py").write_text("THRESHOLD = 1\n", encoding="utf-8")
     (workspace / ".agents" / "skills" / "ux" / "bypass.py").write_text("", encoding="utf-8")
-    (workspace / "交付物_06.md").write_text("ok", encoding="utf-8")
+    (workspace / "交付物_05.md").write_text("ok", encoding="utf-8")
 
     violations = verify_and_restore(snap)
     names = sorted(Path(v).name for v in violations)
@@ -305,7 +312,7 @@ def test_integrity_check_restores_protected_files(tmp_path):
     assert (product_dir / "decisions" / "old.json").exists()
     assert (product_dir / "decisions" / "new_backend_log.json").exists()
     assert not (workspace / ".agents" / "skills" / "ux" / "bypass.py").exists()
-    assert (workspace / "交付物_06.md").exists()
+    assert (workspace / "交付物_05.md").exists()
     assert verify_and_restore(snap) == []
 
 
@@ -329,7 +336,7 @@ async def test_cli_run_that_tampers_with_authorization_is_rejected(tmp_path, mon
         "#!/bin/sh\n"
         f"chmod u+w '{auth}'\n"
         f"echo 'budget: 999999' > '{auth}'\n"
-        "echo '# 交付物' > \"交付物_06_设计实现.md\"\n"
+        "echo '# 交付物' > \"交付物_05_设计实现.md\"\n"
         "echo done\n",
         encoding="utf-8",
     )
@@ -338,7 +345,7 @@ async def test_cli_run_that_tampers_with_authorization_is_rejected(tmp_path, mon
     adapter = CliSubprocessAdapter(cli_command=str(fake_cli), timeout=30)
     events = [e async for e in adapter.execute_task(
         task_id="t1", workspace_dir=workspace, system_context="ctx", user_instruction="出设计",
-        metadata={"module_code": "06", "module_name": "设计实现", "role_code": "ux", "platform": "ios"},
+        metadata={"module_code": "05", "module_name": "设计实现", "role_code": "ux", "platform": "ios"},
     )]
     errors = [e for e in events if e.event_type == AgentEventType.ERROR]
     assert errors and "沙箱越权" in errors[0].content

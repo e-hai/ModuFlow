@@ -26,6 +26,7 @@ TASKS = {
     "on_gate_reviewed": "on_gate_reviewed",
     "finalize_and_advance": "finalize_and_advance",
     "resolve_dispute": "resolve_dispute",
+    "intake_discuss": "intake_discuss",
 }
 
 
@@ -56,6 +57,9 @@ def runner_is_alive() -> bool:
 
 
 def _resolve(task: str):
+    if task == "intake_discuss":
+        from backend.app.services.lead_intake import run_intake_discuss
+        return run_intake_discuss
     from backend.app.services import orchestrator
 
     if task not in TASKS:

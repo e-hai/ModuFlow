@@ -23,11 +23,7 @@ from backend.app.services.stage_memory import (
     pending_revision_notes,
     render_stage_progress,
 )
-from backend.app.services.workspace_sync import (
-    sanitize_dirname,
-    get_stage_dir_name,
-    get_run_dir_name,
-)
+from backend.app.services.workspace_sync import module_workspace_dir
 from backend.app.services.agent_roles import render_persona
 
 
@@ -80,6 +76,76 @@ async def _handoff_anchor_lines(
                         )
                 for cr in ev.get("change_requests") or []:
                     lines.append(f"- 遗留 CR（{cr.get('reviewer')} → 工序 {cr.get('target_stage')}）：{cr.get('summary')}")
+    return lines
+
+
+async def _previous_prd_section(db: AsyncSession, run: WorkflowRun, module_code: str) -> List[str]:
+    """快速迭代的工序 04 要看见上一轮已定稿需求，新上线版本的稿次从 r1 重新计。"""
+    if module_code != "04" or run.template_id != "fast-iteration":
+        return []
+    from backend.app.services.deliverable_audit import _load_prd_linter
+    from backend.app.services.delivery_contract import read_manifest_text
+
+    row = (await db.execute(
+        select(Artifact, WorkflowRun)
+        .join(ModuleInstance, ModuleInstance.baseline_artifact_id == Artifact.id)
+        .join(WorkflowRun, WorkflowRun.id == ModuleInstance.run_id)
+        .where(
+            WorkflowRun.product_id == run.product_id,
+            WorkflowRun.id != run.id,
+            ModuleInstance.module_code == "04",
+        )
+        .order_by(WorkflowRun.created_at.desc())
+    )).first()
+    lines = ["", "---", "## 上一轮需求基线"]
+    if row is None:
+        lines.append("没有找到上一轮已定稿的需求。本轮稿次从 r1 起，来源写「承接：无上一轮已定稿需求」。")
+        return lines
+    art, previous = row
+    logged = _load_prd_linter().revision_log_rows(art.content or "")
+    label = (
+        f"{logged[-1]['release']} 需求 {logged[-1]['revision']}"
+        if logged else f"{previous.name} 的需求稿"
+    )
+    lines.append(
+        f"本轮是新的上线版本，需求稿次从 r1 重新计。第 0 章第一行来源写成「承接 {label}」。稿次不要写成 1.0.1。"
+    )
+    lines.append(f"上一轮运行：{previous.name}")
+    lines.extend(["", "```markdown", (art.content or "").strip(), "```"])
+    manifest = read_manifest_text(getattr(art, "storage_rel_path", None))
+    if manifest.strip():
+        lines.extend(["", "上一轮清单：", "```json", manifest.strip(), "```"])
+    return lines
+
+
+async def _previous_tokens_section(db: AsyncSession, run: WorkflowRun, module_code: str) -> List[str]:
+    """快速迭代的工序 05 沿用上一轮已定稿的设计令牌，避免每轮重做一套色板。"""
+    if module_code != "05" or run.template_id != "fast-iteration":
+        return []
+    from backend.app.services.delivery_contract import read_stage_file
+
+    row = (await db.execute(
+        select(Artifact, WorkflowRun)
+        .join(ModuleInstance, ModuleInstance.baseline_artifact_id == Artifact.id)
+        .join(WorkflowRun, WorkflowRun.id == ModuleInstance.run_id)
+        .where(
+            WorkflowRun.product_id == run.product_id,
+            WorkflowRun.id != run.id,
+            ModuleInstance.module_code == "05",
+        )
+        .order_by(WorkflowRun.created_at.desc())
+    )).first()
+    lines = ["", "---", "## 上一轮设计令牌"]
+    if row is None:
+        lines.append("没有找到上一轮已定稿的设计令牌。本轮按工序 04 的视图建立 tokens.json。")
+        return lines
+    art, previous = row
+    tokens = read_stage_file(getattr(art, "storage_rel_path", None), "tokens.json")
+    lines.append(f"上一轮运行：{previous.name}。颜色、字号、间距、圆角沿用这份 tokens.json，不要另起一套色板。")
+    if tokens.strip():
+        lines.extend(["", "```json", tokens.strip(), "```"])
+    else:
+        lines.append("上一轮工序目录里没有 tokens.json。")
     return lines
 
 
@@ -154,18 +220,15 @@ async def assemble_module_context(
                 })
 
     # 3. Compute physical workspace directory
-    init_dir_name = sanitize_dirname(init.id if init else "standalone")
-    prod_code_name = sanitize_dirname(prod.code)
-    run_name = get_run_dir_name(run.name, run.id)
-    mod_dir_name = get_stage_dir_name(mod.order_index, mod.module_code, mod.name)
-
-    workspace_path = settings.WORKSPACE_DIR / init_dir_name / "products" / prod_code_name / run_name / mod_dir_name
-    if not workspace_path.exists():
-        legacy_run_name = sanitize_dirname(run.name)
-        legacy_mod_dir = f"{mod.order_index:02d}_{mod.module_code}_{sanitize_dirname(mod.name)}"
-        legacy_path = settings.WORKSPACE_DIR / init_dir_name / "products" / prod_code_name / legacy_run_name / legacy_mod_dir
-        if legacy_path.exists():
-            workspace_path = legacy_path
+    workspace_path = module_workspace_dir(
+        init.id if init else "standalone",
+        prod.code,
+        run.name,
+        run.id,
+        mod.order_index,
+        mod.module_code,
+        mod.name,
+    )
     workspace_path.mkdir(parents=True, exist_ok=True)
 
     # 4. Retrieve Agent Role Persona and Collaboration Bundle
@@ -185,6 +248,9 @@ async def assemble_module_context(
         platform=getattr(prod, "platform", "ios") or "ios",
         client_zero_inference=getattr(prod, "client_zero_inference", True)
     )
+    if mod.module_code == "01":
+        from backend.app.services.reliable_sources import mount_lookup_tool
+        mount_lookup_tool(workspace_path)
 
     collab_desc = "、".join([f"{c.name} ({c.title})" for c in collab_roles]) if collab_roles else "无"
 
@@ -252,6 +318,9 @@ async def assemble_module_context(
             ])
     else:
         context_lines.append("- *(当前无前序封版基线交付物，本工序为当前链条首道或前序正在论证中)*")
+
+    context_lines.extend(await _previous_prd_section(db, run, mod.module_code))
+    context_lines.extend(await _previous_tokens_section(db, run, mod.module_code))
 
     handoff_lines = await _handoff_anchor_lines(db, mod.module_code, all_mods, baselined_artifacts)
     if handoff_lines:

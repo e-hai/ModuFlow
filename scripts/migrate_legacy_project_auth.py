@@ -60,14 +60,13 @@ def generate_default_authorization_dict(
                 "01": round(total_budget * 0.05, 2),
                 "02": round(total_budget * 0.03, 2),
                 "03": round(total_budget * 0.02, 2),
-                "04": round(total_budget * 0.08, 2),
-                "05": round(total_budget * 0.06, 2),
-                "06": round(total_budget * 0.16, 2),
-                "07": round(total_budget * 0.30, 2),
-                "08": round(total_budget * 0.08, 2),
-                "09": round(total_budget * 0.04, 2),
-                "10": round(total_budget * 0.14, 2),
-                "11": round(total_budget * 0.04, 2)
+                "04": round(total_budget * 0.06, 2),
+                "05": round(total_budget * 0.16, 2),
+                "06": round(total_budget * 0.38, 2),
+                "07": round(total_budget * 0.08, 2),
+                "08": round(total_budget * 0.04, 2),
+                "09": round(total_budget * 0.14, 2),
+                "10": round(total_budget * 0.04, 2)
             }
         },
         "kill_criteria": [

@@ -50,7 +50,7 @@
 ### 5. 关口申请单 (Gate Application) 与现有 ChangeReview 的关系
 - **现状**：已有 `ChangeReview` 实体，用于交付物版本 Diff 的审批流转 (`status: pending_approval, approved, rejected`)。
 - **假设**：
-  1. 工序关口（G1~G5 及 01~11 阶段门禁）属于**工序准出/准入决策单**，包含“一页纸申请单（结论建议 / 事实依据 / 风险点 / 处置选项）”；
+  1. 工序关口（G1~G5 及 01~10 阶段门禁）属于**工序准出/准入决策单**，包含“一页纸申请单（结论建议 / 事实依据 / 风险点 / 处置选项）”；
   2. 我们将设计独立的 `GateApplication`（或在 `ModuleInstance` 上增加关口状态与申请单字段），与交付物代码级 Diff 审批 (`ChangeReview`) 分层解耦，互不干扰；
   3. 黄级（🟡）关口聚合进入人类批量审批箱，红级（🔴）关口触发即时阻断并通知。
 
@@ -93,7 +93,7 @@
 - **硬红线守门表现**：
   - **自动升红**：检测到涉及支付、隐私、用户敏感数据、加密、修改 lead 权限、对外公开表态或超预算时，关口由 🟢/🟡 自动强制升级为 🔴 red；
   - **权限拦截**：Agent 账号（包含 `lead`）严禁审批黄级/红级关口（G1/G2/G4/G5 等），试图审批时直接返回 403 Forbidden；
-  - **工序 09 强制人批**：工序 09（发布上线）无人类签署确认记录时，`can_baseline_module` 强制阻断定稿与发布；
+  - **工序 08 强制人批**：工序 08（发布上线）无人类签署确认记录时，`can_baseline_module` 强制阻断定稿与发布；
   - **批量与即时分层**：黄级关口聚合进入 `GET /api/v1/gates/pending-batch` 等待批量审批，红级关口触发即时 `ExecutiveRisk (critical)` 告警；
   - 全部 43 项自动化测试（23 基础 + 12 授权包 + 8 关口模型）100% 绿灯通过，前端构建 0 错误。
 
@@ -190,7 +190,7 @@
   1. **平台与规则集参数化 (`platform: "ios" | "android" | "cross_platform"`)**：
      - **iOS**：启用 Apple HIG 规则集，通过 `check_hig` 审计 iPhone 灵动岛顶部安全区 (≥71pt，推荐 ≥74pt) 与触控热区 (≥44×44pt)；
      - **Android**：启用 Google Material Design 3 规则集，通过 `check_material` 审计挖孔/状态栏避让留白 (≥24~48dp) 与触控热区 (≥48×48dp)；
-     - **绝对隔离红线验证**：Android 项目在工序 05、06、09 中**绝不触发 iOS 灵动岛 (71pt) 或 Apple 4.3 审核查重**；iOS 项目保持 100% 向后兼容；
+     - **绝对隔离红线验证**：Android 项目在工序 04、06、09 中**绝不触发 iOS 灵动岛 (71pt) 或 Apple 4.3 审核查重**；iOS 项目保持 100% 向后兼容；
   2. **客户端零推理参数化 (`client_zero_inference: bool`)**：
      - `client_zero_inference=True`（默认）：严格执行客户端实时 AI 调用数为 0，违规即阻断；
      - `client_zero_inference=False`：项目 Profile 明确授权端侧/边缘 AI 本地模型推理，单活跃用户边际成本按端侧标准审计放行；
@@ -198,7 +198,7 @@
      - `mount_role_skills_and_mcp` 根据项目 Profile 动态选择挂载 `check_material.py` 或 `check_hig.py`；
      - `role_mcp_server.py` 注入 `MODUFLOW_PLATFORM` 与 `MODUFLOW_ZERO_INFERENCE` 环境变量，支持专属工具 `audit_material_spec` 与参数化 `audit_client_zero_inference`；
   4. **关口条件动态映射 (`agent_roles.py` & `gate_keeper.py`)**：
-     - `get_stage_gate_conditions` 根据单品 Profile 动态返回工序 06（HIG vs Material 3）与工序 07（零推理 vs 端侧推理）条件；
+     - `get_stage_gate_conditions` 根据单品 Profile 动态返回工序 05（HIG vs Material 3）与工序 06（零推理 vs 端侧推理）条件；
   5. **API 与模型字段扩充**：
      - `Product` ORM 实体增加 `platform`、`client_zero_inference`；
      - `GET /api/v1/products/{product_id}/profile`：获取单品 Profile 与设计系统规范；
@@ -220,7 +220,7 @@
      - 当执行 `hotfix` 模板运行发布上线（或调用 `POST /api/v1/runs/{run_id}/hotfix-release`）后，系统自动生成 3 项闭环任务：
        - `[热修补档-01] 补提交需求变更单 (CR)`（task_type: `cr_patch`）；
        - `[热修补档-02] 生产故障复盘与 RCA 根因分析`（task_type: `postmortem`）；
-       - `[热修补档-03] 同步修订工序 05 PRD 规格基线与 Gherkin 验收用例`（task_type: `prd_update`）；
+       - `[热修补档-03] 同步修订工序 04 PRD 规格基线与 Gherkin 验收用例`（task_type: `prd_update`）；
      - **超期确定性告警**：发布后超过 24 小时若仍有未完成补档任务，系统自动生成 🔴 `ExecutiveRisk (critical)` 系统级告警，并在物理目录 `decisions/{timestamp}_hotfix_overdue_alert.json` 留痕，防止线上热修代码与 PRD 脱节；
   2. **投资组合层一页周报看板 (Portfolio Weekly Digest)**：
      - 从全矩阵数据库汇总产品阶段、花费/预算消耗、核心 KPI 达成、风险与建议动作；

@@ -249,7 +249,7 @@ export const PortfolioTab: React.FC<PortfolioTabProps> = ({
                     onClick={() => onEnterProductWorkbench(matchingProduct)}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-semibold transition group cursor-pointer"
                   >
-                    进入产研流水线
+                    进入产品流水线
                     <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition" />
                   </button>
                 </div>

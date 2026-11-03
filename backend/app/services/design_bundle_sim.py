@@ -40,7 +40,7 @@ ICONS: Dict[str, str] = {
     "grid": '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
     "history": '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/>',
     "plus": '<path d="M12 5v14M5 12h14"/>',
-    "search": '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+    "search": '<circle cx="10" cy="10" r="7"/><path d="m20 20-3.5-3.5"/>',
     "share": '<path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/>',
     "download": '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/>',
     "retry": '<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/>',
@@ -57,8 +57,8 @@ def _inline_icon(name: str) -> str:
     return f'<svg class="ico" aria-hidden="true" {_STROKE}>{ICONS[name]}</svg>'
 
 
-_VIEW_TITLES = {"V-01": "模板列表", "V-02": "创作编辑", "V-03": "结果预览", "V-04": "历史记录"}
-_VIEW_ICON = {"V-01": "grid", "V-02": "plus", "V-03": "check", "V-04": "history"}
+_VIEW_TITLES = {"home": "首页", "editor": "生成页", "result": "结果页", "history": "历史页"}
+_VIEW_ICON = {"home": "grid", "editor": "plus", "result": "check", "history": "history"}
 
 
 def _view_title(view_id: str) -> str:
@@ -88,9 +88,9 @@ def _notice(title: str, body: str, action: str, tone: str = "") -> str:
 def _panels(view_id: str, hit: int) -> Dict[str, str]:
     """四态内容。hit 是平台热区下限，按钮 CSS 用同一个值保证最小尺寸。"""
     retry = _btn("重试", hit, "ghost", state="loading", icon="retry")
-    if view_id == "V-01":
+    if view_id == "home":
         cards = "".join(
-            f'<button class="card tpl" data-hit="{hit}x{hit}" data-nav-target="V-02">'
+            f'<button class="card tpl" data-hit="{hit}x{hit}" data-nav-target="editor">'
             f'<span class="thumb t{i}"></span><span class="meta"><b>{title}</b><em>{desc}</em></span></button>'
             for i, (title, desc) in enumerate([("极简白底", "清爽留白，适合日常使用"), ("商务蓝灰", "稳重配色，适合正式场合"), ("暖色手账", "柔和纸感，适合记录生活")])
         )
@@ -98,48 +98,48 @@ def _panels(view_id: str, hit: int) -> Dict[str, str]:
         return {
             "default": f'<div class="chips">{chips}</div><div class="list">{cards}</div>',
             "loading": _skeleton(3),
-            "empty": _notice("还没有模板", "新建一个模板，下次可以直接使用。", _btn("新建模板", hit, nav="V-02", icon="plus")),
+            "empty": _notice("还没有模板", "新建一个模板，下次可以直接使用。", _btn("新建模板", hit, nav="editor", icon="plus")),
             "error": _notice("模板加载失败", "网络不稳定，请稍后重试。", retry, "danger"),
         }
-    if view_id == "V-02":
+    if view_id == "editor":
         rows = "".join(
             f'<div class="row"><span>{label}</span>{_btn(value, hit, "chip", toast=f"{label}已切换为{value}")}</div>'
             for label, value in [("输出格式", "高清"), ("背景处理", "自动"), ("文件命名", "按日期")]
         )
         return {
-            "default": f'<div class="card canvas"><span class="paper"></span></div>{rows}<div class="cta">{_btn("开始生成", hit, "primary", nav="V-03")}</div>',
+            "default": f'<div class="card canvas"><span class="paper"></span></div>{rows}<div class="cta">{_btn("开始生成", hit, "primary", nav="result")}</div>',
             "loading": '<div class="notice"><div class="ring"></div><h3>正在处理</h3><p>通常需要几秒钟。</p></div>',
-            "empty": _notice("请先选择素材", "还没有可处理的内容。", _btn("去选模板", hit, nav="V-01", icon="grid")),
-            "error": _notice("素材无法读取", "请换一份素材再试。", _btn("重新选择", hit, "ghost", nav="V-01"), "danger"),
+            "empty": _notice("请先选择素材", "还没有可处理的内容。", _btn("去选模板", hit, nav="home", icon="grid")),
+            "error": _notice("素材无法读取", "请换一份素材再试。", _btn("重新选择", hit, "ghost", nav="home"), "danger"),
         }
-    if view_id == "V-03":
+    if view_id == "result":
         return {
             "default": (
                 '<div class="card result"><span class="paper big"></span></div>'
                 f'<div class="actions">{_btn("保存", hit, "primary", toast="已保存到本地", icon="download")}'
                 f'{_btn("分享", hit, "ghost", toast="已复制分享链接", icon="share")}'
-                f'{_btn("再来一次", hit, "ghost", nav="V-02", icon="retry")}</div>'
+                f'{_btn("再来一次", hit, "ghost", nav="editor", icon="retry")}</div>'
             ),
             "loading": _skeleton(2),
-            "empty": _notice("暂无结果", "先去生成一份吧。", _btn("返回编辑", hit, nav="V-02")),
+            "empty": _notice("暂无结果", "先去生成一份吧。", _btn("返回编辑", hit, nav="editor")),
             "error": _notice("生成失败", "处理没有完成，不会产生任何扣费。", retry, "danger"),
         }
-    if view_id == "V-04":
+    if view_id == "history":
         items = "".join(
-            f'<button class="card hist" data-hit="{hit}x{hit}" data-nav-target="V-03"><span class="thumb t{i}"></span>'
+            f'<button class="card hist" data-hit="{hit}x{hit}" data-nav-target="result"><span class="thumb t{i}"></span>'
             f'<span class="meta"><b>{title}</b><em>{when}</em></span></button>'
             for i, (title, when) in enumerate([("文档 0042", "今天 09:12"), ("文档 0041", "昨天 18:40"), ("文档 0040", "周二 11:05")])
         )
         return {
             "default": f'<div class="list">{items}</div>',
             "loading": _skeleton(3),
-            "empty": _notice("暂无历史", "完成第一次生成后会出现在这里。", _btn("去创作", hit, nav="V-02", icon="plus")),
+            "empty": _notice("暂无历史", "完成第一次生成后会出现在这里。", _btn("去创作", hit, nav="editor", icon="plus")),
             "error": _notice("历史记录加载失败", "请检查网络后重试。", retry, "danger"),
         }
     return {
-        "default": f'<div class="card"><h3>{escape(_view_title(view_id))}</h3><p>核心内容区。</p></div><div class="cta">{_btn("返回模板", hit, "primary", nav="V-01")}</div>',
+        "default": f'<div class="card"><h3>{escape(_view_title(view_id))}</h3><p>核心内容区。</p></div><div class="cta">{_btn("返回模板", hit, "primary", nav="home")}</div>',
         "loading": _skeleton(2),
-        "empty": _notice("暂无内容", "这里还没有数据。", _btn("返回模板", hit, nav="V-01")),
+        "empty": _notice("暂无内容", "这里还没有数据。", _btn("返回模板", hit, nav="home")),
         "error": _notice("加载失败", "请稍后重试。", retry, "danger"),
     }
 
@@ -153,11 +153,11 @@ def _device(platform: str, view_id: str, name: str) -> str:
     body = "".join(f'<div class="panel" data-state="{state}">{panels[state]}</div>' for state in ("default", "loading", "empty", "error"))
     tabs = "".join(
         f'<button class="tab{" on" if tab == view_id else ""}" data-hit="{hit}x{hit}" data-nav-target="{tab}">{_inline_icon(_VIEW_ICON[tab])}<span>{label}</span></button>'
-        for tab, label in (("V-01", "模板"), ("V-04", "历史"))
+        for tab, label in (("home", "模板"), ("history", "历史"))
     )
     back = (
-        f'<button class="icon-btn" data-hit="{hit}x{hit}" data-nav-target="V-01" aria-label="返回">{_inline_icon("back")}</button>'
-        if view_id in ("V-02", "V-03")
+        f'<button class="icon-btn" data-hit="{hit}x{hit}" data-nav-target="home" aria-label="返回">{_inline_icon("back")}</button>'
+        if view_id in ("editor", "result")
         else '<span class="icon-btn ghosted"></span>'
     )
     island = '<span class="island"></span>' if ios else '<span class="punch"></span>'
@@ -204,6 +204,8 @@ body[data-platform="ios"] .device.android,body[data-platform="android"] .device.
 .content{{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:12px}}
 .panel{{display:none;flex-direction:column;gap:12px}}
 body[data-state="default"] .panel[data-state="default"],body[data-state="loading"] .panel[data-state="loading"],body[data-state="empty"] .panel[data-state="empty"],body[data-state="error"] .panel[data-state="error"]{{display:flex}}
+[data-hit="44x44"]{{min-width:44px;min-height:44px}}
+[data-hit="48x48"]{{min-width:48px;min-height:48px}}
 .card{{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--r-card);padding:12px;display:flex;gap:12px;align-items:center;text-align:left;font:inherit;color:inherit}}
 button.card{{width:100%;min-width:var(--hit);min-height:var(--hit);cursor:pointer}}
 .list{{display:flex;flex-direction:column;gap:12px}}
@@ -233,7 +235,7 @@ button.card{{width:100%;min-width:var(--hit);min-height:var(--hit);cursor:pointe
 .skeleton i.short{{width:55%}}
 @keyframes pulse{{50%{{opacity:.45}}}}
 .tabbar{{display:flex;border-top:1px solid var(--color-border);background:var(--color-surface);flex:none}}
-.tab{{flex:1;min-height:var(--hit);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:0;background:transparent;font:inherit;font-size:11px;color:var(--color-text-muted);cursor:pointer;padding:6px 0}}
+.tab{{flex:1;min-width:var(--hit);min-height:var(--hit);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:0;background:transparent;font:inherit;font-size:11px;color:var(--color-text-muted);cursor:pointer;padding:6px 0}}
 .tab.on{{color:var(--color-primary)}}
 .android .tab{{font-size:12px}}
 .safe-bottom{{background:var(--color-surface);flex:none}}
@@ -400,7 +402,7 @@ table{{width:100%;border-collapse:collapse}}td{{padding:3px 0;border-bottom:1px 
 
 def build_design_bundle(name: str, platform: str, views: Optional[List[str]] = None) -> Dict[str, str]:
     """返回 {相对路径: 文件内容}，包含设计工作台、令牌、MeaXure manifest、画板和切片资源。"""
-    views = views or ["V-01", "V-02", "V-03", "V-04"]
+    views = views or ["home", "editor", "result", "history"]
     platforms = required_platforms(platform) or ["ios"]
     files: Dict[str, str] = {
         "tokens.json": json.dumps(TOKENS, ensure_ascii=False, indent=2) + "\n",
@@ -429,7 +431,7 @@ def build_design_bundle(name: str, platform: str, views: Optional[List[str]] = N
 
 
 def design_manifest_block(platform: str, views: Optional[List[str]] = None) -> Dict[str, Any]:
-    views = views or ["V-01", "V-02", "V-03", "V-04"]
+    views = views or ["home", "editor", "result", "history"]
     platforms = required_platforms(platform) or ["ios"]
     slice_paths = [f"slices/{icon}.svg" for icon in ICONS]
     return {

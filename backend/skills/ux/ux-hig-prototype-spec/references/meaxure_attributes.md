@@ -16,7 +16,7 @@ This reference defines the standard HTML `data-*` attributes and postMessage pro
 ### Example
 ```html
 <div class="device-frame" data-device="ios" data-safe-top="74" data-safe-bottom="34">
-  <button class="nav-btn" data-hit="44x44" data-nav-target="V-02">
+  <button class="nav-btn" data-hit="44x44" data-nav-target="editor">
     <img src="../slices/back.svg" alt="Back" width="20" height="20">
   </button>
 </div>
@@ -29,7 +29,7 @@ This reference defines the standard HTML `data-*` attributes and postMessage pro
 | Attribute | Expected Values | Description |
 | :--- | :--- | :--- |
 | `data-state` | `"default"`, `"loading"`, `"empty"`, `"error"` | Declares which state panel the container represents. The workbench state-switcher toggles `.is-active` based on this attribute. |
-| `data-nav-target` | View ID (e.g. `"V-01"`, `"V-02"`, `"V-05"`) | Links interactive elements to target screens in `manifest.json`. Triggers screen transition in the workbench. |
+| `data-nav-target` | The stage 04 view id (e.g. `"home"`, `"editor"`) | Links interactive elements to `screens/{id}.html`. Triggers screen transition in the workbench. |
 | `data-toast` | Text message (e.g. `"Document saved successfully"`) | Triggers temporary floating toast feedback when tapped. |
 
 ### Example
@@ -71,7 +71,7 @@ Dispatched whenever a user clicks or hovers an element in inspect mode.
   "role": "button",
   "text": "Start Scanning",
   "hit": "44x44",
-  "navTarget": "V-02",
+  "navTarget": "editor",
   "bounds": {
     "left": 24,
     "top": 740,
@@ -94,7 +94,7 @@ Dispatched when an element with `data-nav-target` is clicked.
 ```json
 {
   "type": "mf-navigate",
-  "target": "V-02"
+  "target": "editor"
 }
 ```
 

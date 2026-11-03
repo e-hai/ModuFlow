@@ -15,33 +15,31 @@ from backend.app.models.entities import (
 DEFAULT_TEMPLATES = [
     {
         "id": "full-product-launch",
-        "name": "完整产品研发 (11 模块)",
-        "description": "从全球市场摸底、精益假门验证与立项裁决、产品需求定义，到设计开发、上线获客与运营迭代的完整闭环。",
+        "name": "完整产品研发 (10 模块)",
+        "description": "从全球市场摸底、方向决策与产品需求定义，到设计开发、上线获客与运营迭代的完整闭环。",
         "modules_config": [
             {"code": "01", "name": "市场研究", "required": True},
             {"code": "02", "name": "商业模式分析", "required": True},
             {"code": "03", "name": "产品方向决策", "required": True},
-            {"code": "04", "name": "低成本市场验证", "required": True},
-            {"code": "05", "name": "产品需求定义", "required": True},
-            {"code": "06", "name": "设计实现", "required": True},
-            {"code": "07", "name": "开发实现", "required": True},
-            {"code": "08", "name": "测试与 QA", "required": True},
-            {"code": "09", "name": "发布与上线", "required": True},
-            {"code": "10", "name": "市场推广与获客", "required": False},
-            {"code": "11", "name": "运营分析与持续迭代", "required": False},
+            {"code": "04", "name": "产品需求定义", "required": True},
+            {"code": "05", "name": "设计实现", "required": True},
+            {"code": "06", "name": "开发实现", "required": True},
+            {"code": "07", "name": "测试与 QA", "required": True},
+            {"code": "08", "name": "发布与上线", "required": True},
+            {"code": "09", "name": "市场推广与获客", "required": False},
+            {"code": "10", "name": "运营分析与持续迭代", "required": False},
         ],
         "default_dependencies": [
             {"from": "01", "to": "02"},
             {"from": "02", "to": "03"},
-            {"from": "03", "to": "04"},
-            {"from": "04", "to": "05", "gate": "decision"},
+            {"from": "03", "to": "04", "gate": "decision"},
+            {"from": "04", "to": "05"},
+            {"from": "04", "to": "06"},
             {"from": "05", "to": "06"},
-            {"from": "05", "to": "07"},
             {"from": "06", "to": "07"},
-            {"from": "07", "to": "08"},
-            {"from": "08", "to": "09", "gate": "quality"},
-            {"from": "09", "to": "10"},
-            {"from": "09", "to": "11"},
+            {"from": "07", "to": "08", "gate": "quality"},
+            {"from": "08", "to": "09"},
+            {"from": "08", "to": "10"},
         ]
     },
     {
@@ -49,19 +47,19 @@ DEFAULT_TEMPLATES = [
         "name": "快速功能迭代 (6 模块)",
         "description": "适合已有产品的大版本与重要功能迭代，直接承接运营复盘 Backlog 从产品需求定义进入设计、开发、测试、发布与运营闭环。",
         "modules_config": [
-            {"code": "05", "name": "产品需求定义", "required": True},
-            {"code": "06", "name": "设计实现", "required": True},
-            {"code": "07", "name": "开发实现", "required": True},
-            {"code": "08", "name": "测试与 QA", "required": True},
-            {"code": "09", "name": "发布与上线", "required": True},
-            {"code": "11", "name": "运营分析与持续迭代", "required": False},
+            {"code": "04", "name": "产品需求定义", "required": True},
+            {"code": "05", "name": "设计实现", "required": True},
+            {"code": "06", "name": "开发实现", "required": True},
+            {"code": "07", "name": "测试与 QA", "required": True},
+            {"code": "08", "name": "发布与上线", "required": True},
+            {"code": "10", "name": "运营分析与持续迭代", "required": False},
         ],
         "default_dependencies": [
+            {"from": "04", "to": "05"},
             {"from": "05", "to": "06"},
             {"from": "06", "to": "07"},
-            {"from": "07", "to": "08"},
-            {"from": "08", "to": "09", "gate": "quality"},
-            {"from": "09", "to": "11"}
+            {"from": "07", "to": "08", "gate": "quality"},
+            {"from": "08", "to": "10"}
         ]
     },
     {
@@ -69,13 +67,13 @@ DEFAULT_TEMPLATES = [
         "name": "紧急热修复 (3 模块)",
         "description": "紧急缺陷与生产问题快速通道：开发 → 测试回归 → 紧急发布。",
         "modules_config": [
-            {"code": "07", "name": "开发实现", "required": True},
-            {"code": "08", "name": "测试与 QA", "required": True},
-            {"code": "09", "name": "发布与上线", "required": True},
+            {"code": "06", "name": "开发实现", "required": True},
+            {"code": "07", "name": "测试与 QA", "required": True},
+            {"code": "08", "name": "发布与上线", "required": True},
         ],
         "default_dependencies": [
-            {"from": "07", "to": "08"},
-            {"from": "08", "to": "09", "gate": "quality"}
+            {"from": "06", "to": "07"},
+            {"from": "07", "to": "08", "gate": "quality"}
         ]
     }
 ]

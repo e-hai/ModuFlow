@@ -37,21 +37,21 @@ ROLE_EXCLUSIVE_ARSENAL: Dict[str, Dict[str, Any]] = {
     "pm": {
         "skill_name": "pm-lean-prd-guard",
         "mcp_server_name": "moduflow-pm-mcp",
-        "description": "Use this skill in Stage 03 (产品方向决策) and Stage 05 (产品需求定义) to enforce Lean Startup hypothesis gates in Stage 03, author complete 7+1 Golden Chapter Pure-PM PRD documents with 5-dimension module spec cards and business data dictionaries, strictly avoiding engineering technical leakages (no SQL DDL / JSON Schema), and handle downstream requirement CRs in Stage 05.",
+        "description": "Use this skill in Stage 03 (产品方向决策) and Stage 04 (产品需求定义) to enforce Lean Startup hypothesis gates in Stage 03, author complete 7+1 Golden Chapter Pure-PM PRD documents with 5-dimension module spec cards and business data dictionaries, strictly avoiding engineering technical leakages (no SQL DDL / JSON Schema), and handle downstream requirement CRs in Stage 04.",
         "instructions": (
             "# 精益方向决策与黄金 7+1 纯业务 PRD 封版技能 (pm-lean-prd-guard)\n\n"
             "## 核心执行步骤\n"
             "1. **工序 03 严禁未验先定**：只输出一页纸 UVP、MoSCoW 减法与 H1~H4 生死假设清单，严禁提前编写代码级 Schema。\n"
-            "2. **工序 05 黄金 7+1 章节纯业务 PRD 规范（严守 PM 业务视角，严禁工程师技术越界）**：\n"
+            "2. **工序 04 黄金 7+1 章节纯业务 PRD 规范（严守 PM 业务视角，严禁工程师技术越界）**：\n"
             "   - **多视角阅读分层设计**：置顶《## 负责人 30 秒拍板摘要卡 (Executive Gate)》，随后展开 7+1 核心章节；\n"
-            "   - **第 0 章**：文档元信息与版本演进履历（版本号、更新时间、变更类型、变更项对照表）；\n"
+            "   - **第 0 章**：版本表固定四列「上线版本、稿次、来源、变更」。上线版本是给用户看的三段号，如 `1.0.0`。稿次只能是 `r` 加整数，如 `r1`、`r2`，同一上线版本里工序之间改稿只加稿次，禁止写成 `1.0.1`。首版来源写「工序 03」；其后每一行来源写变更单，或「承接 1.0.0 需求 r4」这种上一轮上线版本加稿次。旧稿不改，只追加一行。\n"
             "   - **第一章**：版本定位与范围封版（北极星指标、精简 User Stories、In-Scope P0/P1 vs Out-of-Scope 范围封版矩阵表）；\n"
-            "   - **第二章**：全局信息架构与全站视图索引（Mermaid 页面路由拓扑图、全站视图索引总表 View Index Table `V-01~V-05` 标明视图形态与安全区、主流程泳道图）；\n"
+            "   - **第二章**：全局信息架构与全站视图索引。视图索引用表格，每行一个页面：`id` 是小写英文短名（如 `home`），用来命名 `screens/{id}.html`，也用于跳转；`name` 只解释这一页（如「首页」），不参与路径。同一份清单里 `id` 不能重复。验收编号 `AC-xx` 和埋点编号 `E-xx` 仍用编号。\n"
             "   - **第三章**：功能模块详细规格说明（M1~M6 核心功能全量展开，逐模块必须统一采用五维结构化规格卡：①核心意图导言、②界面布局与组件清单表、③交互流转与计算规则表、④边界条件与异常降级表、⑤模块验收点索引）；\n"
             "   - **第四章**：商业化特权与付费业务规则（Mermaid StateDiagram 权益状态机、SKU 定价阶梯映射表、免费 vs 付费特权矩阵、付费门槛触发时机、网络超时或未支付时的用户端友好降级体验规则、防刷与风控业务规则）；\n"
             "   - **第五章**：核心业务数据字典与本地存储策略（纯业务视角，严禁代码/SQL/JSON Schema：①核心业务实体清单与业务关系说明、②逐实体业务数据字典表【字段名、业务含义、业务类型、是否必填、取值范围/枚举值、默认值、校验失败提示文案】、③用户数据存储与隐私分级业务策略【离线持久化诉求、敏感隐私保护诉求、缓存自动清理业务诉求与生命周期】）；\n"
             "   - **第六章**：全链路数据埋点规范（`E-01~E-12` 核心事件埋点总表、转化漏斗与留存计算公式）；\n"
-            "   - **第七章**：端到端验收用例与体验质量需求（结构化 `AC-01~AC-08` Gherkin 验收矩阵表包含用例ID/场景/Given/When/Then、用户感知级性能要求【如冷启首屏、导出等待感知】、iOS HIG 灵动岛安全区 ≥71pt 与 Apple 4.3 审核合规业务护栏）。\n"
+            "   - **第七章**：端到端验收用例与体验质量需求（结构化 `AC-01~AC-08` Gherkin 验收矩阵表包含用例ID/场景/Given/When/Then、用户感知级性能要求【如冷启首屏、导出等待感知】、iOS HIG 灵动岛安全区 ≥71pt 与 Apple 4.3 审核合规业务护栏）。清单里每条验收写 id、view_id、given、when、then，view_id 用视图索引里的 id。\n"
             "   - **自动化合规校验**：生成交付物后调用 `lint_stage_deliverable` 或运行 `[prd_linter.py](./scripts/prd_linter.py)`。放行线为 100 分。\n"
         ),
         "script_name": "prd_linter.py",
@@ -59,19 +59,19 @@ ROLE_EXCLUSIVE_ARSENAL: Dict[str, Dict[str, Any]] = {
     "mkt": {
         "skill_name": "mkt-fakedoor-h5-generator",
         "mcp_server_name": "moduflow-mkt-mcp",
-        "description": "Use this skill in Stage 04 (低成本市场验证) and Stage 10 (市场推广与获客) to build self-contained interactive mobile H5 Fake-Door landing pages (index.html) with Graceful Reveal modals and high-converting ad scripts.",
+        "description": "Use this skill in Stage 10 (市场推广与获客) to plan ASO keywords, launch channels, and an eCAC stop line against the stage 02 price ladder.",
         "instructions": (
-            "# H5 假门交互原型生成与增长买量技能 (mkt-fakedoor-h5-generator)\n\n"
+            "# 上线后获客技能 (mkt-fakedoor-h5-generator)\n\n"
             "## 核心执行步骤\n"
-            "1. **生成零依赖可交互 `index.html`**：必须包含首屏核心功能模拟器、痛点对比、三选一伪付费抽屉及 Graceful Reveal 早鸟邮箱锁客弹窗。\n"
-            "2. **自检验证**：生成后调用专属 MCP 工具 `verify_fakedoor_h5_bundle` 或运行 `[verify_h5.py](./scripts/verify_h5.py)` 确认 `index.html` 完整性。\n"
+            "1. **承接已上线版本**：读取工序 08 的发布结果、工序 02 的价格阶梯和工序 04 的卖点，写 ASO 词表、渠道和素材。\n"
+            "2. **熔断线**：eCAC 不得超过工序 02 客户价值的三分之一。超了就停，不改口径继续花。\n"
         ),
         "script_name": "verify_h5.py",
     },
     "ux": {
         "skill_name": "ux-hig-prototype-spec",
         "mcp_server_name": "moduflow-ux-mcp",
-        "description": "Use this skill in Stage 06 (设计实现) to design high-fidelity multi-artboard UI prototypes, generate Sketch/Figma-grade interactive HTML inspection bundles with SVG icon & font assets, and enforce iOS Dynamic Island safe areas (>=71pt).",
+        "description": "Use this skill in Stage 05 (设计实现) to design high-fidelity multi-artboard UI prototypes, generate Sketch/Figma-grade interactive HTML inspection bundles with SVG icon & font assets, and enforce iOS Dynamic Island safe areas (>=71pt).",
         "instructions": (
             "# 高保真视觉稿与 MeaXure 标准设计交付包技能 (ux-hig-prototype-spec)\n\n"
             "## 核心执行步骤\n"
@@ -79,9 +79,9 @@ ROLE_EXCLUSIVE_ARSENAL: Dict[str, Dict[str, Any]] = {
             "2. **真交付：对齐 Sketch MeaXure 工业标准设计包**（校验器读画板标注，不读文档自报）：\n"
             "   - `index.html` 设计工作台（画板/平台/四态切换、标注层、点选检视与代码契约）；\n"
             "   - `tokens.json` 设计令牌真理源与 `manifest.json` 元数据总表；\n"
-            "   - `screens/V-xx.html`（每个 PRD 视图一张完整高保真视觉稿，页面可点击跳转）；\n"
+            "   - `screens/{id}.html`（id 取自工序 04 清单 views[].id，每页一张完整高保真视觉稿；view_id 与 data-nav-target 用同一个 id）；\n"
             "   - `slices/*.svg` 统一切片与图标库；\n"
-            "   - 画板约定：`data-device` + `data-safe-top/bottom`、可点击元素 `data-hit=\"宽x高\"`、四态 `data-state`、颜色只用 tokens.json、零外部依赖；\n"
+            "   - 画板约定：`data-device` + `data-safe-top/bottom`（样式高度不得低于标注）、可点击元素 `data-hit=\"宽x高\"`（min-width/min-height 不得更小）、四态 `data-state`（空态和错态里要有可点击操作）、颜色只用 tokens.json、零外部依赖；\n"
             "   - 另写一份设计说明文档（拍板摘要卡、Design Tokens 摘要、逐视图四态）。\n"
         ),
         "script_name": "check_hig.py",
@@ -94,7 +94,7 @@ ROLE_EXCLUSIVE_ARSENAL: Dict[str, Dict[str, Any]] = {
             "# 轻量架构选型与零客户端推理成本开发技能 (eng-lean-architecture-coder)\n\n"
             "## 核心执行步骤\n"
             "1. **边际成本审计**：调用 `estimate_cloud_marginal_cost` 确保客户端零实时 AI 推理成本、离线缓存优先。\n"
-            "2. **代码与契约实现**：内聚输出轻量技术选型、数据存储实现与单元测试覆盖率报告。\n"
+            "2. **代码与契约实现**：内聚输出轻量技术选型、数据存储实现与单元测试覆盖率报告。每个视图 id 对应一个实现文件；`engineering.tests` 里每条 AC-xx 对应一个写有该条 Then 的测试文件；`engineering.app` 指向定义 `run(ac)` 的应用入口，并打成测试安装包。正式安装包等工序 07 测完测试包后再交。代码和说明里的颜色、字号、间距只取工序 05 的 tokens.json。\n"
         ),
         "script_name": "cost_audit.py",
     },
@@ -106,7 +106,7 @@ ROLE_EXCLUSIVE_ARSENAL: Dict[str, Dict[str, Any]] = {
             "# 质量门禁与提审合规审查技能 (qa-release-gatekeeper)\n\n"
             "## 核心执行步骤\n"
             "1. **提审合规与阻断门禁检查**：调用 `audit_app_store_compliance` 确认具备 Remote Config 降级保护开关且 P0/P1 未决缺陷清零。\n"
-            "2. **端到端验收矩阵**：逐条核验工序 05 冻结的 Gherkin 验收标准与弱网/低端机表现。\n"
+            "2. **端到端验收矩阵**：逐条核验工序 04 冻结的 Gherkin 验收标准与弱网/低端机表现。工序 07 放行时系统会执行工序 06 清单中的测试，并调用应用入口 `run(ac)`。跑完停在的页面不在 Then 里，或退出码不是 0，就不能把 P0 记为 0。\n"
         ),
         "script_name": "gate_check.py",
     },

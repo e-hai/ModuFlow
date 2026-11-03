@@ -355,6 +355,7 @@ button.card {
 }
 .tab {
   flex: 1;
+  min-width: var(--hit);
   min-height: var(--hit);
   display: flex;
   flex-direction: column;

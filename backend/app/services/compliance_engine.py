@@ -124,7 +124,7 @@ def audit_stage_compliance(
                     "item": f"高敏感系统权限申请: {perm_name}",
                     "severity": "medium",
                     "passed": False,
-                    "advice": f"立项检测到涉及【{perm_name}】。必须在工序 05 PRD 中明确最小可用原则与用户授权理由，否则将遭遇平台拒审。"
+                    "advice": f"立项检测到涉及【{perm_name}】。必须在工序 04 PRD 中明确最小可用原则与用户授权理由，否则将遭遇平台拒审。"
                 })
                 if risk_level == "low":
                     risk_level = "medium"
@@ -162,7 +162,7 @@ def audit_stage_compliance(
     # =========================================================================
     # Checkpoint 2: Stage 05 - PRD 规格合规
     # =========================================================================
-    elif stage_code == "05":
+    elif stage_code == "04":
         # 2.1 Sensitive Data Security & Encryption
         if "password" in content_lower or "密码" in content_lower or "token" in content_lower:
             if "明文" in content_lower or "plaintext" in content_lower:
@@ -181,7 +181,7 @@ def audit_stage_compliance(
                     "item": "敏感凭证数据字典规范",
                     "severity": "low",
                     "passed": True,
-                    "advice": "数据字典已包含敏感凭证，请工序 07 研发严格使用系统安全存储 (Keychain/EncryptedSharedPreferences)。"
+                    "advice": "数据字典已包含敏感凭证，请工序 06 研发严格使用系统安全存储 (Keychain/EncryptedSharedPreferences)。"
                 })
 
         # 2.2 Dark Patterns / Auto-renew subscription
@@ -204,7 +204,7 @@ def audit_stage_compliance(
         from backend.app.services.delivery_contract import tracking_findings
         from backend.app.services.profile_guard import covers_android, covers_ios
         manifest_owns_tracking = (
-            manifest is not None and _stage_code(manifest.get("stage")) == "05"
+            manifest is not None and _stage_code(manifest.get("stage")) == "04"
         )
         if manifest_owns_tracking:
             for finding in tracking_findings(manifest, norm_platform):
@@ -276,7 +276,7 @@ def audit_stage_compliance(
     # =========================================================================
     # Checkpoint 3: Stage 09 - 提审上线合规
     # =========================================================================
-    elif stage_code == "09":
+    elif stage_code == "08":
         norm_platform = (platform or "all").lower()
         from backend.app.services.profile_guard import covers_android, covers_ios
         # 3.1 Store Policy & Spam/Copycat check
@@ -338,7 +338,7 @@ def audit_stage_compliance(
     is_g5_escalated = (risk_level == "high" or status == "legal_review")
 
     if is_g5_escalated:
-        summary = f"🚨 合规风控发现高危隐患，已自动升级为 🔴 G5 关口 (状态: {status})，必须由人类与法务复核放行。"
+        summary = f"🚨 合规风控发现高危隐患，已自动升级为 🔴 G5 放行 (状态: {status})，必须由人类与法务复核。"
     elif status == "needs_fix":
         summary = f"⚠️ 合规风控发现 {len([f for f in findings if not f['passed']])} 项待改建议，请在工序基线中完善。"
     else:
@@ -356,7 +356,7 @@ def audit_stage_compliance(
     }
 
 
-COMPLIANCE_STAGES = ("03", "05", "09")
+COMPLIANCE_STAGES = ("03", "04", "08")
 
 
 async def resolve_target_market(db: AsyncSession, product: Optional[Product]) -> str:

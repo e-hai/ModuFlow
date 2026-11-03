@@ -1,58 +1,114 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://moduflow.ai/schemas/manifests/stage_05.schema.json",
-  "title": "Stage 05 PRD Specification Manifest",
+  "title": "Stage 05 Design Delivery Bundle Manifest",
   "type": "object",
   "required": [
     "contract_version",
     "stage",
     "artifacts",
     "risk_flags",
-    "views",
-    "acceptance_criteria",
-    "event_dictionary",
-    "compliance"
+    "design"
   ],
   "properties": {
-    "contract_version": { "type": "string", "enum": ["1"] },
-    "stage": { "type": "string", "enum": ["05"] },
-    "artifacts": { "type": "array", "minItems": 1 },
-    "risk_flags": { "type": "object" },
-    "views": {
-      "type": "array",
-      "minItems": 1,
-      "items": { "type": "string", "pattern": "^V-\\d{2}$" }
+    "contract_version": {
+      "type": "string",
+      "enum": [
+        "1"
+      ]
     },
-    "acceptance_criteria": {
-      "type": "array",
-      "minItems": 1,
-      "items": { "type": "string", "pattern": "^AC-\\d{2}$" }
+    "stage": {
+      "type": "string",
+      "enum": [
+        "05"
+      ]
     },
-    "event_dictionary": {
+    "artifacts": {
       "type": "array",
-      "minItems": 1,
-      "items": {
-        "type": "object",
-        "required": ["id", "name"],
-        "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string" },
-          "trigger": { "type": "string" }
-        }
-      }
+      "minItems": 1
     },
-    "compliance": {
+    "risk_flags": {
+      "type": "object"
+    },
+    "design": {
       "type": "object",
-      "required": ["uses_idfa", "uses_ad_id"],
+      "description": "设计交付包清单。safe_area / touch_targets 不再由 Agent 自报，校验器从 screens/*.html 的 data-* 标注读取。",
+      "required": [
+        "platform",
+        "entry",
+        "tokens_path",
+        "screens",
+        "icons"
+      ],
       "properties": {
-        "uses_idfa": { "type": "boolean" },
-        "att_copy": { "type": "string" },
-        "att_denied_fallback": { "type": "string" },
-        "uses_ad_id": { "type": "boolean" },
-        "ad_id_permission_declared": { "type": "boolean" },
-        "min_audience_age": { "type": "integer", "minimum": 13 },
-        "ad_id_opt_out_fallback": { "type": "string" }
-      }
+        "platform": {
+          "type": "string",
+          "enum": [
+            "cross_platform",
+            "ios",
+            "android"
+          ]
+        },
+        "entry": {
+          "type": "string",
+          "const": "index.html",
+          "description": "设计工作台入口，成果交付库直接打开它"
+        },
+        "tokens_path": {
+          "type": "string",
+          "description": "tokens.json，颜色/字阶/间距/圆角的唯一真理源"
+        },
+        "screens": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "view_id",
+              "path",
+              "platforms"
+            ],
+            "properties": {
+              "view_id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,31}$",
+                "description": "等于工序 04 视图的 id"
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^screens/[a-z][a-z0-9_]{0,31}\\.html$"
+              },
+              "platforms": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "ios",
+                    "android"
+                  ]
+                },
+                "minItems": 1
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "icons": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^(assets/icons|slices)/.+\\.svg$"
+          }
+        },
+        "slices": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

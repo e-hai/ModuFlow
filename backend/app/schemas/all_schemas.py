@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 # --- Strategic Initiative ---
 class StrategicInitiativeBase(BaseModel):
@@ -44,11 +44,24 @@ class IntakeChatMessage(BaseModel):
 class IntakeChatRequest(BaseModel):
     messages: List[IntakeChatMessage]
     current_draft: Optional[Dict[str, Any]] = None
+    draft_id: Optional[str] = None
 
 class IntakeChatResponse(BaseModel):
     reply: str
     proposal: Dict[str, Any]
     quick_prompts: List[str]
+    draft_id: Optional[str] = None
+    job_id: Optional[str] = None
+    status: Optional[str] = None
+
+class IntakeJobResponse(BaseModel):
+    id: str
+    status: str
+    reply: str = ""
+    proposal: Dict[str, Any] = Field(default_factory=dict)
+    quick_prompts: List[str] = Field(default_factory=list)
+    error: Optional[str] = None
+    runner_alive: bool = False
 
 # --- Product ---
 class ProductBase(BaseModel):
@@ -201,6 +214,7 @@ class IssueOut(BaseModel):
 class AgentRoleDefinitionOut(BaseModel):
     id: str
     role_code: str
+    kind: str = "worker"
     name: str
     title: str
     avatar_icon: str

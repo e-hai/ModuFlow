@@ -2,6 +2,44 @@
 import sys, os, re, json
 from pathlib import Path
 
+_RELEASE = re.compile(r'^\d+\.\d+\.\d+$')
+_REVISION = re.compile(r'^r[1-9]\d*$')
+_SOURCE = re.compile(r'工序\s*03|变更单|承接')
+
+
+def revision_log_rows(content: str):
+    """版本表数据行。找不到四列表时返回空列表。"""
+    lines = (content or '').splitlines()
+    header_at = None
+    headers = []
+    for index, line in enumerate(lines):
+        cells = [cell.strip() for cell in line.strip().strip('|').split('|')]
+        if '上线版本' in cells and '稿次' in cells and '来源' in cells and '变更' in cells:
+            header_at = index
+            headers = cells
+            break
+    if header_at is None:
+        return []
+    release_at = headers.index('上线版本')
+    revision_at = headers.index('稿次')
+    source_at = headers.index('来源')
+    rows = []
+    for line in lines[header_at + 1:]:
+        if not line.strip().startswith('|'):
+            break
+        cells = [cell.strip() for cell in line.strip().strip('|').split('|')]
+        if cells and all(set(cell) <= set('-: ') and cell for cell in cells):
+            continue
+        if len(cells) <= max(release_at, revision_at, source_at):
+            continue
+        rows.append({
+            'release': cells[release_at],
+            'revision': cells[revision_at],
+            'source': cells[source_at],
+        })
+    return rows
+
+
 def lint_text(content: str, file_name: str = "PRD.md"):
     has_executive_gate = bool(re.search(r'##\s*负责人\s*30\s*秒拍板摘要卡', content))
 
@@ -23,7 +61,7 @@ def lint_text(content: str, file_name: str = "PRD.md"):
         else:
             missing_chapters.append(code)
 
-    views_detected = sorted(list(set(re.findall(r'V-0[1-9]', content))))
+    views_detected = sorted(list(set(re.findall(r'(?m)^\|\s*([a-z][a-z0-9_]{0,31})\s*\|', content))))
     modules_detected = sorted(list(set(re.findall(r'\bM[1-9]\b', content))))
     table_count = len(re.findall(r'\|(?:\s*[-:]+\s*\|)+', content))
     mermaid_diagrams = len(re.findall(r'```mermaid', content))
@@ -32,6 +70,19 @@ def lint_text(content: str, file_name: str = "PRD.md"):
     has_sql_ddl = bool(re.search(r'^\s*CREATE\s+(?:TABLE|INDEX)\b', content, re.IGNORECASE | re.MULTILINE))
     has_raw_json_schema = bool(re.search(r'"type"\s*:\s*"(?:object|string|number)"', content))
     has_engineering_leakage = has_sql_ddl or has_raw_json_schema
+    revision_rows = revision_log_rows(content)
+    revision_problems = []
+    if not revision_rows:
+        revision_problems.append('版本表需要四列：上线版本、稿次、来源、变更')
+    else:
+        for row in revision_rows:
+            if not _RELEASE.fullmatch(row['release']) or not _REVISION.fullmatch(row['revision']):
+                revision_problems.append(
+                    f"稿次写成 {row['release']} / {row['revision']}。上线版本用 1.0.0，稿次只写 r1、r2，不要写成 1.0.1"
+                )
+                break
+        if not any(_SOURCE.search(row['source']) for row in revision_rows):
+            revision_problems.append('版本表来源要写工序 03、变更单或承接')
 
     score = 100
     warnings = []
@@ -45,7 +96,7 @@ def lint_text(content: str, file_name: str = "PRD.md"):
         warnings.append('Missing chapters: ' + ', '.join(missing_chapters))
     if not views_detected:
         score -= 10
-        warnings.append('No full-site View IDs (e.g. V-01~V-05) detected in IA/Matrix')
+        warnings.append('No view ids detected. Each page needs a table row whose first cell is a lowercase id such as home')
     if len(modules_detected) < 3:
         score -= 10
         warnings.append('Less than 3 functional modules (M1~Mx) detected')
@@ -58,6 +109,9 @@ def lint_text(content: str, file_name: str = "PRD.md"):
     if has_banned_smoke_test:
         score -= 20
         warnings.append('PRD contains leftover Stage 04 smoke test tables or Go/Pivot/Kill audit rules')
+    if revision_problems:
+        score -= 15
+        warnings.extend(revision_problems)
     if has_engineering_leakage:
         score -= 25
         leak_details = []

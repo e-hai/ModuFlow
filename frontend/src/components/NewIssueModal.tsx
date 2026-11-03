@@ -20,8 +20,8 @@ export const NewIssueModal: React.FC<NewIssueModalProps> = ({
   if (!isOpen) return null;
 
   // If current is 06 (Design) or 07 (Dev), default to requirement_cr targeting 05 (PRD)
-  const isDownstream = ['06', '07', '08'].includes(currentModule.module_code);
-  const prdModule = allModules.find(m => m.module_code === '05');
+  const isDownstream = ['05', '06', '07'].includes(currentModule.module_code);
+  const prdModule = allModules.find(m => m.module_code === '04');
 
   const [category, setCategory] = useState<'requirement_cr' | 'bug'>(
     isDownstream ? 'requirement_cr' : 'bug'
@@ -45,7 +45,7 @@ export const NewIssueModal: React.FC<NewIssueModalProps> = ({
   const [unreasonablePoint, setUnreasonablePoint] = useState('');
   const [constraint, setConstraint] = useState('');
   const [suggestedChange, setSuggestedChange] = useState('');
-  const [affectedModulesText, setAffectedModulesText] = useState('工序 05 产品需求定义, 工序 06 设计实现, 工序 07 开发实现');
+  const [affectedModulesText, setAffectedModulesText] = useState('工序 04 产品需求定义, 工序 05 设计实现, 工序 06 开发实现');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -55,11 +55,11 @@ export const NewIssueModal: React.FC<NewIssueModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      const reporterRole = currentModule.module_code === '06'
+      const reporterRole = currentModule.module_code === '05'
         ? 'ux'
-        : currentModule.module_code === '07'
+        : currentModule.module_code === '06'
           ? 'eng'
-          : currentModule.module_code === '08'
+          : currentModule.module_code === '07'
             ? 'qa'
             : 'pm';
 
@@ -324,7 +324,7 @@ export const NewIssueModal: React.FC<NewIssueModalProps> = ({
             <ArrowLeftRight className="w-4 h-4 shrink-0 mt-0.5 text-indigo-600" />
             <span>
               {category === 'requirement_cr'
-                ? '提示：需求变更请求 (CR) 将派发至目标工序（如工序 05 产品需求定义）。目标工序工作台会显示专有采纳卡片，责任人可一键采纳并由 Agent 自动修订 PRD 生成新基线。'
+                ? '提示：需求变更请求 (CR) 将派发至目标工序（如工序 04 产品需求定义）。目标工序工作台会显示专有采纳卡片，责任人可一键采纳并由 Agent 自动修订 PRD 生成新基线。'
                 : '提示：若选择严重阻断级别，目标工序如果已正式定稿，将自动触发回退至研讨状态，以确保问题彻底解决前不会带病推进。'}
             </span>
           </div>

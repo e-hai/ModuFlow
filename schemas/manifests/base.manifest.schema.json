@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://moduflow.ai/schemas/manifests/base.manifest.schema.json",
   "title": "ModuFlow Delivery Manifest Envelope",
-  "description": "Standardized handoff envelope for all 11 ModuFlow stage deliverables (Single Source of Truth).",
+  "description": "Standardized handoff envelope for all 10 ModuFlow stage deliverables (Single Source of Truth).",
   "type": "object",
   "required": [
     "contract_version",
@@ -18,7 +18,7 @@
     },
     "stage": {
       "type": "string",
-      "enum": ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11"],
+      "enum": ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10"],
       "description": "Two-digit stage code."
     },
     "artifacts": {

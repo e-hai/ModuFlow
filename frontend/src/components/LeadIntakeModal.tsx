@@ -39,6 +39,7 @@ export const LeadIntakeModal: React.FC<LeadIntakeModalProps> = ({
   const [inputText, setInputText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingChat, setIsLoadingChat] = useState(false);
+  const [draftId, setDraftId] = useState<string | undefined>(undefined);
   const [quickPrompts, setQuickPrompts] = useState<string[]>([]);
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
@@ -49,9 +50,9 @@ export const LeadIntakeModal: React.FC<LeadIntakeModalProps> = ({
     strategic_intent: '',
     target_market: '',
     business_model_hypothesis: '',
-    budget: 15000,
-    suggested_budget: 15000,
-    hard_stop_loss: 20000,
+    budget: 0,
+    suggested_budget: 0,
+    hard_stop_loss: 0,
     currency: 'USD',
     signals: [],
     unverified_assumptions: [],
@@ -86,6 +87,7 @@ export const LeadIntakeModal: React.FC<LeadIntakeModalProps> = ({
           content: res.reply
         }
       ]);
+      if (res.draft_id) setDraftId(res.draft_id);
       setQuickPrompts(res.quick_prompts || []);
       if (res.proposal && Object.keys(res.proposal).length > 0) {
         setProposal(prev => ({ ...prev, ...res.proposal }));
@@ -127,7 +129,29 @@ export const LeadIntakeModal: React.FC<LeadIntakeModalProps> = ({
 
     try {
       const apiMessages = nextMessages.map(m => ({ role: m.role, content: m.content }));
-      const res = await api.leadIntakeChat(apiMessages, proposal);
+      let res = await api.leadIntakeChat(apiMessages, proposal, draftId);
+      if (res.draft_id) setDraftId(res.draft_id);
+      if (res.job_id) {
+        const jobId = res.job_id;
+        for (let attempt = 0; attempt < 120; attempt += 1) {
+          await new Promise(resolve => window.setTimeout(resolve, 1500));
+          const job = await api.intakeJob(jobId);
+          if (job.status === 'done' || job.status === 'failed' || job.status === 'interrupted') {
+            res = {
+              ...res,
+              reply: job.reply || (job.error ? `查阅没有完成：${job.error}` : res.reply),
+              proposal: job.proposal && Object.keys(job.proposal).length > 0 ? job.proposal : res.proposal,
+              quick_prompts: job.quick_prompts?.length ? job.quick_prompts : res.quick_prompts,
+              status: job.status,
+            };
+            break;
+          }
+          if (!job.runner_alive && attempt >= 1) {
+            res = { ...res, reply: '执行器没在跑。这句话已排上查阅，执行器启动后会写出摘录。' };
+            break;
+          }
+        }
+      }
 
       setMessages(prev => [
         ...prev,
@@ -166,7 +190,11 @@ export const LeadIntakeModal: React.FC<LeadIntakeModalProps> = ({
   // Adopt Lead Proposal and Create Initiative
   const handleAdoptAndCreate = async () => {
     if (!proposal.name.trim()) {
-      alert('请先输入或由 Lead 生成战略工程名称');
+      alert('请先写上战略工程名称');
+      return;
+    }
+    if (!Number(proposal.budget)) {
+      alert('请先写上预算');
       return;
     }
     setIsSubmitting(true);
@@ -175,7 +203,7 @@ export const LeadIntakeModal: React.FC<LeadIntakeModalProps> = ({
         name: proposal.name.trim(),
         description: proposal.description?.trim() || proposal.strategic_intent?.trim() || '',
         owner: 'CEO',
-        budget: Number(proposal.budget) || 15000,
+        budget: Number(proposal.budget),
         status: 'validating',
         strategic_intent: proposal.strategic_intent?.trim() || undefined,
         target_market: proposal.target_market?.trim() || undefined,
@@ -246,7 +274,7 @@ export const LeadIntakeModal: React.FC<LeadIntakeModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500">
-                五元架构首步：由用户掌控战略方向，Lead Agent 协助推演竞品软肋、审查假设并规划授权包
+                先把方向、市场、收费和预算谈清楚。已观测的数字只来自可靠来源。
               </p>
             </div>
           </div>
@@ -342,7 +370,7 @@ export const LeadIntakeModal: React.FC<LeadIntakeModalProps> = ({
                       <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-bounce" />
                       <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-bounce [animation-delay:0.2s]" />
                       <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-bounce [animation-delay:0.4s]" />
-                      <span>Lead 正在推演市场信号、测算阶段预算并审计假设...</span>
+                      <span>正在查阅可靠来源</span>
                     </div>
                   </div>
                 )}
@@ -535,7 +563,7 @@ export const LeadIntakeModal: React.FC<LeadIntakeModalProps> = ({
                       </span>
                       {proposal.unverified_assumptions.slice(0, 2).map((unv, idx) => (
                         <div key={idx} className="bg-amber-50/60 p-2 rounded-lg text-[11px] text-amber-900 border border-amber-100">
-                          [{unv.validation_stage || '工序 04'}] {unv.claim}
+                          [{unv.validation_stage || '上线后'}] {unv.claim}
                         </div>
                       ))}
                     </div>
@@ -547,7 +575,7 @@ export const LeadIntakeModal: React.FC<LeadIntakeModalProps> = ({
                   <div className="bg-rose-50/50 p-3 rounded-xl border border-rose-100 text-[11px] space-y-1">
                     <span className="font-bold text-rose-800 flex items-center gap-1">
                       <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
-                      红队关口退出条件 (Kill Criteria)
+                      红队放行退出条件 (Kill Criteria)
                     </span>
                     <ul className="list-disc list-inside text-rose-700 space-y-0.5">
                       {proposal.kill_criteria.slice(0, 2).map((kc, idx) => (

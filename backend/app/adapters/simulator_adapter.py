@@ -89,7 +89,9 @@ class SimulatorAdapter(BaseAgentAdapter):
             template_content = SIMULATION_BANNER + template_content
             extra_files[MANIFEST_FILENAME] = build_stage_manifest("01", f"交付物_{mod_code}_{mod_name}.md")
         else:
-            template_content, extra_files = build_simulated_deliverable(mod_code, metadata)
+            stage_meta = dict(metadata or {})
+            stage_meta["user_instruction"] = user_instruction
+            template_content, extra_files = build_simulated_deliverable(mod_code, stage_meta)
             if not template_content:
                 template_content = MODULE_TEMPLATES_CONTENT.get(
                     mod_code,
@@ -113,6 +115,10 @@ class SimulatorAdapter(BaseAgentAdapter):
             target = workspace_dir / rel_name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(file_content, encoding="utf-8")
+        if mod_code == "06":
+            from backend.app.services.delivery_contract import write_install_packages
+
+            write_install_packages(workspace_dir, release="【产出正式安装包】" in (user_instruction or ""))
 
         yield AgentStreamEvent(
             event_type=event_type,

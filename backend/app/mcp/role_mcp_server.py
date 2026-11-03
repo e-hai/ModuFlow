@@ -67,7 +67,7 @@ ROLE_MCP_TOOLS: Dict[str, List[Dict[str, Any]]] = {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "stage_code": {"type": "string", "enum": ["03", "05"], "description": "工序编号 (03 或 05)"},
+                    "stage_code": {"type": "string", "enum": ["03", "04"], "description": "工序编号 (03 或 05)"},
                     "markdown_content": {"type": "string", "description": "待校验的 Markdown 全文"}
                 },
                 "required": ["stage_code", "markdown_content"]

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import uuid
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Header, Request, Query
@@ -25,11 +26,12 @@ from backend.app.models.entities import (
     AgentRoleDefinition,
     AgentSettingsModel,
     ChangeReview,
-    GateApplication
+    GateApplication,
+    OrchestrationJob,
 )
 from backend.app.schemas.all_schemas import (
     StrategicInitiativeOut, StrategicInitiativeCreate, StrategicInitiativeUpdate,
-    IntakeChatRequest, IntakeChatResponse,
+    IntakeChatRequest, IntakeChatResponse, IntakeJobResponse,
     ProductOut, ProductCreate, ProductUpdate,
     WorkflowTemplateOut,
     WorkflowRunOut, WorkflowRunCreate, WorkflowRunUpdate,
@@ -89,18 +91,59 @@ async def _schedule_orchestration(
 
 # --- Strategic Initiatives ---
 @api_router.post("/initiatives/intake/chat", response_model=IntakeChatResponse)
-async def lead_intake_chat(data: IntakeChatRequest):
-    """
-    Lead Agent Intake Mode:
-    Interviews the CEO, challenges ungrounded assumptions, identifies demand/competitor signals,
-    and returns a structured proposal draft with authorization recommendations.
-    """
-    from backend.app.services.lead_intake import intake_lead_dialogue
-    result = await intake_lead_dialogue(
-        messages=[{"role": m.role, "content": m.content} for m in data.messages],
-        current_draft=data.current_draft
+async def lead_intake_chat(data: IntakeChatRequest, db: AsyncSession = Depends(get_db)):
+    """战略创建对话。空对话直接问候；有发言时交给执行器查阅可靠来源。"""
+    from backend.app.services.lead_intake import intake_lead_dialogue, save_intake_request
+    from backend.app.services.reliable_sources import intake_workspace
+
+    messages = [{"role": m.role, "content": m.content} for m in data.messages]
+    result = await intake_lead_dialogue(messages, data.current_draft)
+    draft_id = data.draft_id or uuid.uuid4().hex
+    if not messages:
+        return IntakeChatResponse(**result, draft_id=draft_id, status="done")
+
+    if orchestrator.orchestration_enabled():
+        workspace = intake_workspace(draft_id)
+        save_intake_request(workspace, messages, data.current_draft)
+        job = await _schedule_orchestration(
+            db, "intake_discuss", draft_id, requested_by="human:intake",
+        )
+        return IntakeChatResponse(
+            reply="正在查阅可靠来源",
+            proposal=result["proposal"],
+            quick_prompts=result["quick_prompts"],
+            draft_id=draft_id,
+            job_id=job.id if job else None,
+            status="queued" if job else "done",
+        )
+    return IntakeChatResponse(**result, draft_id=draft_id, status="done")
+
+
+@api_router.get("/initiatives/intake/jobs/{job_id}", response_model=IntakeJobResponse)
+async def lead_intake_job(job_id: str, db: AsyncSession = Depends(get_db)):
+    """战略创建查阅任务的状态。完成后回复和草案在草案目录的 result.json。"""
+    from backend.app.services.lead_intake import load_intake_result
+    from backend.app.services.reliable_sources import intake_workspace
+
+    view = await job_queue.job_view(db, job_id)
+    if view is None:
+        raise HTTPException(status_code=404, detail="没有这次查阅")
+    job = (await db.execute(
+        select(OrchestrationJob).where(OrchestrationJob.id == job_id)
+    )).scalar_one()
+    saved = {}
+    draft_id = (job.args or [None])[0]
+    if job.status == "done" and draft_id:
+        saved = load_intake_result(intake_workspace(str(draft_id))) or {}
+    return IntakeJobResponse(
+        id=view["id"],
+        status=view["status"],
+        reply=saved.get("reply") or "",
+        proposal=saved.get("proposal") or {},
+        quick_prompts=saved.get("quick_prompts") or [],
+        error=view.get("error"),
+        runner_alive=bool(view.get("runner_alive")),
     )
-    return IntakeChatResponse(**result)
 
 @api_router.get("/initiatives", response_model=List[StrategicInitiativeOut])
 async def list_initiatives(db: AsyncSession = Depends(get_db)):
@@ -2090,7 +2133,7 @@ async def get_agent_settings(db: AsyncSession = Depends(get_db)):
             id="codex",
             name="Codex CLI",
             command="codex",
-            description="代码合成与全栈产研命令行工具，擅长函数实现、架构推演与单测生成",
+            description="代码合成与全栈产品命令行工具，擅长函数实现、架构推演与单测生成",
             installed=bool(codex_path),
             path=codex_path,
             install_command="npm install -g @openai/codex",

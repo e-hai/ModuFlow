@@ -165,7 +165,7 @@ class ModuleInstance(Base):
     
     # 实战型执行模式：智能体主导 / 真人主导 / 人机混合
     execution_mode = Column(String(20), nullable=False, default="agent_driven") # agent_driven, human_driven, hybrid
-    # 追踪当前吸收的上游基线版本 (如 {"06": 1, "07": 1})，上游更新未跟进时标记为过期
+    # 追踪当前吸收的上游基线版本 (如 {"05": 1, "06": 1})，上游更新未跟进时标记为过期
     synced_upstream_versions = Column(JSON, nullable=False, default=dict)
     
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -212,6 +212,7 @@ class AgentRoleDefinition(Base):
     
     id = Column(String, primary_key=True) # e.g. "role_pm", "role_mr"
     role_code = Column(String(30), unique=True, nullable=False) # "mr", "ba", "pm", "ux", "eng", "qa", "mkt", "ops"
+    kind = Column(String(20), nullable=False, default="worker") # lead=router，其余=worker
     name = Column(String(100), nullable=False) # "产品经理 Agent"
     title = Column(String(100), nullable=False) # "高级敏捷产品总监"
     avatar_icon = Column(String(50), nullable=False, default="Bot")
@@ -253,7 +254,7 @@ class ChangeReview(Base):
     to_version = Column(Integer, nullable=False, default=2)
     title = Column(String(200), nullable=False)
     diff_summary = Column(Text, nullable=False) # 结构化变更摘要 (Added/Modified/Removed)
-    impact_analysis = Column(JSON, nullable=False, default=list) # 受影响的下游工序列表 ["08", "09", "10"]
+    impact_analysis = Column(JSON, nullable=False, default=list) # 受影响的下游工序列表 ["07", "08", "09"]
     status = Column(String(20), nullable=False, default="pending_approval") # pending_approval, approved, rejected
     approver = Column(String(50), nullable=True) # 统一审批人
     rejection_reason = Column(Text, nullable=True)
@@ -366,7 +367,7 @@ class LeadShadowDecision(Base):
 class HotfixFollowupTask(Base):
     """
     热修发布后 24h 闭环跟踪待办实体 (Phase 7)
-    涵盖三项硬性闭环：①补提交需求变更单 (CR)、②生产故障复盘 (Post-Mortem)、③工序 05 PRD 基线同步更新
+    涵盖三项硬性闭环：①补提交需求变更单 (CR)、②生产故障复盘 (Post-Mortem)、③工序 04 PRD 基线同步更新
     """
     __tablename__ = "hotfix_followup_tasks"
 

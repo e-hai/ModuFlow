@@ -9,7 +9,7 @@ This document provides zero-dependency, copy-paste ready HTML/CSS design pattern
 Interactive list item adhering to 44x44pt (iOS) / 48x48dp (Android) hit targets.
 
 ```html
-<div class="mf-card" data-hit="44x44" data-nav-target="V-02" role="button" tabindex="0">
+<div class="mf-card" data-hit="44x44" data-nav-target="editor" role="button" tabindex="0">
   <div class="mf-card-icon">
     <img src="../slices/icon_scan.svg" alt="Scan Icon" width="24" height="24">
   </div>
@@ -280,7 +280,7 @@ Used for `data-state="empty"`.
   </div>
   <h3 class="mf-empty-title">No Scans Yet</h3>
   <p class="mf-empty-desc">Tap the button below to scan your first receipt, contract or whiteboard notes.</p>
-  <button class="mf-btn-primary" data-hit="44x44" data-nav-target="V-02">
+  <button class="mf-btn-primary" data-hit="44x44" data-nav-target="editor">
     Scan New Document
   </button>
 </div>

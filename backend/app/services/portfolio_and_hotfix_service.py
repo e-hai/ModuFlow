@@ -7,7 +7,7 @@ Enforces:
    - When a hotfix run is released, automatically generates 3 mandatory follow-up tasks:
      ① 补需求变更单 (CR)
      ② 生产故障复盘与 RCA 根因分析 (Post-Mortem)
-     ③ 工序 05 PRD 规格基线同步更新 (PRD Baseline Update)
+     ③ 工序 04 PRD 规格基线同步更新 (PRD Baseline Update)
    - 24-hour deterministic SLA tracking:
      If 24h passes and tasks are pending, automatically generates 🔴 critical ExecutiveRisk alert
      and writes an audit log into decisions/.
@@ -60,7 +60,7 @@ async def create_hotfix_followup_tasks(
     Automatically provisions 3 mandatory follow-up tasks with a 24-hour completion deadline:
     1. 补提交需求变更单 (CR) -> cr_patch
     2. 生产故障复盘与 RCA 根因分析 -> postmortem
-    3. 工序 05 PRD 规格基线同步更新 -> prd_update
+    3. 工序 04 PRD 规格基线同步更新 -> prd_update
     """
     r_stmt = select(WorkflowRun).where(WorkflowRun.id == run_id)
     r_res = await db.execute(r_stmt)
@@ -101,7 +101,7 @@ async def create_hotfix_followup_tasks(
         {
             "task_type": "cr_patch",
             "title": f"[热修补档-01] 补需求变更单 (CR) - {product_code} 生产缺陷闭环入池",
-            "description": "针对生产缺陷紧急发布，必须在 24 小时内向工序 05 提交正式需求变更单 (CR)，驱动上游基线闭环演进，防止线上代码与产品 PRD 脱节。"
+            "description": "针对生产缺陷紧急发布，必须在 24 小时内向工序 04 提交正式需求变更单 (CR)，驱动上游基线闭环演进，防止线上代码与产品 PRD 脱节。"
         },
         {
             "task_type": "postmortem",
@@ -110,8 +110,8 @@ async def create_hotfix_followup_tasks(
         },
         {
             "task_type": "prd_update",
-            "title": f"[热修补档-03] 同步修订工序 05 PRD 规格基线与 Gherkin 验收用例 - {product_code}",
-            "description": "产品经理 (pm) 承接热修 CR 与故障复盘结论，更新工序 05 PRD 黄金 7+1 章节与验收用例矩阵，发布增量版本新基线。"
+            "title": f"[热修补档-03] 同步修订工序 04 PRD 规格基线与 Gherkin 验收用例 - {product_code}",
+            "description": "产品经理 (pm) 承接热修 CR 与故障复盘结论，更新工序 04 PRD 黄金 7+1 章节与验收用例矩阵，发布增量版本新基线。"
         }
     ]
 
@@ -243,7 +243,7 @@ async def check_hotfix_documentation_sla(
                 severity="critical",
                 description=risk_desc,
                 product_code=product_code,
-                action_suggestion="立即分派责任 Agent 与产品经理在工序 05 补齐 CR 并更新 PRD 基线。",
+                action_suggestion="立即分派责任 Agent 与产品经理在工序 04 补齐 CR 并更新 PRD 基线。",
                 is_resolved=False
             )
             db.add(risk_obj)
@@ -386,7 +386,7 @@ async def generate_portfolio_weekly_report(
             advice = f"预算消耗率已达 {burn_pct}%，逼近授权包硬防线，建议审核追加预算或收紧单工序派活。"
             strategic_recommendations.append(f"- **{p.name} ({p.code})**：{advice}")
         elif p.stage == "growth":
-            advice = "持续优化获客 eCAC 与次周留存，结合工序 11 数据反哺 V1.1 迭代。"
+            advice = "持续优化获客 eCAC 与次周留存，结合工序 10 数据反哺 V1.1 迭代。"
         elif p.stage == "validating":
             advice = "严格依据工序 04 真实外测埋点数据判断立项，未达标前严禁提前启动研发重度工程。"
         else:
@@ -399,7 +399,7 @@ async def generate_portfolio_weekly_report(
         )
 
     if not strategic_recommendations:
-        strategic_recommendations.append("- **矩阵整体健康**：各产品线预算消耗与关口流转处于安全阈值内，建议按节拍推进。")
+        strategic_recommendations.append("- **矩阵整体健康**：各产品线预算消耗与放行流转处于安全阈值内，建议按节拍推进。")
 
     # 4. Generate 1-page markdown report adhering to two-layer standard
     markdown_report = f"""# ModuFlow 投资组合层一页周报 (Portfolio Weekly Digest)
@@ -428,7 +428,7 @@ async def generate_portfolio_weekly_report(
 
 ## 完整执行细节 (Execution Reference)
 
-### 1. 全矩阵产品经营与关口状态矩阵 (Portfolio Matrix)
+### 1. 全矩阵产品经营与放行状态矩阵 (Portfolio Matrix)
 
 | 序号 | 产品名称 (代码) | 目标平台 | 运营阶段 | 预算消耗 (比例) | 核心 KPI 达成 | 建议动作 (Recommendation Only) |
 | :---: | :--- | :---: | :---: | :---: | :---: | :--- |

@@ -116,9 +116,9 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
 
   const formatRiskTitle = (title: string, isResolved: boolean): string => {
     let res = title
-      .replace(/🔴\s*红级关口待批:\s*\[G4 提审门禁\]/g, '🔴 待您亲自把关：应用商店提审发布')
-      .replace(/🔴\s*红级关口待批:\s*\[prd_linter 规格门禁\]/g, '🔴 待您亲自把关：产品需求规格审核 (PRD)')
-      .replace(/🔴\s*红级关口待批:\s*\[([^\]]+)\]/g, '🔴 待您亲自把关：$1');
+      .replace(/🔴\s*红级(?:关口|放行)待批:\s*\[G4 提审门禁\]/g, '🔴 待您亲自把关：应用商店提审发布')
+      .replace(/🔴\s*红级(?:关口|放行)待批:\s*\[prd_linter 规格门禁\]/g, '🔴 待您亲自把关：产品需求规格审核 (PRD)')
+      .replace(/🔴\s*红级(?:关口|放行)待批:\s*\[([^\]]+)\]/g, '🔴 待您亲自把关：$1');
 
     if (isResolved) {
       res = res.replace(/^[🔴🚨]\s*待您亲自把关：?/, '✅ 已确认放行：');
@@ -171,7 +171,7 @@ export const DecisionCenterTab: React.FC<DecisionCenterTabProps> = ({
     if (suggestion) {
       return suggestion
         .replace(/请点击下方「查看详情并拍板」[，,]?/g, '')
-        .replace(/请人类负责人即时前往关口审批中心进行审查拍板 \(通过\/打回\/调整\)。?/g, '请核对合规审查材料与应急回滚预案后确认放行。')
+        .replace(/请人类负责人即时前往(?:关口|放行)审批中心进行审查拍板 \(通过\/打回\/调整\)。?/g, '请核对合规审查材料与应急回滚预案后确认放行。')
         .trim();
     }
     return '请核对相关材料后确认放行。';

@@ -235,7 +235,7 @@ def test_compliance_audit_by_platform():
     """Verify compliance audit checks platform-appropriate policies."""
     # Stage 05 with ad tracking on Android -> Google Play AD_ID
     res_android_05 = audit_stage_compliance(
-        stage_code="05",
+        stage_code="04",
         content="本项目涉及广告追踪与归因分析",
         platform="android"
     )
@@ -245,7 +245,7 @@ def test_compliance_audit_by_platform():
 
     # Stage 05 with ad tracking on iOS -> Apple ATT
     res_ios_05 = audit_stage_compliance(
-        stage_code="05",
+        stage_code="04",
         content="本项目涉及广告追踪与归因分析",
         platform="ios"
     )
@@ -254,7 +254,7 @@ def test_compliance_audit_by_platform():
 
     # Stage 09 on Android -> Google Play Policy, NOT Apple 4.3
     res_android_09 = audit_stage_compliance(
-        stage_code="09",
+        stage_code="08",
         content="提审前进行重复应用查重与换皮排查，包含隐私政策 https://example.com/privacy 与 Remote Config 降级开关与回滚预案",
         platform="android"
     )
@@ -275,7 +275,7 @@ def test_cross_platform_design_requires_both_ends():
         "audit_hig_safe_area",
         "audit_material_spec",
     ]
-    conditions = get_stage_gate_conditions("06", platform="cross_platform")
+    conditions = get_stage_gate_conditions("05", platform="cross_platform")
     assert any("灵动岛" in item for item in conditions)
     assert any("48x48dp" in item for item in conditions)
 
@@ -283,21 +283,21 @@ def test_cross_platform_design_requires_both_ends():
 def test_dynamic_gate_conditions_by_profile():
     """Verify get_stage_gate_conditions adapts to platform and zero inference profile."""
     # Stage 06 iOS
-    cond_ios = get_stage_gate_conditions("06", platform="ios")
+    cond_ios = get_stage_gate_conditions("05", platform="ios")
     assert any("iOS 灵动岛" in c for c in cond_ios)
 
     # Stage 06 Android
-    cond_android = get_stage_gate_conditions("06", platform="android")
+    cond_android = get_stage_gate_conditions("05", platform="android")
     assert any("Android Material 3" in c for c in cond_android)
     assert any("48x48dp" in c for c in cond_android)
     assert not any("灵动岛" in c for c in cond_android)
 
     # Stage 07 strict zero inference
-    cond_strict = get_stage_gate_conditions("07", client_zero_inference=True)
+    cond_strict = get_stage_gate_conditions("06", client_zero_inference=True)
     assert any("强制零推理" in c for c in cond_strict)
 
     # Stage 07 edge AI permitted
-    cond_edge = get_stage_gate_conditions("07", client_zero_inference=False)
+    cond_edge = get_stage_gate_conditions("06", client_zero_inference=False)
     assert any("允许端侧本地模型" in c for c in cond_edge)
 
 
@@ -348,8 +348,8 @@ async def test_api_product_profile_and_audits():
         assert run_resp.status_code == 200
         run_data = run_resp.json()
         mods = run_data["modules"]
-        mod_06 = next(m for m in mods if m["module_code"] == "06")
-        mod_07 = next(m for m in mods if m["module_code"] == "07")
+        mod_06 = next(m for m in mods if m["module_code"] == "05")
+        mod_07 = next(m for m in mods if m["module_code"] == "06")
 
         # 4. Design audit on Android module 06:
         # Pass 48dp (valid on Android, invalid on iOS)

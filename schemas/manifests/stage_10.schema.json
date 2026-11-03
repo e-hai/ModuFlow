@@ -1,32 +1,32 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://moduflow.ai/schemas/manifests/stage_10.schema.json",
-  "title": "Stage 10 User Acquisition Manifest",
+  "title": "Stage 11 Retention & Continuous Iteration Manifest",
   "type": "object",
   "required": [
     "contract_version",
     "stage",
     "artifacts",
     "risk_flags",
-    "acquisition"
+    "retention"
   ],
   "properties": {
     "contract_version": { "type": "string", "enum": ["1"] },
     "stage": { "type": "string", "enum": ["10"] },
     "artifacts": { "type": "array", "minItems": 1 },
     "risk_flags": { "type": "object" },
-    "acquisition": {
+    "retention": {
       "type": "object",
-      "required": ["ecac_usd", "ecac_limit_usd", "channels", "daily_budget_usd"],
+      "required": ["d1_retention", "d7_retention", "d30_retention", "backlog_items"],
       "properties": {
-        "ecac_usd": { "type": "number", "minimum": 0 },
-        "ecac_limit_usd": { "type": "number", "minimum": 0 },
-        "channels": {
+        "d1_retention": { "type": "number", "minimum": 0, "maximum": 100 },
+        "d7_retention": { "type": "number", "minimum": 0, "maximum": 100 },
+        "d30_retention": { "type": "number", "minimum": 0, "maximum": 100 },
+        "backlog_items": {
           "type": "array",
           "minItems": 1,
           "items": { "type": "string" }
-        },
-        "daily_budget_usd": { "type": "number", "minimum": 0 }
+        }
       },
       "additionalProperties": false
     }

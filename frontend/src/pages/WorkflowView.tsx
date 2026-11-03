@@ -112,7 +112,7 @@ function buildNextStep(
     return {
       tone: 'act',
       title: `${stageTitle(missed)} 这一次没有产出`,
-      body: '执行没有写出交付物。重新派活只会再排一次任务，不会提交关口。',
+      body: '执行没有写出交付物。重新派活只会再排一次任务，不会提交放行。',
       primary: { label: '重新派活', kind: 'redispatch', moduleId: missed.module_id },
     };
   }
@@ -614,7 +614,7 @@ export const WorkflowView: React.FC<WorkflowViewProps> = ({
                 {activeProduct.name}
               </h1>
               <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-medium hidden sm:inline">
-                产研协同工作台
+                产品协同工作台
               </span>
             </div>
 

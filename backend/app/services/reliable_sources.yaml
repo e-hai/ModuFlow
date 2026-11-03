@@ -1,0 +1,122 @@
+# 可靠来源目录。加来源只追加一条。search 为 true 的来源参与站内搜索。
+sources:
+  - id: app_store_search
+    name: Apple App Store 公开搜索
+    kind: store
+    hosts: [apps.apple.com]
+    entry_urls:
+      - https://apps.apple.com/us/search?term={query}
+    enabled: true
+    search: false
+  - id: play_search
+    name: Google Play 公开搜索
+    kind: store
+    hosts: [play.google.com]
+    entry_urls:
+      - https://play.google.com/store/search?q={query}&c=apps
+    enabled: true
+    search: false
+  - id: apple_guidelines
+    name: Apple 审核指南
+    kind: policy
+    hosts: [developer.apple.com]
+    entry_urls:
+      - https://developer.apple.com/app-store/review/guidelines/
+    enabled: true
+    search: false
+  - id: play_policy
+    name: Google Play 政策
+    kind: policy
+    hosts: [support.google.com]
+    entry_urls:
+      - https://support.google.com/googleplay/android-developer/answer/9859348
+    enabled: true
+    search: false
+  - id: apple_newsroom
+    name: Apple Newsroom
+    kind: primary
+    hosts: [www.apple.com]
+    entry_urls:
+      - https://www.apple.com/newsroom/
+    enabled: true
+    search: true
+  - id: google_blog
+    name: Google 官方博客
+    kind: primary
+    hosts: [blog.google]
+    entry_urls:
+      - https://blog.google/
+    enabled: true
+    search: true
+  - id: edgar
+    name: 美国证监会 EDGAR
+    kind: primary
+    hosts: [www.sec.gov]
+    entry_urls:
+      - https://www.sec.gov/edgar/search/
+    enabled: true
+    search: true
+  - id: reuters
+    name: Reuters
+    kind: press
+    hosts: [www.reuters.com]
+    entry_urls:
+      - https://www.reuters.com/
+    enabled: true
+    search: true
+  - id: ap
+    name: AP
+    kind: press
+    hosts: [apnews.com]
+    entry_urls:
+      - https://apnews.com/
+    enabled: true
+    search: true
+  - id: techcrunch
+    name: TechCrunch
+    kind: press
+    hosts: [techcrunch.com]
+    entry_urls:
+      - https://techcrunch.com/
+    enabled: true
+    search: true
+  - id: the_verge
+    name: The Verge
+    kind: press
+    hosts: [www.theverge.com]
+    entry_urls:
+      - https://www.theverge.com/
+    enabled: true
+    search: true
+  - id: sensor_tower
+    name: Sensor Tower
+    kind: industry
+    hosts: [sensortower.com]
+    entry_urls:
+      - https://sensortower.com/blog
+    enabled: true
+    search: true
+  - id: yfchuhai
+    name: 扬帆出海
+    kind: industry
+    hosts: [www.yfchuhai.com]
+    entry_urls:
+      - https://www.yfchuhai.com/report
+    enabled: true
+    search: true
+  - id: baijing
+    name: 白鲸出海
+    kind: industry
+    hosts: [www.baijing.cn]
+    entry_urls:
+      - https://www.baijing.cn/
+    enabled: true
+    search: true
+  - id: store_charts
+    name: 商店榜单
+    kind: chart
+    hosts: [e-hai.github.io]
+    entry_urls:
+      - https://e-hai.github.io/Appstore_Top_30/api/
+    enabled: true
+    search: false

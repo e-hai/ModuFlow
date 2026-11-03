@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Migrates workspace directory paths and database artifact storage paths from legacy
-Chinese / redundant naming (e.g. 'FocusZen V1.0 首发全流程产研迭代/07_07_开发实现')
-to clean ASCII-only slug paths (e.g. 'run_focuszen_v1.0/07_development').
+Chinese / redundant naming (e.g. 'FocusZen V1.0 首发全流程产品迭代/07_07_开发实现')
+to clean ASCII-only slug paths (e.g. 'run_focuszen_v1.0/06_development').
 Creates symlinks from legacy paths to new paths for backward compatibility.
 """
 
@@ -19,28 +19,26 @@ STAGE_SLUGS = {
     "01": "market_research",
     "02": "business_model",
     "03": "product_direction",
-    "04": "fake_door",
-    "05": "product_requirement",
-    "06": "design_implementation",
-    "07": "development",
-    "08": "testing_qa",
-    "09": "release_deployment",
-    "10": "growth_marketing",
-    "11": "operations_iteration",
+    "04": "product_requirement",
+    "05": "design_implementation",
+    "06": "development",
+    "07": "testing_qa",
+    "08": "release_deployment",
+    "09": "growth_marketing",
+    "10": "operations_iteration",
 }
 
 STAGE_NAMES = {
     "01": "市场研究",
     "02": "商业模式分析",
     "03": "产品方向决策",
-    "04": "低成本市场验证",
-    "05": "产品需求定义",
-    "06": "设计实现",
-    "07": "开发实现",
-    "08": "测试与 QA",
-    "09": "发布与上线",
-    "10": "市场推广与获客",
-    "11": "运营分析与持续迭代",
+    "04": "产品需求定义",
+    "05": "设计实现",
+    "06": "开发实现",
+    "07": "测试与 QA",
+    "08": "发布与上线",
+    "09": "市场推广与获客",
+    "10": "运营分析与持续迭代",
 }
 
 

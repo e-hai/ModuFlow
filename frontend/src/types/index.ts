@@ -34,6 +34,19 @@ export interface IntakeChatResponse {
   reply: string;
   proposal: IntakeProposal;
   quick_prompts: string[];
+  draft_id?: string;
+  job_id?: string;
+  status?: string;
+}
+
+export interface IntakeJobResponse {
+  id: string;
+  status: string;
+  reply: string;
+  proposal: IntakeProposal;
+  quick_prompts: string[];
+  error?: string;
+  runner_alive: boolean;
 }
 
 export interface Product {
@@ -61,6 +74,7 @@ export interface WorkflowTemplate {
 export interface AgentRoleDefinition {
   id: string;
   role_code: string;
+  kind: 'router' | 'worker';
   name: string;
   title: string;
   avatar_icon: string;

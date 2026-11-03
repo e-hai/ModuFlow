@@ -236,7 +236,7 @@ export const OperationsTab: React.FC<OperationsTabProps> = ({ operations }) => {
 
           {funnel.length > 0 && (
             <p className="text-[11px] text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-200 leading-relaxed">
-              💡 <strong className="text-slate-800">变现转化分析：</strong> 关注漏斗各环节流失率，结合工序 07/08 优化核心转化流程。
+              💡 <strong className="text-slate-800">变现转化分析：</strong> 关注漏斗各环节流失率，结合工序 06/08 优化核心转化流程。
             </p>
           )}
         </div>

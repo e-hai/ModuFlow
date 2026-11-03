@@ -69,7 +69,7 @@ async def test_codebase_endpoints(monkeypatch, tmp_path):
         class MockMod:
             id = module_id
             order_index = 7
-            module_code = "07"
+            module_code = "06"
             name = "开发实现"
         return MockMod(), tmp_path, tmp_path
 

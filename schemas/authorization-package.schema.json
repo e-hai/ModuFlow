@@ -105,7 +105,7 @@
             "type": "number",
             "minimum": 0
           },
-          "description": "Budget limits per stage code (e.g., '01': 200, '04': 350, '10': 1000)"
+          "description": "Budget limits per stage code (e.g., '01': 200, '04': 350, '09': 1000)"
         }
       }
     },

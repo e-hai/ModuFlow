@@ -316,7 +316,7 @@
     </div>
 
     <div>
-      <span id="screen-info" style="font-family: var(--font-mono); color: var(--text-secondary); font-size: 11px;">V-01</span>
+      <span id="screen-info" style="font-family: var(--font-mono); color: var(--text-secondary); font-size: 11px;">home</span>
     </div>
   </header>
 
@@ -336,7 +336,7 @@
     <!-- Center Canvas -->
     <section class="canvas-center">
       <div class="device-viewport-container" id="device-container">
-        <iframe id="screen-frame" src="screens/V-01.html"></iframe>
+        <iframe id="screen-frame" src="screens/home.html"></iframe>
       </div>
     </section>
 
@@ -373,7 +373,7 @@
       let currentPlatform = 'ios';
       let currentState = 'default';
       let isInspectMode = true;
-      let activeScreen = 'V-01';
+      let activeScreen = 'home';
       let pickedElement = null;
 
       const screenFrame = document.getElementById('screen-frame');
@@ -391,7 +391,7 @@
         } catch (e) {
           // Fallback discovery
           renderScreenList([
-            { id: 'V-01', name: 'Main Artboard', file: 'screens/V-01.html' }
+            { id: 'home', name: 'Main Artboard', file: 'screens/home.html' }
           ]);
         }
       }

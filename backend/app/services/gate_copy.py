@@ -56,6 +56,133 @@ def _pct(value: float) -> str:
     return f"{number:.1f}".rstrip("0").rstrip(".") + "%"
 
 
+def _stage01_sheet(audit: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """确认单上的工序 01 数字。列表和详情用同一组数，详情另附出处名称。"""
+    som = audit.get("first_year_som_usd")
+    installs = audit.get("annual_target_installs")
+    volume = audit.get("monthly_search_volume")
+    rate = audit.get("target_capture_rate")
+    arpu = audit.get("blended_arpu_usd")
+    if som is None or installs is None or volume is None or rate is None or arpu is None:
+        return None
+    verdict = str(audit.get("verdict") or "")
+    action = "盘子偏小，先控制投入" if "CAUTION" in verdict else "建议先做"
+    basis = audit.get("input_basis") if isinstance(audit.get("input_basis"), dict) else {}
+    source = str(audit.get("source") or "")
+
+    def label(key: str) -> str:
+        value = basis.get(key)
+        if value == "assumption":
+            return "假设"
+        if value == "excerpt":
+            return "摘录"
+        if "假设" in source:
+            return "假设"
+        return "摘录"
+
+    installs_text = _count(installs)
+    installs_text = f"{installs_text}次" if installs_text.endswith("万") else f"{installs_text} 次"
+    market = str(audit.get("market") or "").strip()
+    demand = str(audit.get("demand_definition") or "").strip()
+    head = f"市场 {market}，口径 {demand}。" if market or demand else ""
+    numbers = (
+        f"月搜索量 {_count(volume)}（{label('monthly_search_volume')}），"
+        f"取得比例 {_pct(rate)}（{label('target_capture_rate')}），"
+        f"客单价 {_usd(arpu)}（{label('blended_arpu_usd')}）。"
+        f"年安装量 {installs_text}，首年盘子 {_usd(som)}。"
+    )
+    facts = [f"{head}{numbers}".strip()]
+    names = audit.get("citation_labels") if isinstance(audit.get("citation_labels"), dict) else {}
+    titled = (
+        ("monthly_search_volume", "月搜索量"),
+        ("target_capture_rate", "取得比例"),
+        ("blended_arpu_usd", "客单价"),
+    )
+    named = [f"{title}出自{str(names.get(key)).strip()}" for key, title in titled if str(names.get(key) or "").strip()]
+    if named:
+        facts.append("；".join(named) + "。")
+    return {"decision": f"{action}。{head}{numbers}", "facts": facts}
+
+
+def _stage02_sheet(audit: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """确认单上的工序 02 数字。列表和详情用同一组数，详情另写两句乘法。"""
+    organic = audit.get("organic_share")
+    cpi = audit.get("paid_cpi_usd")
+    ad_arpu = audit.get("ad_arpu_usd")
+    conversion = audit.get("iap_conversion_rate")
+    arppu = audit.get("iap_net_arppu_usd")
+    cac = audit.get("blended_cac_usd")
+    ltv = audit.get("ltv_180d_usd")
+    ratio = audit.get("ltv_cac_ratio")
+    if any(value is None for value in (organic, cpi, ad_arpu, conversion, arppu, cac, ltv, ratio)):
+        return None
+    numbers = (
+        f"自然来的用户占比 {_pct(float(organic))}，"
+        f"花钱买一个安装的成本 {_usd(float(cpi))}，"
+        f"广告从一个用户身上拿到的钱 {_usd(float(ad_arpu))}，"
+        f"会付钱的用户占比 {_pct(float(conversion))}，"
+        f"付钱的人平均净付 {_usd(float(arppu))}。"
+        f"获客成本 {_usd(float(cac))}，180 天客户价值 {_usd(float(ltv))}。"
+        f"每花 1 美元大约收回 {ratio} 美元。"
+    )
+    prices = []
+    for item in audit.get("pricing_tiers") or []:
+        if isinstance(item, dict) and str(item.get("name") or "").strip() and item.get("price_usd") is not None:
+            prices.append(f"{str(item['name']).strip()} {_usd(float(item['price_usd']))}")
+    if prices:
+        numbers += "价格：" + "，".join(prices) + "。"
+    return {
+        "decision": numbers,
+        "facts": [
+            numbers,
+            "获客成本 =（1 − 自然来的占比）× 单个安装成本。",
+            "180 天客户价值 = 广告收入 + 付钱占比 × 净付金额。",
+            f"回收倍数 {ratio}，按 3 倍作为健康线。",
+        ],
+    }
+
+
+def _validation_words(value: str) -> str:
+    text = value.strip()
+    if re.fullmatch(r"\d{2}", text):
+        return f"工序 {text}"
+    return text
+
+
+def _stage03_lines(hypotheses: List[Dict[str, Any]]) -> List[str]:
+    lines = []
+    for item in hypotheses:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("id") or "").strip()
+        text = str(item.get("hypothesis") or "").strip()
+        how = _validation_words(str(item.get("validation") or ""))
+        head = f"{label}：{text}" if label else text
+        lines.append(f"{head}。怎么验证：{how}。")
+    return lines
+
+
+def _stage03_sheet(audit: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """确认单上的工序 03 方向。列表和详情用同一段话，详情里每条假设单独一行。"""
+    if not audit.get("direction_structured"):
+        return None
+    uvp = str(audit.get("uvp") or "").strip()
+    audience = str(audit.get("target_audience") or "").strip()
+    must = [str(item).strip() for item in (audit.get("must") or []) if str(item).strip()]
+    wont = [str(item).strip() for item in (audit.get("wont") or []) if str(item).strip()]
+    lines = _stage03_lines(audit.get("hypotheses") or [])
+    if not uvp or not audience or not must or not wont or not lines:
+        return None
+    paragraph = (
+        f"是否按这个方向立项：{uvp}。"
+        f"给谁做：{audience}。"
+        f"第一版必做：{'、'.join(must)}。"
+        f"明确不做：{'、'.join(wont)}。"
+        + "".join(lines)
+    )
+    return {"decision": paragraph, "facts": [paragraph, *lines]}
+
+
 def _source(audit: Dict[str, Any]) -> str:
     text = str(audit.get("source") or "").strip()
     if len(text) > 80:
@@ -155,70 +282,46 @@ def build_stage_brief(module_code: str, texts: List[str], audit: Dict[str, Any])
     missing: List[str] = []
 
     if code == "01":
-        som = audit.get("first_year_som_usd")
-        installs = audit.get("annual_target_installs")
-        verdict = str(audit.get("verdict") or "")
-        action = "盘子偏小，先控制投入" if "CAUTION" in verdict else "建议先做"
-        if som is not None and installs is not None:
-            installs_text = _count(installs)
-            installs_text = f"{installs_text}次" if installs_text.endswith("万") else f"{installs_text} 次"
-            decision = f"{action}。首年能拿到的现实盘子大约 {_usd(som)}（约 {installs_text}安装）。"
-            facts = [
-                f"盘子大约 {_usd(som)}，是用月搜索量、能拿到的比例和客单价算出来的。",
-                f"数字来源：{_source(audit)}。",
-            ]
+        sheet = _stage01_sheet(audit)
+        if sheet is not None:
+            decision = sheet["decision"]
+            facts = sheet["facts"]
         else:
             missing.append("首年盘子和安装量")
         watch = "定价还没定，下一关单独请您看。"
     elif code == "02":
-        ratio = audit.get("ltv_cac_ratio")
-        cac = audit.get("blended_cac_usd")
-        ltv = audit.get("ltv_180d_usd")
-        if ratio is not None:
-            money = f"获客成本 {_usd(cac)}，180 天客户价值 {_usd(ltv)}。" if cac is not None and ltv is not None else ""
-            decision = f"每花 1 美元获客，大约能收回 {ratio} 美元。{money}".strip()
-            facts = [f"回收倍数 {ratio}，按 3 倍作为健康线。"]
-            ladder = fields.get("price_ladder") or fields.get("pricing_ladder")
-            if isinstance(ladder, str) and ladder.strip():
-                facts.append(_clean(ladder, 160))
+        sheet = _stage02_sheet(audit)
+        if sheet is not None:
+            decision = sheet["decision"]
+            facts = sheet["facts"]
         else:
             missing.append("回收倍数")
         watch = "这里定下的价格，后面的工序不能自行改。"
     elif code == "03":
-        uvp = audit.get("uvp") or _uvp_sentence(fields, blob)
-        hypotheses = audit.get("hypotheses") or _hypotheses(blob)
-        keep, cut = _cut_and_keep(blob)
         choices = _choice_lines(blob)
-        if uvp:
-            decision = f"是否按这个方向立项：{uvp}。"
+        sheet = _stage03_sheet(audit)
+        if sheet is not None:
+            decision = sheet["decision"]
+            facts = sheet["facts"]
         else:
-            missing.append("一句话方向")
-        if hypotheses:
-            facts.append("要验证的假设：" + "；".join(hypotheses) + "。")
-        else:
-            missing.append("至少一条要验证的假设")
-        if keep:
-            facts.append(f"第一版留下：{keep}。")
-        if cut:
-            facts.append(f"明确不做：{cut}。")
-        watch = "后面的小额测试和需求都按这个方向做。"
+            uvp = audit.get("uvp") or _uvp_sentence(fields, blob)
+            hypotheses = audit.get("hypotheses") or _hypotheses(blob)
+            keep, cut = _cut_and_keep(blob)
+            if uvp and not isinstance(uvp, list):
+                decision = f"是否按这个方向立项：{uvp}。"
+            else:
+                missing.append("一句话方向")
+            if hypotheses and all(isinstance(item, str) for item in hypotheses):
+                facts.append("要验证的假设：" + "；".join(hypotheses) + "。")
+            else:
+                missing.append("至少一条要验证的假设")
+            if keep:
+                facts.append(f"第一版留下：{keep}。")
+            if cut:
+                facts.append(f"明确不做：{cut}。")
+        watch = "后面的需求按这个方向写。真正有没有人用，上线后在运营里看留存和付费。"
+
     elif code == "04":
-        budget = audit.get("test_budget_usd") if audit.get("test_budget_usd") is not None else fields.get("test_budget_usd")
-        if budget in (None, ""):
-            match = re.search(r"测试预算[：:]\s*\$?\s*([0-9]+(?:\.[0-9]+)?)", blob)
-            budget = float(match.group(1)) if match else None
-        hypotheses = _hypotheses(blob)
-        if budget not in (None, ""):
-            decision = f"用 {_usd(float(budget))} 做小额测试。实测还没回来，不能当成已经验证。"
-            facts.append(f"测试预算 {_usd(float(budget))}。")
-        else:
-            decision = "做一个可点击的测试页。实测还没回来，不能当成已经验证。"
-            missing.append("测试预算")
-        if hypotheses:
-            facts.append("这页要验证：" + "；".join(hypotheses[:4]) + "。")
-        choices = _choice_lines(blob)
-        watch = "外测数字必须来自真实埋点，不能在报告里编造。"
-    elif code == "05":
         match = re.search(r"本版只交付([^。\n]+)", blob)
         if match:
             decision = f"这版只交付{_clean(match.group(1), 120)}。"
@@ -230,7 +333,7 @@ def build_stage_brief(module_code: str, texts: List[str], audit: Dict[str, Any])
             decision = f"需求规格已按清单写全。{score_text}".strip()
         facts.append("范围、页面、业务规则、埋点和验收写在同一份规格里。")
         watch = "封版之后要改范围，走变更，不在下游稿里直接改。"
-    elif code == "06":
+    elif code == "05":
         platform = audit.get("platform") or "ios"
         if platform == "cross_platform":
             decision = "iOS 和 Android 的安全区、按钮尺寸都达到了各自的最低要求。"
@@ -242,7 +345,7 @@ def build_stage_brief(module_code: str, texts: List[str], audit: Dict[str, Any])
             decision = "iOS 的顶部留白和按钮尺寸达到了要求。"
             facts = ["按 iOS 的安全区核对。"]
         watch = "和需求冲突的地方回到需求变更，设计稿里不直接改业务规则。"
-    elif code == "07":
+    elif code == "06":
         coverage = (audit.get("coverage") or {}).get("coverage_percent", audit.get("coverage_percent"))
         inference = audit.get("inference") or {}
         zero = inference.get("zero_client_ai_compliant")
@@ -251,17 +354,17 @@ def build_stage_brief(module_code: str, texts: List[str], audit: Dict[str, Any])
         decision = f"{cover_text}{infer_text}"
         facts = [cover_text, infer_text]
         watch = "能不能发布，还要等测试阶段确认。"
-    elif code == "08":
+    elif code == "07":
         p0 = int(audit.get("open_p0") or 0)
         p1 = int(audit.get("open_p1") or 0)
         decision = f"还剩严重问题 {p0} 个、主要问题 {p1} 个。"
         facts = [decision]
         watch = "还有严重或主要问题没关时，不能带着进入发布。"
-    elif code == "09":
+    elif code == "08":
         decision = "发布材料里写了合规说明、出问题时怎么降级，以及怎么回滚。商店提审要您签字。"
         facts = ["严重问题和主要问题已清零，并写了远程降级开关。"]
         watch = "没有您的签字，不能提交商店。"
-    elif code == "10":
+    elif code == "09":
         ecac = audit.get("ecac_usd")
         limit = audit.get("ecac_limit_usd")
         if ecac is not None and limit is not None:
@@ -271,7 +374,7 @@ def build_stage_brief(module_code: str, texts: List[str], audit: Dict[str, Any])
             decision = "获客方案写了成本和熔断线。"
             missing.append("预计获客成本和熔断线")
         watch = "成本超过熔断线就停，不能改口径继续花。"
-    elif code == "11":
+    elif code == "10":
         if audit.get("d1_retention") is not None:
             decision = (
                 f"次日留存 {_pct(audit['d1_retention'])}，7 日 {_pct(audit['d7_retention'])}，"
@@ -321,58 +424,49 @@ def describe_passed_stage(module_code: str, module_name: str, audit: Dict[str, A
         return render_stage_brief(brief)
     code = str(module_code)
     if code == "01":
-        som = audit.get("first_year_som_usd")
-        installs = audit.get("annual_target_installs")
-        verdict = str(audit.get("verdict") or "")
-        action = "盘子偏小，先控制投入" if "CAUTION" in verdict else "建议先做"
-        if som is not None and installs is not None:
-            installs_text = _count(installs)
-            installs_text = f"{installs_text}次" if installs_text.endswith("万") else f"{installs_text} 次"
-            recommendation = (
-                f"{action}。按这份市场研究，首年能拿到的现实盘子大约 {_usd(som)}"
-                f"（约 {installs_text}安装）。数字写了来源。请确认是否按这个结论进入定价测算。"
-            )
-            evidence = (
-                f"首年能拿到的盘子大约 {_usd(som)}，是用月搜索量、能拿到的比例和客单价算出来的，不是一个空的大盘。\n"
-                f"关键数字的来源：{_source(audit)}。\n"
-                f"结论写明了{action}。"
-            )
-        else:
-            recommendation = f"{module_name}已写明做不做，并附了盘子测算和来源。请确认是否进入定价测算。"
-            evidence = "报告里有自下而上的盘子、做不做的结论，以及数字来源。"
-        risk = "这一关没有要您现在拍板的花钱、隐私、密钥或改价事项。定价还没定，下一关会单独请您看。"
-        return {"recommendation": recommendation, "evidence": evidence, "risk": risk}
+        sheet = _stage01_sheet(audit)
+        if sheet is not None:
+            return {
+                "recommendation": sheet["decision"],
+                "evidence": "\n".join(sheet["facts"]),
+                "risk": "这一关没有要您现在拍板的花钱、隐私、密钥或改价事项。定价还没定，下一关会单独请您看。",
+            }
+        recommendation = f"{module_name}已写明做不做，并附了盘子测算和来源。请确认是否进入定价测算。"
+        return {
+            "recommendation": recommendation,
+            "evidence": "报告里有自下而上的盘子、做不做的结论，以及数字来源。",
+            "risk": "这一关没有要您现在拍板的花钱、隐私、密钥或改价事项。定价还没定，下一关会单独请您看。",
+        }
 
     if code == "02":
-        ratio = audit.get("ltv_cac_ratio")
-        cac = audit.get("blended_cac_usd")
-        ltv = audit.get("ltv_180d_usd")
-        if ratio is not None:
-            recommendation = (
-                f"每花 1 美元获客，大约能收回 {ratio} 美元"
-                + (f"（获客成本 {_usd(cac)}，180 天客户价值 {_usd(ltv)}）" if cac is not None and ltv is not None else "")
-                + "。请确认这套定价能不能做。"
-            )
-            evidence = f"回收倍数 {ratio}，按 3 倍作为健康线来看。"
-        else:
-            recommendation = "定价和回收测算已经写好。请确认这套定价能不能做。"
-            evidence = "单位经济测算已写进交付物。"
-        risk = "这里定的是价格和获客成本，请您看过再放行。后面的工序不能自行改这里定下的价格。"
-        return {"recommendation": recommendation, "evidence": evidence, "risk": risk}
+        sheet = _stage02_sheet(audit)
+        if sheet is not None:
+            return {
+                "recommendation": sheet["decision"],
+                "evidence": "\n".join(sheet["facts"]),
+                "risk": "这里定的是价格和获客成本，请您看过再放行。后面的工序不能自行改这里定下的价格。",
+            }
+        return {
+            "recommendation": "定价和回收测算已经写好。请确认这套定价能不能做。",
+            "evidence": "单位经济测算已写进交付物。",
+            "risk": "这里定的是价格和获客成本，请您看过再放行。后面的工序不能自行改这里定下的价格。",
+        }
 
     if code == "03":
+        sheet = _stage03_sheet(audit)
+        if sheet is not None:
+            return {
+                "recommendation": sheet["decision"],
+                "evidence": "\n".join(sheet["facts"]),
+                "risk": "后面的需求按这个方向写。真正有没有人用，上线后在运营里看留存和付费。",
+            }
         return {
             "recommendation": "方向卡已写清卖点，并列出要验证的关键假设。请确认这个方向是否立项。",
             "evidence": "有价值主张，也有第一条要验证的假设。",
             "risk": "方向一旦定下，后面的验证和需求都按这张卡走。",
         }
+
     if code == "04":
-        return {
-            "recommendation": "假门页面已经能打开、能点击。真实外测数据还没回来之前，不能当成已经验证。请确认是否按这个方案做小额测试。",
-            "evidence": "有一个可点击的测试页。实测点击和留资要等真人测试回填，报告里不应编造。",
-            "risk": "这里要花一笔小额测试费，金额要落在这一阶段的授权额度里。",
-        }
-    if code == "05":
         score = audit.get("score")
         score_text = f"（清单评分 {score}）" if score is not None else ""
         return {
@@ -380,7 +474,7 @@ def describe_passed_stage(module_code: str, module_name: str, audit: Dict[str, A
             "evidence": "范围、页面、业务规则、埋点和验收都写在同一份规格里，没有把建表和接口写进来。",
             "risk": "封版之后，设计和研发按这份规格做。要改范围，走变更，不在下游稿里直接改。",
         }
-    if code == "06":
+    if code == "05":
         platform = audit.get("platform") or "ios"
         if platform == "cross_platform":
             evidence = "iOS 和 Android 的安全区、按钮尺寸都达到了各自的最低要求。"
@@ -393,7 +487,7 @@ def describe_passed_stage(module_code: str, module_name: str, audit: Dict[str, A
             "evidence": evidence,
             "risk": "设计不能自行改业务规则。和规格冲突的地方应回到需求变更。",
         }
-    if code == "07":
+    if code == "06":
         coverage = (audit.get("coverage") or {}).get("coverage_percent", audit.get("coverage_percent"))
         inference = audit.get("inference") or {}
         zero = inference.get("zero_client_ai_compliant")
@@ -404,19 +498,19 @@ def describe_passed_stage(module_code: str, module_name: str, audit: Dict[str, A
             "evidence": f"{cover_text}{infer_text}",
             "risk": "研发通过只说明工程就绪，能不能发布仍要等测试阶段确认。",
         }
-    if code == "08":
+    if code == "07":
         return {
             "recommendation": "阻断上线的严重问题和主要问题都已清掉。请确认这版质量可以进入发布准备。",
             "evidence": f"未关闭的严重问题 {int(audit.get('open_p0') or 0)} 个，主要问题 {int(audit.get('open_p1') or 0)} 个。",
             "risk": "还有严重或主要问题没关时，不能带着上线。",
         }
-    if code == "09":
+    if code == "08":
         return {
             "recommendation": "发布材料里有合规说明、出问题时的降级办法和回滚计划。商店提审必须由您签字，系统不会代签。",
             "evidence": "严重问题和主要问题已清零，并写了远程降级开关。",
             "risk": "没有您的签字，这一关不能放行，也不能提交商店。",
         }
-    if code == "10":
+    if code == "09":
         ecac = audit.get("ecac_usd")
         limit = audit.get("ecac_limit_usd")
         if ecac is not None and limit is not None:
@@ -428,7 +522,7 @@ def describe_passed_stage(module_code: str, module_name: str, audit: Dict[str, A
             "evidence": evidence,
             "risk": "成本一旦超过熔断线，投放应停，不能靠改口径继续花。",
         }
-    if code == "11":
+    if code == "10":
         if audit.get("d1_retention") is not None:
             evidence = (
                 f"次日留存 {_pct(audit['d1_retention'])}，7 日 {_pct(audit['d7_retention'])}，"

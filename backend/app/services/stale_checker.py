@@ -5,18 +5,18 @@ from backend.app.models.entities import ModuleInstance, Artifact
 
 # Downstream modules sensitive to upstream changes
 UPSTREAM_IMPACT_MAP = {
-    "05": ["06", "07", "08"],       # PRD changes impact Design, Dev, QA
-    "06": ["07", "08"],             # Design changes impact Dev, QA
-    "07": ["08", "09"],             # Dev changes impact QA, Release
-    "08": ["09"],                   # QA changes impact Release
+    "04": ["05", "06", "07"],       # PRD changes impact Design, Dev, QA
+    "05": ["06", "07"],             # Design changes impact Dev, QA
+    "06": ["07", "08"],             # Dev changes impact QA, Release
+    "07": ["08"],                   # QA changes impact Release
 }
 
 # Reverse map: what upstream specifications does a module care about?
 DOWNSTREAM_UPSTREAM_MAP = {
-    "06": ["05"],
-    "07": ["05", "06"],
-    "08": ["05", "06", "07"],
-    "09": ["08"],
+    "05": ["04"],
+    "06": ["04", "05"],
+    "07": ["04", "05", "06"],
+    "08": ["07"],
 }
 
 def get_relevant_upstream_codes(module_code: str, declared_dependencies: Optional[List[str]] = None) -> Set[str]:
